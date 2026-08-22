@@ -1,0 +1,39 @@
+{
+  "name": "eye-radar",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n server,client \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:server": "tsx watch src/server/index.ts",
+    "dev:client": "vite",
+    "build": "npm run build:client && npm run build:server",
+    "build:client": "vite build",
+    "build:server": "tsup src/server/index.ts --format esm --target node20 --out-dir dist/server --clean",
+    "check": "tsc --noEmit",
+    "start": "node dist/server/index.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "maplibre-gl": "^4.7.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "telegraf": "^4.16.3",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "@types/react": "^18.3.24",
+    "@types/react-dom": "^18.3.7",
+    "@types/ws": "^8.18.1",
+    "@vitejs/plugin-react": "^4.7.0",
+    "concurrently": "^9.2.1",
+    "tsup": "^8.5.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.3"
+  }
+}

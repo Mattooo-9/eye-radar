@@ -1,0 +1,42 @@
+name: Deploy Eye Radar
+
+on:
+  push:
+    branches: ["main"]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Upload sources to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          source: "."
+          target: ${{ secrets.VPS_PATH }}
+          rm: true
+          strip_components: 0
+          exclude: ".git,.github,node_modules,dist,.env"
+
+      - name: Write production env and restart stack
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script: |
+            set -eu
+            mkdir -p "${{ secrets.VPS_PATH }}"
+            cd "${{ secrets.VPS_PATH }}"
+            cat > .env <<'EOF'
+            ${{ secrets.APP_ENV_FILE }}
+            EOF
+            docker compose down || true
+            docker compose up --build -d

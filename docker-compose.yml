@@ -1,0 +1,11 @@
+services:
+  eye-radar:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: eye-radar
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "${PORT:-3000}:3000"
