@@ -22,7 +22,6 @@ jobs:
           target: ${{ secrets.VPS_PATH }}
           rm: true
           strip_components: 0
-          exclude: ".git,.github,node_modules,dist,.env"
 
       - name: Write production env and restart stack
         uses: appleboy/ssh-action@v1.2.0
