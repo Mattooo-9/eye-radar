@@ -6,9 +6,10 @@ import { TrackCorrelator } from "./trackCorrelator.js";
 interface InternalTrack {
   state: TrackState;
   filter: KalmanFilter2D;
+  lastMeasurementTime: number;
 }
 
-const STALE_AFTER_MS = 120_000;
+const STALE_AFTER_MS = 45_000; // 45 seconds without measurement = target lost / pruned
 
 export class TrackManager {
   private readonly tracks = new Map<string, InternalTrack>();
@@ -20,6 +21,7 @@ export class TrackManager {
 
     const targetId = correlation.matchedTrackId ?? observation.id;
     const existing = this.tracks.get(targetId);
+    const now = Date.now();
 
     if (!existing) {
       const filter = new KalmanFilter2D();
@@ -38,10 +40,10 @@ export class TrackManager {
         covLat: filtered.covLat,
         covLon: filtered.covLon,
         uncertaintyRadius: filtered.uncertaintyRadiusMeters,
-        lastUpdated: Date.now()
+        lastUpdated: now
       };
 
-      this.tracks.set(targetId, { state, filter });
+      this.tracks.set(targetId, { state, filter, lastMeasurementTime: now });
       return state;
     }
 
@@ -64,21 +66,21 @@ export class TrackManager {
       previous.confidence * 0.4 + observation.confidence * 0.5 + sourceDiversityBonus
     );
 
+    existing.lastMeasurementTime = now;
     existing.state = {
-      id: targetId,
-      type: observation.type !== "unknown" ? observation.type : previous.type,
+      ...previous,
       lat: filtered.lat,
       lon: filtered.lon,
       heading: updatedHeading,
       speed: updatedSpeed,
+      altitude: observation.altitude ?? previous.altitude,
       timestamp: observation.timestamp,
       confidence: Number(updatedConfidence.toFixed(2)),
       sources: mergedSources,
-      altitude: observation.altitude ?? previous.altitude,
       covLat: filtered.covLat,
       covLon: filtered.covLon,
       uncertaintyRadius: Math.round(filtered.uncertaintyRadiusMeters),
-      lastUpdated: Date.now()
+      lastUpdated: now
     };
 
     return existing.state;
@@ -86,15 +88,16 @@ export class TrackManager {
 
   tick(now = Date.now()): void {
     for (const [id, entry] of this.tracks.entries()) {
-      const lastSeen = entry.state.lastUpdated ?? entry.state.timestamp;
-      if (now - lastSeen > STALE_AFTER_MS) {
+      const ageMs = now - entry.lastMeasurementTime;
+
+      // 1. Hard purge if no fresh measurements arrived within 45s
+      if (ageMs > STALE_AFTER_MS) {
         this.tracks.delete(id);
         continue;
       }
 
-      // If no measurement arrived in the last 2 seconds, extrapolate position smoothly
-      const timeSinceLastUpdate = (now - lastSeen) / 1000;
-      if (timeSinceLastUpdate >= 2) {
+      // 2. Smooth Kalman dead-reckoning extrapolation (strictly bounded to 20s max)
+      if (ageMs >= 1500 && ageMs <= 20_000) {
         const predicted = entry.filter.predict(now);
         if (predicted) {
           entry.state.lat = predicted.lat;
@@ -103,16 +106,14 @@ export class TrackManager {
           entry.state.covLon = predicted.covLon;
           entry.state.uncertaintyRadius = Math.round(predicted.uncertaintyRadiusMeters);
           entry.state.lastUpdated = now;
-          entry.state.timestamp = now;
         }
       }
     }
   }
 
   prune(now = Date.now()): void {
-    for (const [id, track] of this.tracks.entries()) {
-      const lastSeen = track.state.lastUpdated ?? track.state.timestamp;
-      if (now - lastSeen > STALE_AFTER_MS) {
+    for (const [id, entry] of this.tracks.entries()) {
+      if (now - entry.lastMeasurementTime > STALE_AFTER_MS) {
         this.tracks.delete(id);
       }
     }

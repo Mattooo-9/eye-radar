@@ -41,6 +41,7 @@ let simulationEnabled = true;
 healthTracker.registerSource("alerts.in.ua");
 healthTracker.registerSource("airplanes.live");
 healthTracker.registerSource("open-meteo");
+healthTracker.registerSource("nasa-firms");
 healthTracker.registerSource("simulator");
 
 const readBody = async (req: IncomingMessage): Promise<string> =>
@@ -185,6 +186,12 @@ const server = createServer(async (req, res) => {
   if (req.method === "GET" && url.pathname === "/api/wind") {
     const wind = await windSource.fetchWind();
     json(res, 200, { wind });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/thermal") {
+    const thermals = await firmsSource.fetchThermalObservations();
+    json(res, 200, { thermals, count: thermals.length });
     return;
   }
 
@@ -352,6 +359,31 @@ setInterval(async () => {
       healthTracker.recordSuccess("alerts.in.ua", Date.now() - t0);
     } catch (err) {
       healthTracker.recordError("alerts.in.ua", err instanceof Error ? err : String(err));
+    }
+  }
+
+  // Poll Atmospheric Wind Field every 45 seconds
+  if (cycleCounter === 1 || cycleCounter % 45 === 0) {
+    const t0 = Date.now();
+    try {
+      await windSource.fetchWind();
+      healthTracker.recordSuccess("open-meteo", Date.now() - t0);
+    } catch (err) {
+      healthTracker.recordError("open-meteo", err instanceof Error ? err : String(err));
+    }
+  }
+
+  // Poll NASA FIRMS Thermal Satellite Observations every 60 seconds
+  if (cycleCounter === 1 || cycleCounter % 60 === 0) {
+    const t0 = Date.now();
+    try {
+      const thermals = await firmsSource.fetchThermalObservations();
+      for (const t of thermals) {
+        trackManager.ingest(t);
+      }
+      healthTracker.recordSuccess("nasa-firms", Date.now() - t0);
+    } catch (err) {
+      healthTracker.recordError("nasa-firms", err instanceof Error ? err : String(err));
     }
   }
 

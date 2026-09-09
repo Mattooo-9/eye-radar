@@ -9,7 +9,7 @@ interface OrbitalHudProps {
 
 export const OrbitalHud = ({ map, trackCount, onOpenBriefing }: OrbitalHudProps) => {
   const [coords, setCoords] = useState({ lat: 49.0, lon: 31.5 });
-  const [bearing, setBearing] = useState(-10);
+  const [bearing, setBearing] = useState(0);
   const [nowDate, setNowDate] = useState(new Date());
 
   useEffect(() => {
@@ -60,7 +60,7 @@ export const OrbitalHud = ({ map, trackCount, onOpenBriefing }: OrbitalHudProps)
         <div>
           <span className="hud-label">EYE RADAR // ORBITAL DEFENSE</span>
           <span className="hud-sub">
-            {utcTimeStr} • ALT: 480 KM • INC: 51.6°
+            {utcTimeStr} • 5 ДЖЕРЕЛ (РАДАРИ + СУПУТНИКИ + ADS-B)
           </span>
         </div>
       </div>
