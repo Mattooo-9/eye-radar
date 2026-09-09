@@ -60,7 +60,12 @@ export const useWsRadar = (
     const determineWsUrl = (serverConfigUrl?: string): string => {
       const isHttps = typeof window !== "undefined" && window.location.protocol === "https:";
       const host = typeof window !== "undefined" ? window.location.host : "localhost:3000";
-      const localWs = `${isHttps ? "wss:" : "ws:"}//${host}/ws`;
+      let localWs = `${isHttps ? "wss:" : "ws:"}//${host}/ws`;
+
+      // When running on Vercel CDN or custom domain, route WebSocket directly to high-availability Render core
+      if (typeof window !== "undefined" && (window.location.host.includes("vercel.app") || window.location.host.includes("eye-radar"))) {
+        localWs = "wss://eye-radar.onrender.com/ws";
+      }
 
       if (serverConfigUrl && serverConfigUrl.startsWith("ws")) {
         // Enforce wss if on https page to avoid mixed content error

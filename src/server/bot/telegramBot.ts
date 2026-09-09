@@ -40,7 +40,7 @@ export class EyeRadarBotManager {
     if (!this.bot) return;
 
     const bot = this.bot;
-    const webAppUrl = `${env.publicBaseUrl}${env.webAppPath}`;
+    const webAppUrl = process.env.VERCEL_APP_URL || (env.publicBaseUrl.includes("onrender.com") ? "https://eye-radar.vercel.app/app" : `${env.publicBaseUrl}${env.webAppPath}`);
 
     bot.telegram.setMyCommands([
       { command: "start", description: "Запустити радар та налаштування" },
