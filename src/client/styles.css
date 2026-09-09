@@ -700,23 +700,54 @@ body {
   filter: saturate(0.25) contrast(1.3) brightness(0.85);
 }
 
-/* Orbital Controls */
-.orbital-controls {
+/* Orbital Controls & Tactical Dock */
+.orbital-controls-dock {
   position: absolute;
-  right: 14px;
-  top: max(120px, calc(env(safe-area-inset-top) + 110px));
-  z-index: 30;
+  right: 12px;
+  top: max(112px, calc(env(safe-area-inset-top) + 102px));
+  z-index: 35;
   display: flex;
   flex-direction: column;
+  align-items: flex-end;
   gap: 6px;
 }
 
+.dock-toggle-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.88);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  color: #38bdf8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 0 10px rgba(56, 189, 248, 0.2);
+  transition: all 0.2s ease;
+}
+
+.dock-toggle-btn:hover, .dock-toggle-btn:active {
+  background: rgba(56, 189, 248, 0.25);
+  border-color: #38bdf8;
+  transform: scale(1.06);
+}
+
+.dock-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  animation: fadeIn 0.18s ease-out;
+}
+
 .orbital-btn {
-  background: rgba(15, 23, 42, 0.85);
+  background: rgba(15, 23, 42, 0.88);
   backdrop-filter: blur(12px);
   border: 1px solid rgba(148, 163, 184, 0.25);
   color: #e2e8f0;
-  padding: 8px 10px;
+  padding: 7px 11px;
   border-radius: 10px;
   font-size: 11px;
   font-weight: 700;
@@ -724,6 +755,19 @@ body {
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
   transition: all 0.15s ease;
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.orbital-btn .btn-icon {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.orbital-btn .btn-label {
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 .orbital-btn:hover, .orbital-btn:active {
@@ -737,6 +781,7 @@ body {
   background: rgba(56, 189, 248, 0.3);
   color: #38bdf8;
   border-color: #38bdf8;
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.3);
 }
 
 /* AI Briefing Modal */
@@ -1081,3 +1126,101 @@ body {
   color: #38bdf8;
   line-height: 1.3;
 }
+
+/* Target Card Action Buttons */
+.target-card-actions {
+  display: flex;
+  gap: 8px;
+  margin: 14px 0 8px 0;
+}
+
+.action-btn-follow,
+.action-btn-zoom {
+  flex: 1;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.action-btn-follow {
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  color: #ffffff;
+  box-shadow: 0 4px 14px rgba(2, 132, 199, 0.4);
+}
+
+.action-btn-follow:hover, .action-btn-follow:active {
+  background: linear-gradient(135deg, #0369a1 0%, #075985 100%);
+  transform: translateY(-1px);
+}
+
+.action-btn-zoom {
+  background: rgba(30, 41, 59, 0.85);
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  color: #38bdf8;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+}
+
+.action-btn-zoom:hover, .action-btn-zoom:active {
+  background: rgba(56, 189, 248, 0.2);
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+/* Camera Target Following HUD Pill */
+.following-prompt-pill {
+  position: absolute;
+  top: max(112px, calc(env(safe-area-inset-top) + 102px));
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15, 23, 42, 0.92);
+  backdrop-filter: blur(12px);
+  border: 1px solid #38bdf8;
+  color: #f1f5f9;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 14px;
+  border-radius: 20px;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6), 0 0 16px rgba(56, 189, 248, 0.4);
+  animation: fadeIn 0.2s ease-out;
+  white-space: nowrap;
+}
+
+.following-prompt-pill strong {
+  color: #38bdf8;
+  letter-spacing: 0.05em;
+}
+
+.following-cancel-btn {
+  background: rgba(239, 68, 68, 0.25);
+  border: 1px solid rgba(239, 68, 68, 0.6);
+  color: #fca5a5;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.following-cancel-btn:hover, .following-cancel-btn:active {
+  background: rgba(239, 68, 68, 0.6);
+  color: #ffffff;
+}
+

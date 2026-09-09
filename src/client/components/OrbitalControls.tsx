@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { Map } from "maplibre-gl";
 import type { VisionMode } from "./MapView";
 
@@ -24,6 +25,8 @@ export const OrbitalControls = ({
   onFlyToUser,
   onOpenParams
 }: OrbitalControlsProps) => {
+  const [collapsed, setCollapsed] = useState(false);
+
   const triggerHaptic = () => {
     try {
       window.Telegram?.WebApp?.HapticFeedback?.impactOccurred("light");
@@ -65,99 +68,148 @@ export const OrbitalControls = ({
     });
   };
 
-  const getVisionTitle = () => {
+  const getVisionIcon = () => {
     switch (visionMode) {
       case "satellite":
-        return "🛰️ Супутник";
+        return "🛰️";
       case "nvg":
-        return "🟢 ПНБ (Ніч)";
+        return "🟢";
       case "flir":
-        return "🔥 FLIR (Тепло)";
+        return "🔥";
       case "tactical":
-        return "🗺️ Вектор";
+        return "🗺️";
+    }
+  };
+
+  const getVisionLabel = () => {
+    switch (visionMode) {
+      case "satellite":
+        return "Супутник";
+      case "nvg":
+        return "ПНБ";
+      case "flir":
+        return "FLIR";
+      case "tactical":
+        return "Вектор";
     }
   };
 
   return (
-    <div className="orbital-controls">
+    <div className={`orbital-controls-dock ${collapsed ? "is-collapsed" : ""}`}>
       <button
         type="button"
-        className="orbital-btn"
-        onClick={handleFlyOrbit}
-        title="Орбітальний огляд всієї планети"
-      >
-        🌍 Орбіта
-      </button>
-
-      {onToggleDayNight && (
-        <button
-          type="button"
-          className={`orbital-btn ${showDayNight ? "active" : ""}`}
-          onClick={() => {
-            triggerHaptic();
-            onToggleDayNight();
-          }}
-          title="Динамічний цикл дня і ночі на планеті"
-        >
-          {showDayNight ? "☀️/🌙 Доба" : "☀️ День"}
-        </button>
-      )}
-
-      {onToggleWeather && (
-        <button
-          type="button"
-          className={`orbital-btn ${showWeather ? "active" : ""}`}
-          onClick={() => {
-            triggerHaptic();
-            onToggleWeather();
-          }}
-          title="Радар опадів та хмарності в реальному часі (RainViewer)"
-        >
-          {showWeather ? "🌦️ Погода" : "⛅ Без хмар"}
-        </button>
-      )}
-
-      <button
-        type="button"
-        className="orbital-btn"
-        onClick={handleToggle3D}
-        title="Перемикання 3D/2D"
-      >
-        🪐 3D/2D
-      </button>
-
-      <button
-        type="button"
-        className="orbital-btn active"
+        className="dock-toggle-btn"
         onClick={() => {
           triggerHaptic();
-          onCycleVision();
+          setCollapsed((prev) => !prev);
         }}
-        title="Перемикання оптичних та сенсорних режимів"
+        title={collapsed ? "Розгорнути панель управління" : "Згорнути панель управління"}
       >
-        {getVisionTitle()}
+        {collapsed ? "🛡️" : "✕"}
       </button>
 
-      <button
-        type="button"
-        className="orbital-btn"
-        onClick={handleResetUkraine}
-        title="Театр дій: Україна"
-      >
-        🇺🇦 Україна
-      </button>
+      {!collapsed && (
+        <div className="dock-buttons">
+          <button
+            type="button"
+            className="orbital-btn"
+            onClick={handleFlyOrbit}
+            title="Орбітальний огляд всієї планети"
+          >
+            <span className="btn-icon">🌍</span>
+            <span className="btn-label">Орбіта</span>
+          </button>
 
-      <button
-        type="button"
-        className="orbital-btn"
-        onClick={() => {
-          triggerHaptic();
-          onFlyToUser();
-        }}
-        title="Моя позиція"
-      >
-        📍 До мене
-      </button>
+          <button
+            type="button"
+            className="orbital-btn"
+            onClick={handleResetUkraine}
+            title="Фокус на театрі дій: Україна"
+          >
+            <span className="btn-icon">🇺🇦</span>
+            <span className="btn-label">Україна</span>
+          </button>
+
+          <button
+            type="button"
+            className="orbital-btn"
+            onClick={handleToggle3D}
+            title="Перемикання 3D/2D проєкції"
+          >
+            <span className="btn-icon">🪐</span>
+            <span className="btn-label">3D/2D</span>
+          </button>
+
+          <button
+            type="button"
+            className="orbital-btn active"
+            onClick={() => {
+              triggerHaptic();
+              onCycleVision();
+            }}
+            title="Режим оптики (Супутник / ПНБ / FLIR / Вектор)"
+          >
+            <span className="btn-icon">{getVisionIcon()}</span>
+            <span className="btn-label">{getVisionLabel()}</span>
+          </button>
+
+          {onToggleDayNight && (
+            <button
+              type="button"
+              className={`orbital-btn ${showDayNight ? "active" : ""}`}
+              onClick={() => {
+                triggerHaptic();
+                onToggleDayNight();
+              }}
+              title="Динамічне сонячне освітлення планети"
+            >
+              <span className="btn-icon">{showDayNight ? "☀️" : "🌙"}</span>
+              <span className="btn-label">{showDayNight ? "Сонце" : "Ніч"}</span>
+            </button>
+          )}
+
+          {onToggleWeather && (
+            <button
+              type="button"
+              className={`orbital-btn ${showWeather ? "active" : ""}`}
+              onClick={() => {
+                triggerHaptic();
+                onToggleWeather();
+              }}
+              title="Радар опадів RainViewer у реальному часі"
+            >
+              <span className="btn-icon">🌦️</span>
+              <span className="btn-label">Хмари</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            className="orbital-btn"
+            onClick={() => {
+              triggerHaptic();
+              onFlyToUser();
+            }}
+            title="Моя геопозиція (GPS)"
+          >
+            <span className="btn-icon">📍</span>
+            <span className="btn-label">До мене</span>
+          </button>
+
+          <button
+            type="button"
+            className="orbital-btn"
+            onClick={() => {
+              triggerHaptic();
+              onOpenParams();
+            }}
+            title="Тактичні параметри та фільтри"
+          >
+            <span className="btn-icon">⚙️</span>
+            <span className="btn-label">Фільтри</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 };

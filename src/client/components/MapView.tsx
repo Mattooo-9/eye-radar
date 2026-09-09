@@ -22,6 +22,8 @@ interface MapViewProps {
   isPickingLocation?: boolean;
   showDayNight?: boolean;
   showWeather?: boolean;
+  followingTargetId?: string | null;
+  onStopFollow?: () => void;
   onMapReady?: (map: Map) => void;
   onSelectTarget?: (packet: TrackPacket) => void;
   onPickLocation?: (lat: number, lon: number) => void;
@@ -671,6 +673,8 @@ export const MapView = ({
   isPickingLocation,
   showDayNight = true,
   showWeather = true,
+  followingTargetId,
+  onStopFollow,
   onMapReady,
   onSelectTarget,
   onPickLocation
@@ -692,6 +696,12 @@ export const MapView = ({
 
   const selectedTargetRef = useRef(selectedTarget);
   selectedTargetRef.current = selectedTarget;
+
+  const followingTargetIdRef = useRef(followingTargetId);
+  followingTargetIdRef.current = followingTargetId;
+
+  const onStopFollowRef = useRef(onStopFollow);
+  onStopFollowRef.current = onStopFollow;
 
   const isPickingLocationRef = useRef(isPickingLocation);
   isPickingLocationRef.current = isPickingLocation;
@@ -814,6 +824,8 @@ export const MapView = ({
     map.on("load", () => {
       resizeCanvasSafe();
       syncWeatherLayer(map, showWeatherRef.current !== false);
+      const scaleControl = new maplibregl.ScaleControl({ maxWidth: 110, unit: "metric" });
+      map.addControl(scaleControl, "bottom-right");
     });
     map.on("resize", () => {
       resizeCanvasSafe();
@@ -1085,8 +1097,23 @@ export const MapView = ({
           }
 
           const elapsedSeconds = Math.max(0, (now - timestamp) / 1000);
-          const predicted = destinationPoint({ lat, lon }, heading, speed * elapsedSeconds);
-          const groundPoint = map.project([predicted.lon, predicted.lat]);
+          const headingRad = (heading * Math.PI) / 180;
+          const latRad = (lat * Math.PI) / 180;
+          const cosLat = Math.cos(latRad);
+          const metersPerDegLat = 111139;
+          const metersPerDegLon = metersPerDegLat * (cosLat > 0.05 ? cosLat : 0.05);
+
+          const vxMps = Math.sin(headingRad) * speed;
+          const vyMps = Math.cos(headingRad) * speed;
+
+          const predLat = lat + (vyMps * elapsedSeconds) / metersPerDegLat;
+          const predLon = lon + (vxMps * elapsedSeconds) / metersPerDegLon;
+          const groundPoint = map.project([predLon, predLat]);
+
+          // Real-time camera target lock & tracking
+          if (followingTargetIdRef.current && followingTargetIdRef.current === id) {
+            map.easeTo({ center: [predLon, predLat], duration: 80, easing: (t) => t });
+          }
 
           if (
             groundPoint.x < -100 ||
@@ -1121,8 +1148,9 @@ export const MapView = ({
 
           // Geographically synchronized forward projection vector
           const futureSec = Math.max(15, Math.min(90, 450 / Math.max(1, zoom)));
-          const futureGeo = destinationPoint({ lat, lon }, heading, speed * (elapsedSeconds + futureSec));
-          const futureProj = map.project([futureGeo.lon, futureGeo.lat]);
+          const futLat = predLat + (vyMps * futureSec) / metersPerDegLat;
+          const futLon = predLon + (vxMps * futureSec) / metersPerDegLon;
+          const futureProj = map.project([futLon, futLat]);
           const futureAir = { x: futureProj.x, y: futureProj.y - altElevationPx };
 
           // Screen heading strictly matching the projected vector on camera
@@ -1272,8 +1300,9 @@ export const MapView = ({
               const wpCoords: Array<{ x: number; y: number; min: number }> = [];
 
               for (const sec of waypoints) {
-                const wpGeo = destinationPoint({ lat, lon }, heading, speed * (elapsedSeconds + sec));
-                const wpProj = map.project([wpGeo.lon, wpGeo.lat]);
+                const wpLat = predLat + (vyMps * sec) / metersPerDegLat;
+                const wpLon = predLon + (vxMps * sec) / metersPerDegLon;
+                const wpProj = map.project([wpLon, wpLat]);
                 ctx.lineTo(wpProj.x, wpProj.y - altElevationPx);
                 wpCoords.push({ x: wpProj.x, y: wpProj.y - altElevationPx, min: sec / 60 });
               }
@@ -1322,6 +1351,16 @@ export const MapView = ({
       {isPickingLocation && (
         <div className="picking-prompt-pill">
           🎯 Клікніть на карті для встановлення точки спостереження
+        </div>
+      )}
+      {followingTargetId && (
+        <div className="following-prompt-pill">
+          <span>🎯 СУПРОВОДЖЕННЯ: <strong>{followingTargetId.startsWith("adsb-") ? followingTargetId.slice(5).toUpperCase() : followingTargetId.toUpperCase()}</strong></span>
+          {onStopFollow && (
+            <button type="button" className="following-cancel-btn" onClick={onStopFollow}>
+              ✕ ЗНЯТИ ЗАХОПЛЕННЯ
+            </button>
+          )}
         </div>
       )}
     </div>

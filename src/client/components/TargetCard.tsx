@@ -7,9 +7,17 @@ interface TargetCardProps {
   packet: TrackPacket;
   location: TrustedLocation | null;
   onClose: () => void;
+  onFollowTarget?: (id: string) => void;
+  onZoomTarget?: (lat: number, lon: number) => void;
 }
 
-export const TargetCard = ({ packet, location, onClose }: TargetCardProps) => {
+export const TargetCard = ({
+  packet,
+  location,
+  onClose,
+  onFollowTarget,
+  onZoomTarget
+}: TargetCardProps) => {
   const [id, type, lat, lon, heading, speed, timestamp, confidence, uncertaintyRadius, threatLevel, altitude] = packet;
 
   let distanceKm: number | null = null;
@@ -99,6 +107,33 @@ export const TargetCard = ({ packet, location, onClose }: TargetCardProps) => {
             <span className="label">Оновлено</span>
             <span className="value">{timeSecAgo} сек тому</span>
           </div>
+        </div>
+
+        <div className="target-card-actions">
+          {onFollowTarget && (
+            <button
+              type="button"
+              className="action-btn-follow"
+              onClick={() => {
+                onFollowTarget(id);
+                onClose();
+              }}
+            >
+              🎯 Супроводжувати ціль
+            </button>
+          )}
+          {onZoomTarget && (
+            <button
+              type="button"
+              className="action-btn-zoom"
+              onClick={() => {
+                onZoomTarget(lat, lon);
+                onClose();
+              }}
+            >
+              🛰️ Зблизити (Zoom 19)
+            </button>
+          )}
         </div>
 
         {etaMinutes !== null && etaMinutes < 20 && (

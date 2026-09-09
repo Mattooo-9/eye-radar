@@ -60,6 +60,7 @@ export const App = () => {
   const [activeAlerts, setActiveAlerts] = useState<string[]>([]);
   const [showDayNight, setShowDayNight] = useState(true);
   const [showWeather, setShowWeather] = useState(true);
+  const [followedTargetId, setFollowedTargetId] = useState<string | null>(null);
 
   const [tacticalFilters, setTacticalFilters] = useState<TacticalFilters>({
     autoTracking: true,
@@ -239,6 +240,8 @@ export const App = () => {
         isPickingLocation={isPickingLocation}
         showDayNight={showDayNight}
         showWeather={showWeather}
+        followingTargetId={followedTargetId}
+        onStopFollow={() => setFollowedTargetId(null)}
         onMapReady={(m) => setMapInstance(m)}
         onPickLocation={handlePickLocation}
         onSelectTarget={(target) => {
@@ -291,6 +294,16 @@ export const App = () => {
           packet={inspectedTarget}
           location={location}
           onClose={() => setInspectedTarget(null)}
+          onFollowTarget={(id) => setFollowedTargetId(id)}
+          onZoomTarget={(lat, lon) => {
+            setFollowedTargetId(null);
+            mapInstance?.flyTo({
+              center: [lon, lat],
+              zoom: 18.5,
+              pitch: 65,
+              duration: 1200
+            });
+          }}
         />
       )}
 

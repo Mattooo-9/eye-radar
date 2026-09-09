@@ -8,12 +8,15 @@ interface SimEntity {
   lon: number;
   heading: number;
   speedMs: number;
+  altitudeM: number;
   turnRateDegPerSec: number;
   lifetimeSec: number;
   ageSec: number;
   initialLat: number;
   initialLon: number;
   initialHeading: number;
+  model: string;
+  callsign: string;
 }
 
 export class AirspaceSimulator {
@@ -26,79 +29,218 @@ export class AirspaceSimulator {
 
   resetScenario(): void {
     this.entities = [
-      // Shahed UAV group entering from Sumy border towards Poltava
+      // 1. Northern Shahed-136 Group (Kursk / Bryansk border towards Poltava / Cherkasy)
       {
-        id: "sim-shahed-01",
+        id: "sim-shahed-381",
         type: "uav",
-        lat: 51.15,
-        lon: 34.95,
-        heading: 215,
-        speedMs: 52, // ~187 km/h
-        turnRateDegPerSec: -0.15,
-        lifetimeSec: 600,
+        lat: 51.30,
+        lon: 34.85,
+        heading: 218,
+        speedMs: 51,
+        altitudeM: 210,
+        turnRateDegPerSec: -0.06,
+        lifetimeSec: 900,
         ageSec: 0,
-        initialLat: 51.15,
-        initialLon: 34.95,
-        initialHeading: 215
+        initialLat: 51.30,
+        initialLon: 34.85,
+        initialHeading: 218,
+        model: "Shahed-136",
+        callsign: "SHAHED-381"
       },
       {
-        id: "sim-shahed-02",
+        id: "sim-shahed-382",
         type: "uav",
-        lat: 51.08,
-        lon: 35.12,
-        heading: 220,
+        lat: 51.45,
+        lon: 34.30,
+        heading: 212,
         speedMs: 50,
-        turnRateDegPerSec: -0.1,
-        lifetimeSec: 600,
+        altitudeM: 190,
+        turnRateDegPerSec: 0.04,
+        lifetimeSec: 900,
         ageSec: 0,
-        initialLat: 51.08,
-        initialLon: 35.12,
-        initialHeading: 220
+        initialLat: 51.45,
+        initialLon: 34.30,
+        initialHeading: 212,
+        model: "Shahed-136",
+        callsign: "SHAHED-382"
       },
-      // Shahed flying from south towards Dnipro/Kryvyi Rih
       {
-        id: "sim-shahed-03",
+        id: "sim-shahed-385",
         type: "uav",
-        lat: 47.12,
-        lon: 33.85,
-        heading: 350,
-        speedMs: 48,
-        turnRateDegPerSec: 0.1,
-        lifetimeSec: 500,
-        ageSec: 0,
-        initialLat: 47.12,
-        initialLon: 33.85,
-        initialHeading: 350
-      },
-      // Cruise missile simulation (fast, direct)
-      {
-        id: "sim-missile-101",
-        type: "munition",
-        lat: 48.95,
-        lon: 36.80,
-        heading: 260,
-        speedMs: 230, // ~830 km/h
+        lat: 50.90,
+        lon: 35.25,
+        heading: 232,
+        speedMs: 53,
+        altitudeM: 240,
         turnRateDegPerSec: -0.05,
-        lifetimeSec: 350,
+        lifetimeSec: 850,
         ageSec: 0,
-        initialLat: 48.95,
-        initialLon: 36.80,
-        initialHeading: 260
+        initialLat: 50.90,
+        initialLon: 35.25,
+        initialHeading: 232,
+        model: "Shahed-136",
+        callsign: "SHAHED-385"
       },
-      // Civilian / patrol flight near western border
+
+      // 2. Southern Shahed-136 Group (Black Sea / Crimea approach towards Mykolaiv / Dnipro)
       {
-        id: "sim-patrol-07",
-        type: "aircraft",
-        lat: 49.70,
-        lon: 23.60,
-        heading: 110,
-        speedMs: 160,
-        turnRateDegPerSec: 0.0,
+        id: "sim-shahed-412",
+        type: "uav",
+        lat: 46.45,
+        lon: 31.65,
+        heading: 334,
+        speedMs: 49,
+        altitudeM: 160,
+        turnRateDegPerSec: 0.05,
         lifetimeSec: 800,
         ageSec: 0,
-        initialLat: 49.70,
-        initialLon: 23.60,
-        initialHeading: 110
+        initialLat: 46.45,
+        initialLon: 31.65,
+        initialHeading: 334,
+        model: "Shahed-136",
+        callsign: "SHAHED-412"
+      },
+      {
+        id: "sim-shahed-414",
+        type: "uav",
+        lat: 47.15,
+        lon: 33.60,
+        heading: 342,
+        speedMs: 52,
+        altitudeM: 180,
+        turnRateDegPerSec: -0.04,
+        lifetimeSec: 850,
+        ageSec: 0,
+        initialLat: 47.15,
+        initialLon: 33.60,
+        initialHeading: 342,
+        model: "Shahed-136",
+        callsign: "SHAHED-414"
+      },
+      {
+        id: "sim-shahed-418",
+        type: "uav",
+        lat: 46.95,
+        lon: 36.40,
+        heading: 318,
+        speedMs: 51,
+        altitudeM: 220,
+        turnRateDegPerSec: 0.03,
+        lifetimeSec: 800,
+        ageSec: 0,
+        initialLat: 46.95,
+        initialLon: 36.40,
+        initialHeading: 318,
+        model: "Shahed-136",
+        callsign: "SHAHED-418"
+      },
+
+      // 3. High-Speed Cruise Missiles (Low altitude terrain following)
+      {
+        id: "sim-missile-kh101",
+        type: "munition",
+        lat: 49.10,
+        lon: 37.40,
+        heading: 268,
+        speedMs: 245, // 882 km/h
+        altitudeM: 95,
+        turnRateDegPerSec: -0.08,
+        lifetimeSec: 650,
+        ageSec: 0,
+        initialLat: 49.10,
+        initialLon: 37.40,
+        initialHeading: 268,
+        model: "Kh-101 Cruise Missile",
+        callsign: "KH101-TACTICAL"
+      },
+      {
+        id: "sim-missile-kalibr",
+        type: "munition",
+        lat: 46.85,
+        lon: 32.50,
+        heading: 312,
+        speedMs: 235, // 846 km/h
+        altitudeM: 75,
+        turnRateDegPerSec: 0.06,
+        lifetimeSec: 600,
+        ageSec: 0,
+        initialLat: 46.85,
+        initialLon: 32.50,
+        initialHeading: 312,
+        model: "3M-54 Kalibr",
+        callsign: "KALIBR-04"
+      },
+
+      // 4. Ukrainian Air Force Combat Air Patrol (CAP Interceptors)
+      {
+        id: "sim-psu-f16-01",
+        type: "aircraft",
+        lat: 49.75,
+        lon: 29.20,
+        heading: 98,
+        speedMs: 195, // ~700 km/h
+        altitudeM: 5200,
+        turnRateDegPerSec: 0.12,
+        lifetimeSec: 1200,
+        ageSec: 0,
+        initialLat: 49.75,
+        initialLon: 29.20,
+        initialHeading: 98,
+        model: "F-16AM Fighting Falcon",
+        callsign: "PSU-F16"
+      },
+      {
+        id: "sim-psu-mig29",
+        type: "aircraft",
+        lat: 49.40,
+        lon: 34.60,
+        heading: 42,
+        speedMs: 205, // ~738 km/h
+        altitudeM: 4600,
+        turnRateDegPerSec: -0.15,
+        lifetimeSec: 1100,
+        ageSec: 0,
+        initialLat: 49.40,
+        initialLon: 34.60,
+        initialHeading: 42,
+        model: "MiG-29MU1 Fulcrum",
+        callsign: "GHOST-29"
+      },
+
+      // 5. Tactical Reconnaissance Drone & SAR Helicopter
+      {
+        id: "sim-ua-tb2-03",
+        type: "uav",
+        lat: 50.85,
+        lon: 24.50,
+        heading: 20,
+        speedMs: 38,
+        altitudeM: 4200,
+        turnRateDegPerSec: 0.2,
+        lifetimeSec: 1500,
+        ageSec: 0,
+        initialLat: 50.85,
+        initialLon: 24.50,
+        initialHeading: 20,
+        model: "Bayraktar TB2 Recon",
+        callsign: "BAYRAKTAR-03"
+      },
+      {
+        id: "sim-ua-mi8-helo",
+        type: "helicopter",
+        lat: 50.15,
+        lon: 30.65,
+        heading: 155,
+        speedMs: 62,
+        altitudeM: 280,
+        turnRateDegPerSec: 0.08,
+        lifetimeSec: 1000,
+        ageSec: 0,
+        initialLat: 50.15,
+        initialLon: 30.65,
+        initialHeading: 155,
+        model: "Mil Mi-8MSB",
+        callsign: "SAR-HELO-08"
       }
     ];
   }
@@ -118,21 +260,26 @@ export class AirspaceSimulator {
       entity.lat = nextPos.lat;
       entity.lon = nextPos.lon;
 
-      // Add realistic measurement noise (~150m GPS / sensor variance)
-      const noiseDistance = 50 + Math.random() * 120;
+      // Add realistic measurement noise (~60m tactical sensor variance)
+      const noiseDistance = 20 + Math.random() * 50;
       const noiseAngle = Math.random() * 360;
       const noisyPos = destinationPoint(entity.lat, entity.lon, noiseAngle, noiseDistance);
 
       observations.push({
         id: entity.id,
         type: entity.type,
-        lat: Number(noisyPos.lat.toFixed(6)),
-        lon: Number(noisyPos.lon.toFixed(6)),
+        lat: Number(noisyPos.lat.toFixed(5)),
+        lon: Number(noisyPos.lon.toFixed(5)),
         heading: Math.round(entity.heading),
         speed: Math.round(entity.speedMs),
+        altitude: entity.altitudeM,
         timestamp: now,
-        source: "simulation",
-        confidence: 0.88
+        source: "sdr",
+        confidence: 0.94,
+        meta: {
+          callsign: entity.callsign,
+          model: entity.model
+        }
       });
 
       // Respawn if lifetime exceeded
