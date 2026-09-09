@@ -45,7 +45,9 @@ export const useWsRadar = (
   const [connectionState, setConnectionState] = useState<"idle" | "connecting" | "open" | "closed">(
     "idle"
   );
-  const [mapStyleUrl, setMapStyleUrl] = useState("https://demotiles.maplibre.org/style.json");
+  const [mapStyleUrl, setMapStyleUrl] = useState(
+    "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
+  );
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
   const pollTimerRef = useRef<number | null>(null);

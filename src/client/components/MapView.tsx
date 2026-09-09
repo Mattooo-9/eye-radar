@@ -29,6 +29,13 @@ const SATELLITE_STYLE = {
         "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
       ],
       tileSize: 256
+    },
+    "esri-reference": {
+      type: "raster" as const,
+      tiles: [
+        "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
+      ],
+      tileSize: 256
     }
   },
   layers: [
@@ -38,6 +45,15 @@ const SATELLITE_STYLE = {
       source: "esri-satellite",
       paint: {
         "raster-opacity": 1.0,
+        "raster-fade-duration": 0
+      }
+    },
+    {
+      id: "esri-reference-layer",
+      type: "raster" as const,
+      source: "esri-reference",
+      paint: {
+        "raster-opacity": 0.85,
         "raster-fade-duration": 0
       }
     }
@@ -581,22 +597,26 @@ export const MapView = ({
           ctx.save();
           for (const radiusM of rings) {
             const radiusPx = radiusM / mPerPx;
-            ctx.beginPath();
-            ctx.arc(userPoint.x, userPoint.y, radiusPx, 0, Math.PI * 2);
-            ctx.strokeStyle = "rgba(59, 130, 246, 0.28)";
-            ctx.lineWidth = 1;
-            ctx.setLineDash([5, 5]);
-            ctx.stroke();
+            if (radiusPx >= 12) {
+              ctx.beginPath();
+              ctx.arc(userPoint.x, userPoint.y, radiusPx, 0, Math.PI * 2);
+              ctx.strokeStyle = "rgba(59, 130, 246, 0.28)";
+              ctx.lineWidth = 1;
+              ctx.setLineDash([5, 5]);
+              ctx.stroke();
 
-            drawTextWithOutline(
-              ctx,
-              `${radiusM / 1000} км`,
-              userPoint.x + radiusPx + 4,
-              userPoint.y,
-              "rgba(147, 197, 253, 0.85)",
-              "rgba(0, 0, 0, 0.8)",
-              "10px Inter, monospace"
-            );
+              if (radiusPx >= 45) {
+                drawTextWithOutline(
+                  ctx,
+                  `${radiusM / 1000} км`,
+                  userPoint.x + radiusPx + 4,
+                  userPoint.y + 3,
+                  "rgba(147, 197, 253, 0.85)",
+                  "rgba(0, 0, 0, 0.8)",
+                  "10px Inter, monospace"
+                );
+              }
+            }
           }
           ctx.restore();
 

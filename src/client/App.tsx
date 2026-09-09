@@ -220,10 +220,6 @@ export const App = () => {
         />
       )}
 
-      {needsManualConfirm && (
-        <ManualLocationPrompt onSubmit={setManualLocation} />
-      )}
-
       <AiBriefingModal
         isOpen={briefingOpen}
         cityName={selectedCityName}

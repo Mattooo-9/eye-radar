@@ -32,7 +32,7 @@ export const env = {
   webAppPath: process.env.WEB_APP_PATH ?? "/app",
   wsPath: process.env.WS_PATH ?? "/ws",
   mapStyleUrl:
-    process.env.MAP_STYLE_URL ?? "https://demotiles.maplibre.org/style.json",
+    process.env.MAP_STYLE_URL ?? "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
   jitterRadiusKm: numberValue("JITTER_RADIUS_KM", 15),
   trustMinScore: numberValue("TRUST_MIN_SCORE", 55),
   upstashRedisRestUrl: process.env.UPSTASH_REDIS_REST_URL,
