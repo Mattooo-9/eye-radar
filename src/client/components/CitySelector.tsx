@@ -95,15 +95,6 @@ export const CitySelector = ({
 
       <button
         type="button"
-        className={`city-btn ${isPickingLocation ? "picking-active" : ""}`}
-        onClick={onTogglePickLocation}
-        title="Вказати точку спостереження на карті"
-      >
-        🎯 {isPickingLocation ? "Клікніть..." : "Точка"}
-      </button>
-
-      <button
-        type="button"
         className="city-btn"
         onClick={() => setOpen(!open)}
       >

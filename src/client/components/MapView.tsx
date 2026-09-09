@@ -27,7 +27,9 @@ interface MapViewProps {
   followingTargetId?: string | null;
   onStopFollow?: () => void;
   onMapReady?: (map: Map) => void;
+  selectedLocation?: { lat: number; lon: number } | null;
   onSelectTarget?: (packet: TrackPacket) => void;
+  onSelectLocation?: (lat: number, lon: number) => void;
   onPickLocation?: (lat: number, lon: number) => void;
 }
 
@@ -39,28 +41,32 @@ const SATELLITE_STYLE = {
       tiles: [
         "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
       ],
-      tileSize: 256
+      tileSize: 256,
+      maxzoom: 18
     },
     "esri-hillshade": {
       type: "raster" as const,
       tiles: [
         "https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}"
       ],
-      tileSize: 256
+      tileSize: 256,
+      maxzoom: 18
     },
     "esri-transportation": {
       type: "raster" as const,
       tiles: [
         "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}"
       ],
-      tileSize: 256
+      tileSize: 256,
+      maxzoom: 18
     },
     "esri-reference": {
       type: "raster" as const,
       tiles: [
         "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
       ],
-      tileSize: 256
+      tileSize: 256,
+      maxzoom: 18
     }
   },
   layers: [
@@ -550,6 +556,68 @@ const drawGroundReticle = (
   ctx.restore();
 };
 
+const drawSelectedLocationReticle = (
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  timeMs: number
+) => {
+  ctx.save();
+  const pulse = Math.sin(timeMs / 220) * 0.25 + 0.75;
+  const outerR = 20 + Math.sin(timeMs / 300) * 4;
+
+  // 1. Concentric pulsing radar ring
+  ctx.beginPath();
+  ctx.arc(x, y, outerR, 0, Math.PI * 2);
+  ctx.strokeStyle = `rgba(56, 189, 248, ${0.45 * pulse})`;
+  ctx.lineWidth = 1.4;
+  ctx.setLineDash([4, 4]);
+  ctx.stroke();
+
+  // 2. Tactical corner brackets
+  const bSize = 16;
+  const bLen = 6;
+  ctx.setLineDash([]);
+  ctx.strokeStyle = `rgba(56, 189, 248, ${0.9 * pulse})`;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  // TL
+  ctx.moveTo(x - bSize, y - bSize + bLen);
+  ctx.lineTo(x - bSize, y - bSize);
+  ctx.lineTo(x - bSize + bLen, y - bSize);
+  // TR
+  ctx.moveTo(x + bSize - bLen, y - bSize);
+  ctx.lineTo(x + bSize, y - bSize);
+  ctx.lineTo(x + bSize, y - bSize + bLen);
+  // BR
+  ctx.moveTo(x + bSize, y + bSize - bLen);
+  ctx.lineTo(x + bSize, y + bSize);
+  ctx.lineTo(x + bSize - bLen, y + bSize);
+  // BL
+  ctx.moveTo(x - bSize + bLen, y + bSize);
+  ctx.lineTo(x - bSize, y + bSize);
+  ctx.lineTo(x - bSize, y + bSize - bLen);
+  ctx.stroke();
+
+  // 3. Pinpoint crosshair
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.9)";
+  ctx.beginPath();
+  ctx.moveTo(x - 5, y);
+  ctx.lineTo(x + 5, y);
+  ctx.moveTo(x, y - 5);
+  ctx.lineTo(x, y + 5);
+  ctx.stroke();
+
+  // 4. Center cyan dot
+  ctx.beginPath();
+  ctx.arc(x, y, 2.5, 0, Math.PI * 2);
+  ctx.fillStyle = "#38bdf8";
+  ctx.fill();
+
+  ctx.restore();
+};
+
 const drawTacticalGlassBadge = (
   ctx: CanvasRenderingContext2D,
   airX: number,
@@ -770,6 +838,7 @@ export const MapView = ({
   filters,
   visionMode = "satellite",
   selectedTarget,
+  selectedLocation,
   isPickingLocation,
   showDayNight = true,
   showWeather = true,
@@ -778,6 +847,7 @@ export const MapView = ({
   onStopFollow,
   onMapReady,
   onSelectTarget,
+  onSelectLocation,
   onPickLocation
 }: MapViewProps) => {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
@@ -797,6 +867,12 @@ export const MapView = ({
 
   const selectedTargetRef = useRef(selectedTarget);
   selectedTargetRef.current = selectedTarget;
+
+  const selectedLocationRef = useRef(selectedLocation);
+  selectedLocationRef.current = selectedLocation;
+
+  const onSelectLocationRef = useRef(onSelectLocation);
+  onSelectLocationRef.current = onSelectLocation;
 
   const followingTargetIdRef = useRef(followingTargetId);
   followingTargetIdRef.current = followingTargetId;
@@ -889,14 +965,12 @@ export const MapView = ({
         return;
       }
 
-      if (!onSelectTargetRef.current) return;
-
       const clickX = e.point.x;
       const clickY = e.point.y;
       const currentZoom = map.getZoom();
 
       let closest: TrackPacket | null = null;
-      let minDistance = 42;
+      let minDistance = 38;
 
       for (const packet of packetsRef.current) {
         const [, type, lat, lon, heading, speed, timestamp, , , , altitude] = packet;
@@ -919,7 +993,11 @@ export const MapView = ({
       }
 
       if (closest) {
-        onSelectTargetRef.current(closest);
+        onSelectTargetRef.current?.(closest);
+        window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.("light");
+      } else {
+        onSelectLocationRef.current?.(e.lngLat.lat, e.lngLat.lng);
+        window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.("light");
       }
     };
 
@@ -1094,74 +1172,12 @@ export const MapView = ({
           }
         }
 
-        // 1. Draw True Geodesic Perspective Range Rings around observer (Zero-Trigonometry in 60fps render loop)
-        if (currentLoc) {
-          const locChanged =
-            !lastLocRingRef.current ||
-            Math.hypot(currentLoc.lat - lastLocRingRef.current.lat, currentLoc.lon - lastLocRingRef.current.lon) > 0.0001;
-
-          if (locChanged || cachedRingsGeoRef.current.length === 0) {
-            lastLocRingRef.current = { lat: currentLoc.lat, lon: currentLoc.lon };
-            const rings = [15_000, 30_000, 50_000];
-            cachedRingsGeoRef.current = rings.map((radiusM) => {
-              const pts: Array<[number, number]> = [];
-              for (let deg = 0; deg <= 360; deg += 10) {
-                const ptGeo = destinationPoint(currentLoc, deg, radiusM);
-                pts.push([ptGeo.lon, ptGeo.lat]);
-              }
-              return { radiusM, pts };
-            });
+        // 1. Draw Selected Location Tactical Reticle if user selected a place on the map
+        if (selectedLocationRef.current) {
+          const selPt = map.project([selectedLocationRef.current.lon, selectedLocationRef.current.lat]);
+          if (selPt.x >= -60 && selPt.x <= width + 60 && selPt.y >= -60 && selPt.y <= height + 60) {
+            drawSelectedLocationReticle(ctx, selPt.x, selPt.y, now);
           }
-
-          const userPoint = map.project([currentLoc.lon, currentLoc.lat]);
-
-          ctx.save();
-          for (const ring of cachedRingsGeoRef.current) {
-            let labelPt: { x: number; y: number } | null = null;
-            let firstPt: { x: number; y: number } | null = null;
-
-            ctx.beginPath();
-            for (let i = 0; i < ring.pts.length; i++) {
-              const ptProj = map.project(ring.pts[i]);
-              if (i === 0) {
-                firstPt = ptProj;
-                ctx.moveTo(ptProj.x, ptProj.y);
-              } else {
-                ctx.lineTo(ptProj.x, ptProj.y);
-              }
-              if (i === 9) {
-                labelPt = ptProj;
-              }
-            }
-            ctx.closePath();
-            ctx.strokeStyle = "rgba(59, 130, 246, 0.38)";
-            ctx.lineWidth = 1.2;
-            ctx.setLineDash([5, 5]);
-            ctx.stroke();
-
-            if (labelPt && firstPt && Math.hypot(labelPt.x - firstPt.x, labelPt.y - firstPt.y) >= 42) {
-              drawTextWithOutline(
-                ctx,
-                `${ring.radiusM / 1000} км`,
-                labelPt.x + 4,
-                labelPt.y + 3,
-                "rgba(147, 197, 253, 0.9)",
-                "rgba(0, 0, 0, 0.85)",
-                "10px Inter, monospace"
-              );
-            }
-          }
-          ctx.restore();
-
-          // User GPS Marker with breathing radar pulse
-          const userPulse = Math.sin(now / 300) * 3 + 7;
-          ctx.beginPath();
-          ctx.fillStyle = "#22c55e";
-          ctx.arc(userPoint.x, userPoint.y, 6, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.strokeStyle = "rgba(34, 197, 94, 0.35)";
-          ctx.lineWidth = userPulse;
-          ctx.stroke();
         }
 
         // Periodic tactical audio ping if danger enters 25km (checked every 3.5s)

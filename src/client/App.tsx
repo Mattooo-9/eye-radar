@@ -9,6 +9,7 @@ import { OrbitalHud } from "./components/OrbitalHud";
 import { type FilterState, StatusPanel } from "./components/StatusPanel";
 import { TacticalParamsModal, type TacticalFilters } from "./components/TacticalParamsModal";
 import { TargetCard } from "./components/TargetCard";
+import { LocationCard } from "./components/LocationCard";
 import { ThreatBanner } from "./components/ThreatBanner";
 import { type TrackPacket, useWsRadar } from "./hooks/useWsRadar";
 import { haversineMeters } from "./lib/geo";
@@ -54,11 +55,11 @@ export const App = () => {
   const [visionMode, setVisionMode] = useState<VisionMode>("satellite");
   const [selectedTarget, setSelectedTarget] = useState<TrackPacket | null>(null);
   const [inspectedTarget, setInspectedTarget] = useState<TrackPacket | null>(null);
+  const [selectedLocation, setSelectedLocation] = useState<{ lat: number; lon: number } | null>(null);
   const [briefingOpen, setBriefingOpen] = useState(false);
   const [paramsOpen, setParamsOpen] = useState(false);
   const [selectedCityName, setSelectedCityName] = useState<string>("");
   const [activeAlerts, setActiveAlerts] = useState<string[]>([]);
-  const [showDayNight, setShowDayNight] = useState(true);
   const [showWeather, setShowWeather] = useState(true);
   const [showSatellites, setShowSatellites] = useState(true);
   const [followedTargetId, setFollowedTargetId] = useState<string | null>(null);
@@ -288,8 +289,9 @@ export const App = () => {
         filters={filters}
         visionMode={visionMode}
         selectedTarget={selectedTarget}
+        selectedLocation={selectedLocation}
         isPickingLocation={isPickingLocation}
-        showDayNight={showDayNight}
+        showDayNight={true}
         showWeather={showWeather}
         showSatellites={showSatellites}
         followingTargetId={followedTargetId}
@@ -299,6 +301,11 @@ export const App = () => {
         onSelectTarget={(target) => {
           setSelectedTarget(target);
           setInspectedTarget(target);
+          setSelectedLocation(null);
+        }}
+        onSelectLocation={(lat, lon) => {
+          setSelectedLocation({ lat, lon });
+          setInspectedTarget(null);
         }}
       />
 
@@ -324,8 +331,6 @@ export const App = () => {
       <OrbitalControls
         map={mapInstance}
         visionMode={visionMode}
-        showDayNight={showDayNight}
-        onToggleDayNight={() => setShowDayNight((prev) => !prev)}
         showWeather={showWeather}
         onToggleWeather={() => setShowWeather((prev) => !prev)}
         showSatellites={showSatellites}
@@ -361,6 +366,24 @@ export const App = () => {
               center: [lon, lat],
               zoom: 18.5,
               pitch: 65,
+              duration: 1200
+            });
+          }}
+        />
+      )}
+
+      {selectedLocation && !inspectedTarget && (
+        <LocationCard
+          lat={selectedLocation.lat}
+          lon={selectedLocation.lon}
+          activeAlerts={activeAlerts}
+          packets={filteredPackets}
+          onClose={() => setSelectedLocation(null)}
+          onCenterLocation={(lat, lon) => {
+            mapInstance?.flyTo({
+              center: [lon, lat],
+              zoom: 11.0,
+              pitch: 52,
               duration: 1200
             });
           }}

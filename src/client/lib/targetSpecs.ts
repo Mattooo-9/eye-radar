@@ -27,7 +27,7 @@ export interface AltitudeAnalysis {
 
 export function getAltitudeAnalysis(altM: number): AltitudeAnalysis {
   const fl = Math.round(altM * 0.0328084);
-  const flightLevel = FL ;
+  const flightLevel = `FL ${String(fl).padStart(3, "0")}`;
 
   if (altM < 120) {
     return {

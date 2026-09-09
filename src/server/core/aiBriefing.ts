@@ -11,8 +11,8 @@ export class AiBriefingService {
   async generateBriefing(request: AirspaceSummaryRequest): Promise<string> {
     const { tracks, userCity, userCoords } = request;
 
-    const uavs = tracks.filter((t) => t.objectType === "uav_shahed" || t.objectType === "uav_recon");
-    const missiles = tracks.filter((t) => t.objectType === "missile_cruise" || t.objectType === "missile_ballistic");
+    const uavs = tracks.filter((t) => t.type === "uav");
+    const missiles = tracks.filter((t) => t.type === "munition");
     const total = tracks.length;
 
     // Fallback template if no AI key configured or network fails
@@ -48,7 +48,7 @@ export class AiBriefingService {
       .slice(0, 10)
       .map(
         (t, i) =>
-          `Ціль ${i + 1}: тип ${t.objectType}, швидкість ${Math.round(t.velocityKmh)} км/год, курс ${Math.round(t.headingDeg)}°, координати (${t.lat.toFixed(2)}, ${t.lon.toFixed(2)}), впевненість ${Math.round(t.confidenceScore)}%`
+          `Ціль ${i + 1}: тип ${t.type}, швидкість ${Math.round(t.speed * 3.6)} км/год, курс ${Math.round(t.heading)}°, координати (${t.lat.toFixed(2)}, ${t.lon.toFixed(2)}), впевненість ${Math.round(t.confidence * 100)}%`
       )
       .join("\n");
 

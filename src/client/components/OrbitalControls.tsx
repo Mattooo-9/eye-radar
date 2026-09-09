@@ -5,8 +5,6 @@ import type { VisionMode } from "./MapView";
 interface OrbitalControlsProps {
   map: Map | null;
   visionMode: VisionMode;
-  showDayNight?: boolean;
-  onToggleDayNight?: () => void;
   showWeather?: boolean;
   onToggleWeather?: () => void;
   showSatellites?: boolean;
@@ -19,8 +17,6 @@ interface OrbitalControlsProps {
 export const OrbitalControls = ({
   map,
   visionMode,
-  showDayNight = true,
-  onToggleDayNight,
   showWeather = true,
   onToggleWeather,
   showSatellites = true,
@@ -196,21 +192,6 @@ export const OrbitalControls = ({
               <span className="item-icon">{getVisionIcon()}</span>
               <span className="item-label">{getVisionLabel()}</span>
             </button>
-
-            {onToggleDayNight && (
-              <button
-                type="button"
-                className={`dropdown-item ${showDayNight ? "active-toggle" : ""}`}
-                onClick={() => {
-                  triggerHaptic();
-                  onToggleDayNight();
-                }}
-                title="Динамічне сонячне освітлення (День / Ніч)"
-              >
-                <span className="item-icon">{showDayNight ? "☀️" : "🌙"}</span>
-                <span className="item-label">{showDayNight ? "Сонце" : "Ніч"}</span>
-              </button>
-            )}
 
             {onToggleWeather && (
               <button

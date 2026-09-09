@@ -8,6 +8,10 @@ declare global {
       WebApp?: {
         ready: () => void;
         expand: () => void;
+        setHeaderColor?: (color: string) => void;
+        setBackgroundColor?: (color: string) => void;
+        onEvent?: (eventType: string, eventHandler: () => void) => void;
+        offEvent?: (eventType: string, eventHandler: () => void) => void;
         initDataUnsafe?: {
           user?: {
             id?: number;
@@ -17,6 +21,7 @@ declare global {
           notificationOccurred: (type: "error" | "success" | "warning") => void;
           impactOccurred: (style: "light" | "medium" | "heavy" | "rigid" | "soft") => void;
         };
+        [key: string]: any;
       };
     };
   }

@@ -136,7 +136,7 @@ export class AirplanesLiveSource {
                   meta: {
                     callsign: callsign || a.hex,
                     model,
-                    squawk: a.squawk
+                    squawk: a.squawk ?? "none"
                   }
                 });
               }
