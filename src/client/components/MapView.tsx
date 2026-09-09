@@ -43,30 +43,6 @@ const SATELLITE_STYLE = {
       ],
       tileSize: 256,
       maxzoom: 18
-    },
-    "esri-hillshade": {
-      type: "raster" as const,
-      tiles: [
-        "https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}"
-      ],
-      tileSize: 256,
-      maxzoom: 18
-    },
-    "esri-transportation": {
-      type: "raster" as const,
-      tiles: [
-        "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}"
-      ],
-      tileSize: 256,
-      maxzoom: 18
-    },
-    "esri-reference": {
-      type: "raster" as const,
-      tiles: [
-        "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
-      ],
-      tileSize: 256,
-      maxzoom: 18
     }
   },
   layers: [
@@ -76,34 +52,6 @@ const SATELLITE_STYLE = {
       source: "esri-satellite",
       paint: {
         "raster-opacity": 1.0,
-        "raster-fade-duration": 0
-      }
-    },
-    {
-      id: "esri-hillshade-layer",
-      type: "raster" as const,
-      source: "esri-hillshade",
-      paint: {
-        "raster-opacity": 0.28,
-        "raster-fade-duration": 0
-      }
-    },
-    {
-      id: "esri-transportation-layer",
-      type: "raster" as const,
-      source: "esri-transportation",
-      minzoom: 8,
-      paint: {
-        "raster-opacity": 0.85,
-        "raster-fade-duration": 0
-      }
-    },
-    {
-      id: "esri-reference-layer",
-      type: "raster" as const,
-      source: "esri-reference",
-      paint: {
-        "raster-opacity": 0.9,
         "raster-fade-duration": 0
       }
     }
@@ -618,6 +566,70 @@ const drawSelectedLocationReticle = (
   ctx.restore();
 };
 
+const drawMilitaryCalloutPill = (
+  ctx: CanvasRenderingContext2D,
+  targetX: number,
+  targetY: number,
+  modelName: string,
+  speedKmh: number,
+  altStr: string,
+  color: string,
+  isThreat: boolean,
+  showAlt: boolean
+) => {
+  ctx.save();
+  const ratio = window.devicePixelRatio || 1;
+  const screenW = ctx.canvas.width / ratio;
+
+  const text = showAlt
+    ? `${modelName} • ${speedKmh} км/г • ${altStr}`
+    : `${modelName} • ${speedKmh} км/г`;
+
+  ctx.font = "bold 10px Inter, -apple-system, system-ui, sans-serif";
+  const metrics = ctx.measureText(text);
+  const pillW = Math.max(85, Math.ceil(metrics.width) + 18);
+  const pillH = 18;
+
+  // Prefer right side, flip to left if near screen edge
+  const px = targetX + 14 + pillW > screenW - 8 ? targetX - pillW - 14 : targetX + 14;
+  const py = Math.round(targetY - pillH / 2);
+
+  // Background glass pill
+  ctx.fillStyle = "rgba(7, 12, 22, 0.92)";
+  ctx.strokeStyle = isThreat ? "rgba(239, 68, 68, 0.85)" : "rgba(56, 189, 248, 0.75)";
+  ctx.lineWidth = 1.1;
+  ctx.beginPath();
+  ctx.roundRect(px, py, pillW, pillH, 9);
+  ctx.fill();
+  ctx.stroke();
+
+  // Subtle lead connector line from target nadir to pill
+  ctx.strokeStyle = isThreat ? "rgba(239, 68, 68, 0.5)" : "rgba(56, 189, 248, 0.4)";
+  ctx.lineWidth = 0.9;
+  ctx.beginPath();
+  if (px > targetX) {
+    ctx.moveTo(targetX + 5, targetY - 2);
+    ctx.lineTo(px, py + 9);
+  } else {
+    ctx.moveTo(targetX - 5, targetY - 2);
+    ctx.lineTo(px + pillW, py + 9);
+  }
+  ctx.stroke();
+
+  // Status indicator dot
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(px + 7.5, py + 9, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Crisp high-contrast typography
+  ctx.fillStyle = "#f8fafc";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, px + 14, py + 9.5);
+
+  ctx.restore();
+};
+
 const drawTacticalGlassBadge = (
   ctx: CanvasRenderingContext2D,
   airX: number,
@@ -908,6 +920,7 @@ export const MapView = ({
   const lastLocRingRef = useRef<{ lat: number; lon: number } | null>(null);
   const cachedSatellitesRef = useRef<SatelliteTrack[]>([]);
   const lastSatCalcRef = useRef<number>(0);
+  const renderRef = useRef<(() => void) | null>(null);
 
   // Safe canvas resizer: ONLY updates dimensions if they have changed, never clears buffer on subpixel drift
   const resizeCanvasSafe = () => {
@@ -947,10 +960,14 @@ export const MapView = ({
       center: [31.5, 49.0], // Center of Ukraine
       zoom: 6.2,
       minZoom: 1.5,
-      maxZoom: 20,
-      pitch: 52, // 3D orbital perspective
-      bearing: -10,
-      maxPitch: 85,
+      maxZoom: 18.5,
+      pitch: 0, // Direct orthographic 2D top-down view (zero parallax perspective drift!)
+      bearing: 0,
+      maxPitch: 0,
+      minPitch: 0,
+      dragRotate: false,
+      touchPitch: false,
+      pitchWithRotate: false,
       antialias: true,
       attributionControl: false
     });
@@ -1009,6 +1026,10 @@ export const MapView = ({
     window.addEventListener("resize", handleWindowResize);
     window.Telegram?.WebApp?.onEvent?.("viewportChanged", handleWindowResize);
 
+    const onMapRedraw = () => {
+      renderRef.current?.();
+    };
+
     map.on("load", () => {
       resizeCanvasSafe();
       syncWeatherLayer(map, showWeatherRef.current !== false);
@@ -1017,7 +1038,11 @@ export const MapView = ({
     });
     map.on("resize", () => {
       resizeCanvasSafe();
+      renderRef.current?.();
     });
+    map.on("render", onMapRedraw);
+    map.on("move", onMapRedraw);
+    map.on("zoom", onMapRedraw);
     map.on("click", handleMapClick);
 
     // Initial resize right away
@@ -1026,6 +1051,9 @@ export const MapView = ({
     return () => {
       window.removeEventListener("resize", handleWindowResize);
       window.Telegram?.WebApp?.offEvent?.("viewportChanged", handleWindowResize);
+      map.off("render", onMapRedraw);
+      map.off("move", onMapRedraw);
+      map.off("zoom", onMapRedraw);
       map.off("click", handleMapClick);
       map.remove();
       mapRef.current = null;
@@ -1063,7 +1091,7 @@ export const MapView = ({
     map.flyTo({
       center: [location.lon, location.lat],
       zoom: 8.5,
-      pitch: 55,
+      pitch: 0,
       duration: 1500
     });
     centeredRef.current = true;
@@ -1075,6 +1103,7 @@ export const MapView = ({
     let lastAudioCheck = 0;
 
     const render = () => {
+      renderRef.current = render;
       const map = mapRef.current;
       const canvas = canvasRef.current;
       const ctx = canvas?.getContext("2d");
@@ -1206,7 +1235,8 @@ export const MapView = ({
             if (type === "helicopter" && (currentFilters.helicopter !== undefined ? !currentFilters.helicopter : !currentFilters.aircraft)) continue;
           }
 
-          const elapsedSeconds = Math.max(0, (now - timestamp) / 1000);
+          // Capped dead reckoning strictly prevents coordinate drift across network latency
+          const elapsedSeconds = Math.min(4, Math.max(0, (now - timestamp) / 1000));
           const headingRad = (heading * Math.PI) / 180;
           const latRad = (lat * Math.PI) / 180;
           const cosLat = Math.cos(latRad);
@@ -1257,7 +1287,6 @@ export const MapView = ({
               : 180;
 
           // Subpixel-locked target coordinates directly anchored to geographic ground coordinates
-          // NEVER displaced vertically by arbitrary screen pixels, guaranteeing zero drift on zoom/pitch/pan!
           const targetX = groundPoint.x;
           const targetY = groundPoint.y;
 
@@ -1319,20 +1348,6 @@ export const MapView = ({
           ctx.moveTo(targetX, targetY + 2);
           ctx.lineTo(targetX, targetY + tick + 2);
           ctx.stroke();
-
-          // Precise landmark name at target point so observer instantly sees exact town/settlement!
-          if (zoom >= 6.0 || isSelected) {
-            const nearestTown = findNearestLandmark(predLat, predLon);
-            drawTextWithOutline(
-              ctx,
-              `📍 ${nearestTown}`,
-              targetX + 8,
-              targetY + 11,
-              isHighThreat ? "#fca5a5" : "#7dd3fc",
-              "rgba(0, 0, 0, 0.95)",
-              "10px Inter, monospace"
-            );
-          }
           ctx.restore();
 
           // Ultra-precise ground targeting reticle pinned directly to terrain
@@ -1386,8 +1401,11 @@ export const MapView = ({
             ctx.restore();
           }
 
-          // Target Tag & Telemetry with high-contrast outlines or High-Zoom Tactical Glass HUD Badge
-          if (zoom >= 9.0 || isSelected) {
+          // Target Tag & Telemetry: Crisp Military Pill or Selected Tactical Glass HUD Badge
+          const speedKmh = Math.round(speed * 3.6);
+          const altMsl = effectiveAltM >= 1000 ? `${(effectiveAltM / 1000).toFixed(1)} км` : `${Math.round(effectiveAltM)} м`;
+
+          if (isSelected) {
             const modelName =
               type === "uav"
                 ? "🔴 SHAHED-136 (БПЛА)"
@@ -1398,9 +1416,7 @@ export const MapView = ({
                 : id.startsWith("adsb-")
                 ? `FLIGHT ${id.slice(5).toUpperCase()}`
                 : "🔵 СУ-34М (АВІАЦІЯ)";
-            const speedKmh = Math.round(speed * 3.6);
             const speedKnots = Math.round(speed * 1.94384);
-            const altMsl = effectiveAltM >= 1000 ? `${(effectiveAltM / 1000).toFixed(1)} км` : `${Math.round(effectiveAltM)} м`;
             const altFt = Math.round(effectiveAltM * 3.28084);
             const landmark = findNearestLandmark(predLat, predLon);
             drawTacticalGlassBadge(
@@ -1416,31 +1432,28 @@ export const MapView = ({
               landmark,
               isHighThreat
             );
-          } else if (zoom >= 5.0 || isHighThreat) {
-            const displayLabel =
+          } else if (zoom >= 4.8 || isHighThreat) {
+            const shortName =
               type === "uav"
-                ? "🔴 БПЛА"
+                ? "Shahed-136"
                 : type === "munition"
-                ? "🟠 РАКЕТА"
+                ? "Х-101"
                 : type === "helicopter"
-                ? "🟢 ВЕРТОЛЬОТ"
+                ? "Ка-52"
                 : id.startsWith("adsb-")
                 ? id.slice(5).toUpperCase()
-                : "🔵 АВІАЦІЯ";
-            const speedText = `${Math.round(speed * 3.6)} км/год`;
-            const altLabel = effectiveAltM >= 1000 ? `${(effectiveAltM / 1000).toFixed(1)} км` : `${Math.round(effectiveAltM)} м`;
-            drawTextWithOutline(ctx, displayLabel, targetX + 14, targetY - 8, "#f8fafc");
-            if (zoom >= 6.5) {
-              drawTextWithOutline(
-                ctx,
-                `${speedText} • H:${altLabel}`,
-                targetX + 14,
-                targetY + 6,
-                "rgba(226, 232, 240, 0.9)",
-                "rgba(0, 0, 0, 0.9)",
-                "10px monospace"
-              );
-            }
+                : "Су-34М";
+            drawMilitaryCalloutPill(
+              ctx,
+              targetX,
+              targetY,
+              shortName,
+              speedKmh,
+              altMsl,
+              color,
+              isHighThreat,
+              zoom >= 7.5
+            );
           }
 
           // Selected target Lock Reticle & 15-minute Intercept Vector

@@ -84,7 +84,7 @@ export const OrbitalControls = ({
     map.flyTo({
       center: [31.5, 30.0],
       zoom: 2.2,
-      pitch: 42,
+      pitch: 0,
       bearing: 0,
       duration: 1600
     });
@@ -96,8 +96,8 @@ export const OrbitalControls = ({
     map.flyTo({
       center: [31.5, 49.0],
       zoom: 6.2,
-      pitch: 52,
-      bearing: -10,
+      pitch: 0,
+      bearing: 0,
       duration: 1200
     });
   };

@@ -48,7 +48,7 @@ export const useWsRadar = (
     "idle"
   );
   const [mapStyleUrl, setMapStyleUrl] = useState(
-    "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
+    "https://basemaps.cartocdn.com/gl/dark-matter-nolabels-gl-style/style.json"
   );
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);

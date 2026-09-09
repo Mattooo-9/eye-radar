@@ -210,7 +210,8 @@ export const App = () => {
       mapInstance.flyTo({
         center: [31.5, 49.0],
         zoom: 6.0,
-        pitch: 42,
+        pitch: 0,
+        bearing: 0,
         duration: 1200
       });
     }
@@ -227,7 +228,8 @@ export const App = () => {
       mapInstance.flyTo({
         center: [lon, lat],
         zoom: zoomLevel ?? 8.5,
-        pitch: 54,
+        pitch: 0,
+        bearing: 0,
         duration: 1200
       });
     }
@@ -240,7 +242,8 @@ export const App = () => {
       mapInstance.flyTo({
         center: [lon, lat],
         zoom: 9.0,
-        pitch: 58,
+        pitch: 0,
+        bearing: 0,
         duration: 1200
       });
     }
@@ -251,7 +254,8 @@ export const App = () => {
     mapInstance.flyTo({
       center: [location.lon, location.lat],
       zoom: 9.0,
-      pitch: 58,
+      pitch: 0,
+      bearing: 0,
       duration: 1400
     });
   };
@@ -364,8 +368,9 @@ export const App = () => {
             setFollowedTargetId(null);
             mapInstance?.flyTo({
               center: [lon, lat],
-              zoom: 18.5,
-              pitch: 65,
+              zoom: 17.5,
+              pitch: 0,
+              bearing: 0,
               duration: 1200
             });
           }}
@@ -383,7 +388,8 @@ export const App = () => {
             mapInstance?.flyTo({
               center: [lon, lat],
               zoom: 11.0,
-              pitch: 52,
+              pitch: 0,
+              bearing: 0,
               duration: 1200
             });
           }}
