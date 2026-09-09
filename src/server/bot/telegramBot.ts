@@ -67,22 +67,50 @@ export class EyeRadarBotManager {
       }).catch(() => {});
     }
 
+    const getPersistentKeyboard = () => ({
+      keyboard: [
+        [
+          isHttps
+            ? { text: "🛰️ ВІДКРИТИ 3D РАДАР", web_app: { url: webAppUrl } }
+            : { text: "🛰️ ВІДКРИТИ 3D РАДАР" }
+        ],
+        [
+          { text: "📊 AI-Зведення" },
+          { text: "🔔 Тривоги" }
+        ],
+        [
+          { text: "⚙️ Статус" },
+          { text: "📍 Надіслати координати", request_location: true }
+        ]
+      ],
+      resize_keyboard: true,
+      is_persistent: true
+    });
+
     const sendLaunchMessage = async (chatId: number) => {
       const userPref = this.storage.getPreference(chatId);
-      const locText = userPref ? `\n📍 Поточна локація: *${userPref.lat.toFixed(4)}, ${userPref.lon.toFixed(4)}* (радіус *${userPref.radiusKm} км*)` : "\n📍 Локація ще не встановлена (використовуйте /setlocation або надішліть геопозицію)";
+      const locText = userPref ? `\n📍 Поточна локація: *${userPref.lat.toFixed(4)}, ${userPref.lon.toFixed(4)}* (радіус *${userPref.radiusKm} км*)` : "\n📍 Локація ще не встановлена (натисніть «📍 Надіслати координати» або /setlocation)";
 
       try {
         await bot.telegram.sendMessage(
           chatId,
-          "📡 *Eye Radar — Ситуаційна обізнаність цивільної безпеки*\n\n" +
+          "🛰️ *Eye Radar — Ситуаційна обізнаність цивільної безпеки*\n\n" +
             "Система безперервно аналізує відкриті джерела, ADS-B, супутникові дані та моніторинг повітряного простору України." +
             locText +
-            "\n\n🔘 Натисніть кнопку нижче, щоб відкрити інтерактивну карту.",
+            "\n\n🔘 Кнопку швидкого доступу закріплено над полем чату для миттєвого відкриття 3D-мапи.",
           {
             parse_mode: "Markdown",
+            reply_markup: getPersistentKeyboard()
+          }
+        );
+
+        await bot.telegram.sendMessage(
+          chatId,
+          "Оберіть дію або відкрийте інтерактивну карту:",
+          {
             reply_markup: {
               inline_keyboard: [
-                [getRadarButton()],
+                [getRadarButton("🛰️ Відкрити 3D Радар (Mini App)")],
                 [
                   { text: "📊 AI-Зведення", callback_data: "cmd_briefing" },
                   { text: "🔔 Тривоги", callback_data: "cmd_alerts" }
@@ -126,6 +154,21 @@ export class EyeRadarBotManager {
     bot.action("cmd_briefing", async (ctx) => {
       await ctx.answerCbQuery();
       await handleBriefing(ctx);
+    });
+
+    bot.hears("🛰️ ВІДКРИТИ 3D РАДАР", async (ctx) => {
+      await sendLaunchMessage(ctx.chat.id);
+    });
+    bot.hears("📊 AI-Зведення", handleBriefing);
+    bot.hears("🔔 Тривоги", async (ctx) => {
+      await ctx.reply("🔔 Актуальні зони повітряних тривог відображаються на карті в реальному часі.", {
+        reply_markup: {
+          inline_keyboard: [[getRadarButton("🛰️ Відкрити радар")]]
+        }
+      });
+    });
+    bot.hears("⚙️ Статус", async (ctx) => {
+      await ctx.reply(formatStatusReport(), { parse_mode: "Markdown" });
     });
 
     bot.start(async (ctx) => {

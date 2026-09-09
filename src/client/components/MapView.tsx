@@ -6,12 +6,15 @@ import { destinationPoint, haversineMeters } from "../lib/geo";
 import { soundEngine } from "../lib/sound";
 import type { FilterState } from "./StatusPanel";
 
+export type VisionMode = "satellite" | "nvg" | "flir" | "tactical";
+
 interface MapViewProps {
   packets: TrackPacket[];
   mapStyleUrl: string;
   location: TrustedLocation | null;
   filters?: FilterState;
   satelliteMode?: boolean;
+  visionMode?: VisionMode;
   selectedTarget?: TrackPacket | null;
   onMapReady?: (map: Map) => void;
   onSelectTarget?: (packet: TrackPacket) => void;
@@ -179,6 +182,7 @@ export const MapView = ({
   location,
   filters,
   satelliteMode,
+  visionMode = "satellite",
   selectedTarget,
   onMapReady,
   onSelectTarget
@@ -194,7 +198,8 @@ export const MapView = ({
       return;
     }
 
-    const initialStyle = satelliteMode ? SATELLITE_STYLE : mapStyleUrl;
+    const useSatellite = visionMode !== "tactical";
+    const initialStyle = useSatellite ? SATELLITE_STYLE : mapStyleUrl;
 
     const map = new maplibregl.Map({
       container: mapContainerRef.current,
@@ -268,14 +273,15 @@ export const MapView = ({
       map.remove();
       mapRef.current = null;
     };
-  }, [mapStyleUrl, onMapReady, onSelectTarget, packets, satelliteMode]);
+  }, [mapStyleUrl, onMapReady, onSelectTarget, packets, visionMode]);
 
-  // Handle Satellite / Tactical switch
+  // Handle Vision Mode / Tactical switch
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    map.setStyle(satelliteMode ? SATELLITE_STYLE : mapStyleUrl);
-  }, [mapStyleUrl, satelliteMode]);
+    const isSat = visionMode !== "tactical";
+    map.setStyle(isSat ? SATELLITE_STYLE : mapStyleUrl);
+  }, [mapStyleUrl, visionMode]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -305,6 +311,33 @@ export const MapView = ({
 
         const now = Date.now();
         const zoom = map.getZoom();
+
+        // 0. Radar Beam Sweep Scan Line (360 deg)
+        const sweepPeriod = 5500;
+        const sweepAngle = ((now % sweepPeriod) / sweepPeriod) * Math.PI * 2;
+        const sweepOrigin = location ? map.project([location.lon, location.lat]) : { x: width / 2, y: height / 2 };
+        const sweepRadius = Math.max(width, height) * 0.95;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(sweepOrigin.x, sweepOrigin.y);
+        ctx.arc(sweepOrigin.x, sweepOrigin.y, sweepRadius, sweepAngle - 0.35, sweepAngle);
+        ctx.closePath();
+
+        const sweepGrad = ctx.createRadialGradient(sweepOrigin.x, sweepOrigin.y, 0, sweepOrigin.x, sweepOrigin.y, sweepRadius);
+        sweepGrad.addColorStop(0, "rgba(56, 189, 248, 0.16)");
+        sweepGrad.addColorStop(0.7, "rgba(56, 189, 248, 0.04)");
+        sweepGrad.addColorStop(1, "rgba(56, 189, 248, 0)");
+        ctx.fillStyle = sweepGrad;
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.moveTo(sweepOrigin.x, sweepOrigin.y);
+        ctx.lineTo(sweepOrigin.x + Math.cos(sweepAngle) * sweepRadius, sweepOrigin.y + Math.sin(sweepAngle) * sweepRadius);
+        ctx.strokeStyle = "rgba(56, 189, 248, 0.4)";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.restore();
 
         // 1. Draw Range Rings around user
         if (location) {
@@ -425,9 +458,40 @@ export const MapView = ({
           ctx.font = "10px Inter, system-ui, sans-serif";
           ctx.fillText(`${Math.round(speed * 3.6)} км/год`, projected.x + 14, projected.y + 6);
 
-          // Selected target Lock Reticle
+          // Selected target Lock Reticle & 15-minute Intercept Vector
           if (selectedTarget && selectedTarget[0] === id) {
             drawLockReticle(ctx, projected.x, projected.y, (now / 40) % 360);
+
+            if (speed > 5) {
+              ctx.save();
+              ctx.setLineDash([5, 5]);
+              ctx.strokeStyle = "#38bdf8";
+              ctx.lineWidth = 2;
+              ctx.beginPath();
+              ctx.moveTo(projected.x, projected.y);
+
+              const waypoints = [300, 600, 900]; // 5, 10, 15 minutes
+              const wpCoords: Array<{ x: number; y: number; min: number }> = [];
+
+              for (const sec of waypoints) {
+                const wpGeo = destinationPoint({ lat, lon }, heading, speed * (elapsedSeconds + sec));
+                const wpProj = map.project([wpGeo.lon, wpGeo.lat]);
+                ctx.lineTo(wpProj.x, wpProj.y);
+                wpCoords.push({ x: wpProj.x, y: wpProj.y, min: sec / 60 });
+              }
+              ctx.stroke();
+              ctx.restore();
+
+              for (const wp of wpCoords) {
+                ctx.beginPath();
+                ctx.arc(wp.x, wp.y, 4, 0, Math.PI * 2);
+                ctx.fillStyle = "#38bdf8";
+                ctx.fill();
+                ctx.fillStyle = "rgba(224, 242, 254, 0.95)";
+                ctx.font = "bold 10px monospace";
+                ctx.fillText(`+${wp.min}хв`, wp.x + 6, wp.y + 3);
+              }
+            }
           }
         }
       }
@@ -445,7 +509,7 @@ export const MapView = ({
   }, [filters, location, packets, selectedTarget]);
 
   return (
-    <div className="map-shell">
+    <div className={`map-shell map-view-container vision-${visionMode}`}>
       <div ref={mapContainerRef} className="map-root" />
       <canvas ref={canvasRef} className="map-overlay" />
       <div className="space-vignette" />

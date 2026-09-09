@@ -243,7 +243,7 @@ const server = createServer(async (req, res) => {
 
   if (
     (req.method === "GET" || req.method === "HEAD") &&
-    (url.pathname === "/" || url.pathname.startsWith(env.webAppPath) || url.pathname.startsWith("/assets"))
+    (url.pathname === "/" || url.pathname.startsWith(env.webAppPath) || url.pathname.startsWith("/assets") || url.pathname === "/avatar.jpg" || url.pathname === "/favicon.ico")
   ) {
     await serveClient(req, res);
     return;

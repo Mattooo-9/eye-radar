@@ -9,29 +9,57 @@ interface OrbitalHudProps {
 
 export const OrbitalHud = ({ map, trackCount, onOpenBriefing }: OrbitalHudProps) => {
   const [coords, setCoords] = useState({ lat: 49.0, lon: 31.5 });
+  const [bearing, setBearing] = useState(-10);
 
   useEffect(() => {
     if (!map) return;
     const update = () => {
       const center = map.getCenter();
       setCoords({ lat: center.lat, lon: center.lng });
+      setBearing(Math.round(map.getBearing()));
     };
 
     map.on("move", update);
+    map.on("rotate", update);
     return () => {
       map.off("move", update);
+      map.off("rotate", update);
     };
   }, [map]);
+
+  const normBearing = ((bearing % 360) + 360) % 360;
+  const getCompassDir = (b: number) => {
+    if (b >= 337.5 || b < 22.5) return "N";
+    if (b >= 22.5 && b < 67.5) return "NE";
+    if (b >= 67.5 && b < 112.5) return "E";
+    if (b >= 112.5 && b < 157.5) return "SE";
+    if (b >= 157.5 && b < 202.5) return "S";
+    if (b >= 202.5 && b < 247.5) return "SW";
+    if (b >= 247.5 && b < 292.5) return "W";
+    return "NW";
+  };
 
   return (
     <div className="orbital-hud">
       <div className="orbital-hud-left">
-        <span className="hud-label">SAT-ORBIT // RECON PROTOCOL</span>
-        <span className="hud-sub">ALT: 480 KM • INC: 51.6° • FUSION: ACTIVE</span>
+        <img
+          src="/avatar.jpg"
+          alt="Eye Radar Logo"
+          className="hud-emblem"
+          onClick={onOpenBriefing}
+          title="Eye Radar Space Defense Reconnaissance"
+        />
+        <div>
+          <span className="hud-label">EYE RADAR // ORBITAL DEFENSE</span>
+          <span className="hud-sub">ALT: 480 KM • INC: 51.6° • FUSION: ACTIVE</span>
+        </div>
       </div>
       <div className="orbital-hud-center">
         <span className="hud-coords">
           {coords.lat.toFixed(2)}°N / {coords.lon.toFixed(2)}°E
+        </span>
+        <span className="hud-bearing">
+          🧭 {normBearing}° {getCompassDir(normBearing)}
         </span>
       </div>
       <div className="orbital-hud-right">

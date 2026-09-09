@@ -3,7 +3,7 @@ import type { Map } from "maplibre-gl";
 import { AiBriefingModal } from "./components/AiBriefingModal";
 import { CitySelector } from "./components/CitySelector";
 import { ManualLocationPrompt } from "./components/ManualLocationPrompt";
-import { MapView } from "./components/MapView";
+import { MapView, type VisionMode } from "./components/MapView";
 import { OrbitalControls } from "./components/OrbitalControls";
 import { OrbitalHud } from "./components/OrbitalHud";
 import { type FilterState, StatusPanel } from "./components/StatusPanel";
@@ -41,7 +41,7 @@ export const App = () => {
   );
 
   const [mapInstance, setMapInstance] = useState<Map | null>(null);
-  const [satelliteMode, setSatelliteMode] = useState(true);
+  const [visionMode, setVisionMode] = useState<VisionMode>("satellite");
   const [selectedTarget, setSelectedTarget] = useState<TrackPacket | null>(null);
   const [briefingOpen, setBriefingOpen] = useState(false);
   const [selectedCityName, setSelectedCityName] = useState<string>("");
@@ -53,9 +53,22 @@ export const App = () => {
   });
 
   useEffect(() => {
-    window.Telegram?.WebApp?.ready();
-    window.Telegram?.WebApp?.expand();
+    try {
+      window.Telegram?.WebApp?.ready();
+      window.Telegram?.WebApp?.expand();
+      window.Telegram?.WebApp?.setHeaderColor?.("#0b1220");
+      window.Telegram?.WebApp?.setBackgroundColor?.("#070b14");
+    } catch {}
   }, []);
+
+  const handleCycleVision = () => {
+    setVisionMode((prev) => {
+      if (prev === "satellite") return "nvg";
+      if (prev === "nvg") return "flir";
+      if (prev === "flir") return "tactical";
+      return "satellite";
+    });
+  };
 
   const handleSelectCity = (lat: number, lon: number, cityName: string) => {
     setSelectedCityName(cityName);
@@ -108,7 +121,7 @@ export const App = () => {
         mapStyleUrl={mapStyleUrl}
         location={location}
         filters={filters}
-        satelliteMode={satelliteMode}
+        visionMode={visionMode}
         selectedTarget={selectedTarget}
         onMapReady={(m) => setMapInstance(m)}
         onSelectTarget={(target) => setSelectedTarget(target)}
@@ -120,8 +133,8 @@ export const App = () => {
 
       <OrbitalControls
         map={mapInstance}
-        satelliteMode={satelliteMode}
-        onToggleSatellite={() => setSatelliteMode(!satelliteMode)}
+        visionMode={visionMode}
+        onCycleVision={handleCycleVision}
         onFlyToUser={handleFlyToUser}
       />
 
