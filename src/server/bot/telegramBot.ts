@@ -48,37 +48,47 @@ export class EyeRadarBotManager {
       { command: "report", description: "Повідомити про звук або спостереження БПЛА" }
     ]).catch(() => {});
 
-    bot.telegram.setChatMenuButton({
-      menuButton: {
-        type: "web_app",
-        text: "📡 Радар",
-        web_app: { url: webAppUrl }
-      }
-    }).catch(() => {});
+    const isHttps = webAppUrl.startsWith("https://");
+    const getRadarButton = (text = "🗺️ Відкрити Радар") =>
+      isHttps ? { text: `${text} (Mini App)`, web_app: { url: webAppUrl } } : { text: `${text} (Web)`, url: webAppUrl };
+
+    if (isHttps) {
+      bot.telegram.setChatMenuButton({
+        menuButton: {
+          type: "web_app",
+          text: "📡 Радар",
+          web_app: { url: webAppUrl }
+        }
+      }).catch(() => {});
+    }
 
     const sendLaunchMessage = async (chatId: number) => {
       const userPref = this.storage.getPreference(chatId);
       const locText = userPref ? `\n📍 Поточна локація: *${userPref.lat.toFixed(4)}, ${userPref.lon.toFixed(4)}* (радіус *${userPref.radiusKm} км*)` : "\n📍 Локація ще не встановлена (використовуйте /setlocation або надішліть геопозицію)";
 
-      await bot.telegram.sendMessage(
-        chatId,
-        "📡 *Eye Radar — Ситуаційна обізнаність цивільної безпеки*\n\n" +
-          "Система безперервно аналізує відкриті джерела, ADS-B, супутникові дані та моніторинг повітряного простору України." +
-          locText +
-          "\n\n🔘 Натисніть кнопку нижче, щоб відкрити інтерактивну карту.",
-        {
-          parse_mode: "Markdown",
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: "🗺️ Відкрити Радар (Mini App)", web_app: { url: webAppUrl } }],
-              [
-                { text: "🔔 Стан тривог", callback_data: "cmd_alerts" },
-                { text: "⚙️ Статус системи", callback_data: "cmd_status" }
+      try {
+        await bot.telegram.sendMessage(
+          chatId,
+          "📡 *Eye Radar — Ситуаційна обізнаність цивільної безпеки*\n\n" +
+            "Система безперервно аналізує відкриті джерела, ADS-B, супутникові дані та моніторинг повітряного простору України." +
+            locText +
+            "\n\n🔘 Натисніть кнопку нижче, щоб відкрити інтерактивну карту.",
+          {
+            parse_mode: "Markdown",
+            reply_markup: {
+              inline_keyboard: [
+                [getRadarButton()],
+                [
+                  { text: "🔔 Стан тривог", callback_data: "cmd_alerts" },
+                  { text: "⚙️ Статус системи", callback_data: "cmd_status" }
+                ]
               ]
-            ]
+            }
           }
-        }
-      );
+        );
+      } catch (err) {
+        console.error("Failed to send launch message:", err);
+      }
     };
 
     bot.start(async (ctx) => {
@@ -199,7 +209,7 @@ export class EyeRadarBotManager {
         {
           parse_mode: "Markdown",
           reply_markup: {
-            inline_keyboard: [[{ text: "🗺️ Відкрити радар", web_app: { url: webAppUrl } }]]
+            inline_keyboard: [[getRadarButton("🗺️ Відкрити радар")]]
           }
         }
       );
@@ -209,7 +219,7 @@ export class EyeRadarBotManager {
       await ctx.answerCbQuery();
       await ctx.reply("🔔 Відкрийте карту для перегляду актуальних секторів тривоги.", {
         reply_markup: {
-          inline_keyboard: [[{ text: "🗺️ Відкрити радар", web_app: { url: webAppUrl } }]]
+          inline_keyboard: [[getRadarButton("🗺️ Відкрити радар")]]
         }
       });
     });
@@ -268,7 +278,11 @@ export class EyeRadarBotManager {
       await this.bot.launch();
       console.log("Telegram bot launched successfully.");
       if (env.adminId) {
-        await this.bot.telegram.sendMessage(Number(env.adminId), "🟢 Eye Radar bot онлайн.");
+        try {
+          await this.bot.telegram.sendMessage(Number(env.adminId), "🟢 Eye Radar bot онлайн.");
+        } catch (err) {
+          console.log("ℹ️ Повідомлення адміну не надіслано (необхідно спочатку натиснути /start в боті):", (err as Error).message);
+        }
       }
     } catch (err) {
       console.warn("Could not launch Telegram bot (check token or network):", err);
