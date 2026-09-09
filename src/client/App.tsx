@@ -45,6 +45,7 @@ export const App = () => {
   const [mapInstance, setMapInstance] = useState<Map | null>(null);
   const [visionMode, setVisionMode] = useState<VisionMode>("satellite");
   const [selectedTarget, setSelectedTarget] = useState<TrackPacket | null>(null);
+  const [inspectedTarget, setInspectedTarget] = useState<TrackPacket | null>(null);
   const [briefingOpen, setBriefingOpen] = useState(false);
   const [paramsOpen, setParamsOpen] = useState(false);
   const [selectedCityName, setSelectedCityName] = useState<string>("");
@@ -100,6 +101,7 @@ export const App = () => {
     });
   }, [packets, tacticalFilters]);
 
+  // Auto-Sentinel: Locks tracking reticle onto closest threat WITHOUT opening popup modal
   useEffect(() => {
     if (!tacticalFilters.autoTracking || !location || filteredPackets.length === 0) {
       return;
@@ -169,7 +171,10 @@ export const App = () => {
       <ThreatBanner
         packets={filteredPackets}
         location={location}
-        onSelectTarget={(target) => setSelectedTarget(target)}
+        onSelectTarget={(target) => {
+          setSelectedTarget(target);
+          setInspectedTarget(target);
+        }}
       />
 
       <MapView
@@ -180,7 +185,10 @@ export const App = () => {
         visionMode={visionMode}
         selectedTarget={selectedTarget}
         onMapReady={(m) => setMapInstance(m)}
-        onSelectTarget={(target) => setSelectedTarget(target)}
+        onSelectTarget={(target) => {
+          setSelectedTarget(target);
+          setInspectedTarget(target);
+        }}
       />
 
       <div className="top-controls">
@@ -204,11 +212,11 @@ export const App = () => {
         onToggleFilter={handleToggleFilter}
       />
 
-      {selectedTarget && (
+      {inspectedTarget && (
         <TargetCard
-          packet={selectedTarget}
+          packet={inspectedTarget}
           location={location}
-          onClose={() => setSelectedTarget(null)}
+          onClose={() => setInspectedTarget(null)}
         />
       )}
 

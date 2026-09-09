@@ -37,8 +37,8 @@ const SATELLITE_STYLE = {
       type: "raster" as const,
       source: "esri-satellite",
       paint: {
-        "raster-brightness-max": 0.85,
-        "raster-contrast": 0.2
+        "raster-opacity": 1.0,
+        "raster-fade-duration": 0
       }
     }
   ]
@@ -83,14 +83,14 @@ const drawUavSilhouette = (
   // Shahed delta wing
   ctx.fillStyle = color;
   ctx.beginPath();
-  ctx.moveTo(0, -size * 0.85); // nose
-  ctx.lineTo(size * 0.65, size * 0.45); // right wingtip
+  ctx.moveTo(0, -size * 0.85);
+  ctx.lineTo(size * 0.65, size * 0.45);
   ctx.lineTo(size * 0.65, size * 0.6);
   ctx.lineTo(size * 0.18, size * 0.4);
-  ctx.lineTo(0, size * 0.55); // pusher motor hub
+  ctx.lineTo(0, size * 0.55);
   ctx.lineTo(-size * 0.18, size * 0.4);
   ctx.lineTo(-size * 0.65, size * 0.6);
-  ctx.lineTo(-size * 0.65, size * 0.45); // left wingtip
+  ctx.lineTo(-size * 0.65, size * 0.45);
   ctx.closePath();
   ctx.fill();
 
@@ -121,14 +121,14 @@ const drawMissileSilhouette = (
   // Cruise missile body
   ctx.fillStyle = color;
   ctx.beginPath();
-  ctx.moveTo(0, -size * 0.95); // radome
+  ctx.moveTo(0, -size * 0.95);
   ctx.lineTo(size * 0.22, -size * 0.35);
-  ctx.lineTo(size * 0.55, -size * 0.05); // main mid-wing
+  ctx.lineTo(size * 0.55, -size * 0.05);
   ctx.lineTo(size * 0.22, 0);
   ctx.lineTo(size * 0.22, size * 0.5);
-  ctx.lineTo(size * 0.4, size * 0.65); // tail fin
+  ctx.lineTo(size * 0.4, size * 0.65);
   ctx.lineTo(size * 0.15, size * 0.65);
-  ctx.lineTo(0, size * 0.62); // exhaust
+  ctx.lineTo(0, size * 0.62);
   ctx.lineTo(-size * 0.15, size * 0.65);
   ctx.lineTo(-size * 0.4, size * 0.65);
   ctx.lineTo(-size * 0.22, size * 0.5);
@@ -157,7 +157,6 @@ const drawAircraftSilhouette = (
   ctx.translate(x, y);
   ctx.rotate((rotation * Math.PI) / 180);
 
-  // Swept wing aircraft
   ctx.fillStyle = color;
   ctx.beginPath();
   ctx.moveTo(0, -size * 0.9);
@@ -199,7 +198,6 @@ const drawHelicopterSilhouette = (
   ctx.translate(x, y);
   ctx.rotate((rotation * Math.PI) / 180);
 
-  // Fuselage
   ctx.fillStyle = color;
   ctx.beginPath();
   ctx.ellipse(0, -size * 0.1, size * 0.3, size * 0.55, 0, 0, Math.PI * 2);
@@ -208,7 +206,6 @@ const drawHelicopterSilhouette = (
   ctx.lineWidth = 1.2;
   ctx.stroke();
 
-  // Tail boom
   ctx.beginPath();
   ctx.moveTo(0, size * 0.45);
   ctx.lineTo(0, size * 0.95);
@@ -217,7 +214,6 @@ const drawHelicopterSilhouette = (
   ctx.lineWidth = 2.5;
   ctx.stroke();
 
-  // Rotating rotor blades
   const rotorAngle = (timeMs / 18) % 360;
   ctx.save();
   ctx.translate(0, -size * 0.1);
@@ -278,35 +274,23 @@ const drawLockReticle = (
   ctx.strokeStyle = "#38bdf8";
   ctx.lineWidth = 2.2;
 
-  // Top-left bracket
+  // Brackets
   ctx.beginPath();
   ctx.moveTo(-size, -size + bracket);
   ctx.lineTo(-size, -size);
   ctx.lineTo(-size + bracket, -size);
-  ctx.stroke();
-
-  // Top-right bracket
-  ctx.beginPath();
   ctx.moveTo(size - bracket, -size);
   ctx.lineTo(size, -size);
   ctx.lineTo(size, -size + bracket);
-  ctx.stroke();
-
-  // Bottom-right bracket
-  ctx.beginPath();
   ctx.moveTo(size, size - bracket);
   ctx.lineTo(size, size);
   ctx.lineTo(size - bracket, size);
-  ctx.stroke();
-
-  // Bottom-left bracket
-  ctx.beginPath();
   ctx.moveTo(-size + bracket, size);
   ctx.lineTo(-size, size);
   ctx.lineTo(-size, size - bracket);
   ctx.stroke();
 
-  // Central tracking crosshairs
+  // Crosshairs
   ctx.strokeStyle = "rgba(56, 189, 248, 0.45)";
   ctx.lineWidth = 1;
   ctx.beginPath();
@@ -347,7 +331,6 @@ const drawMissileFlame = (
   ctx.closePath();
   ctx.fill();
 
-  // Supersonic shock diamond
   const diamondY = flameLen * 0.45;
   ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
   ctx.beginPath();
@@ -376,7 +359,7 @@ export const MapView = ({
   const mapRef = useRef<Map | null>(null);
   const centeredRef = useRef(false);
 
-  // Keep state in refs so MapLibre GL and the Canvas 60 FPS animation loop NEVER tear down
+  // Stable references to eliminate component re-render teardowns
   const packetsRef = useRef(packets);
   packetsRef.current = packets;
 
@@ -397,6 +380,28 @@ export const MapView = ({
 
   const currentStyleRef = useRef<string | object | null>(null);
 
+  // Safe canvas resizer: ONLY updates dimensions if they have changed, never clears buffer on subpixel drift
+  const resizeCanvasSafe = () => {
+    const canvas = canvasRef.current;
+    const container = mapContainerRef.current;
+    if (!canvas || !container) return;
+
+    const ratio = window.devicePixelRatio || 1;
+    const w = container.clientWidth;
+    const h = container.clientHeight;
+    if (w <= 0 || h <= 0) return;
+
+    const targetW = Math.round(w * ratio);
+    const targetH = Math.round(h * ratio);
+
+    if (canvas.width !== targetW || canvas.height !== targetH) {
+      canvas.width = targetW;
+      canvas.height = targetH;
+      const ctx = canvas.getContext("2d");
+      ctx?.setTransform(ratio, 0, 0, ratio, 0, 0);
+    }
+  };
+
   // 1. Initialize MapLibre instance ONCE on mount
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) {
@@ -410,7 +415,7 @@ export const MapView = ({
     const map = new maplibregl.Map({
       container: mapContainerRef.current,
       style: initialStyle,
-      center: [31.5, 49.0], // Geographic center of Ukraine
+      center: [31.5, 49.0], // Center of Ukraine
       zoom: 6.2,
       pitch: 52, // 3D orbital perspective
       bearing: -10,
@@ -422,24 +427,6 @@ export const MapView = ({
     mapRef.current = map;
     onMapReadyRef.current?.(map);
 
-    const resizeCanvas = () => {
-      const canvas = canvasRef.current;
-      const container = mapContainerRef.current;
-      if (!canvas || !container) return;
-
-      const ratio = window.devicePixelRatio || 1;
-      const w = container.clientWidth;
-      const h = container.clientHeight;
-      if (w === 0 || h === 0) return;
-
-      canvas.width = w * ratio;
-      canvas.height = h * ratio;
-      canvas.style.width = `${w}px`;
-      canvas.style.height = `${h}px`;
-      const ctx = canvas.getContext("2d");
-      ctx?.setTransform(ratio, 0, 0, ratio, 0, 0);
-    };
-
     const handleMapClick = (e: maplibregl.MapMouseEvent) => {
       if (!onSelectTargetRef.current) return;
 
@@ -447,7 +434,7 @@ export const MapView = ({
       const clickY = e.point.y;
 
       let closest: TrackPacket | null = null;
-      let minDistance = 38; // Generous touch target for mobile thumb taps
+      let minDistance = 38;
 
       for (const packet of packetsRef.current) {
         const [, , lat, lon, heading, speed, timestamp] = packet;
@@ -467,26 +454,35 @@ export const MapView = ({
       }
     };
 
-    map.on("load", resizeCanvas);
-    map.on("resize", resizeCanvas);
+    const handleWindowResize = () => {
+      map.resize();
+      resizeCanvasSafe();
+    };
+
+    window.addEventListener("resize", handleWindowResize);
+    window.Telegram?.WebApp?.onEvent?.("viewportChanged", handleWindowResize);
+
+    map.on("load", () => {
+      resizeCanvasSafe();
+    });
+    map.on("resize", () => {
+      resizeCanvasSafe();
+    });
     map.on("click", handleMapClick);
 
-    // ResizeObserver guarantees flawless layout when Telegram viewport expands
-    const resizeObserver = new ResizeObserver(() => {
-      map.resize();
-      resizeCanvas();
-    });
-    resizeObserver.observe(mapContainerRef.current);
+    // Initial resize right away
+    resizeCanvasSafe();
 
     return () => {
-      resizeObserver.disconnect();
+      window.removeEventListener("resize", handleWindowResize);
+      window.Telegram?.WebApp?.offEvent?.("viewportChanged", handleWindowResize);
       map.off("click", handleMapClick);
       map.remove();
       mapRef.current = null;
     };
   }, []);
 
-  // 2. Switch base map style only when switching between Satellite and Tactical vector
+  // 2. Switch base map style only when toggling between Satellite and Tactical vector
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -512,7 +508,7 @@ export const MapView = ({
     centeredRef.current = true;
   }, [location]);
 
-  // 4. Ultra-smooth 60 FPS Canvas overlay render loop
+  // 4. Stable 60 FPS Canvas overlay render loop
   useEffect(() => {
     let animId: number;
     let lastAudioCheck = 0;
@@ -522,9 +518,12 @@ export const MapView = ({
       const canvas = canvasRef.current;
       const ctx = canvas?.getContext("2d");
 
-      if (map && canvas && ctx) {
-        const width = canvas.clientWidth;
-        const height = canvas.clientHeight;
+      if (map && canvas && ctx && canvas.width > 0 && canvas.height > 0) {
+        const ratio = window.devicePixelRatio || 1;
+        const width = canvas.width / ratio;
+        const height = canvas.height / ratio;
+
+        // Clean frame clear without tearing
         ctx.clearRect(0, 0, width, height);
 
         const now = Date.now();
@@ -540,7 +539,7 @@ export const MapView = ({
         const sweepOrigin = currentLoc
           ? map.project([currentLoc.lon, currentLoc.lat])
           : { x: width / 2, y: height / 2 };
-        const sweepRadius = Math.max(width, height) * 1.1;
+        const sweepRadius = Math.max(100, Math.max(width, height) * 1.1);
 
         ctx.save();
         ctx.beginPath();
@@ -631,7 +630,6 @@ export const MapView = ({
         for (const packet of currentPackets) {
           const [id, type, lat, lon, heading, speed, timestamp] = packet;
 
-          // Filter checks
           if (currentFilters) {
             if (type === "uav" && !currentFilters.uav) continue;
             if (type === "munition" && !currentFilters.munition) continue;
@@ -642,7 +640,6 @@ export const MapView = ({
           const predicted = destinationPoint({ lat, lon }, heading, speed * elapsedSeconds);
           const projected = map.project([predicted.lon, predicted.lat]);
 
-          // Culling check: skip offscreen items
           if (
             projected.x < -100 ||
             projected.x > width + 100 ||
@@ -656,12 +653,10 @@ export const MapView = ({
           const metersPx = Math.max(metersPerPixel(predicted.lat, zoom), 0.1);
           const velocityLine = Math.max(25, Math.min(180, (speed * 12) / metersPx));
 
-          // Uncertainty cone
           if (speed > 5) {
             drawUncertaintyCone(ctx, projected.x, projected.y, heading, velocityLine * 1.8);
           }
 
-          // Drone Infrared Pulsing Beacon
           if (type === "uav") {
             const pulseRadius = (Math.sin(now / 200) * 0.5 + 0.5) * 16 + 10;
             ctx.beginPath();
@@ -671,17 +666,15 @@ export const MapView = ({
             ctx.stroke();
           }
 
-          // Missile Jet Exhaust Flame
           if (type === "munition") {
             drawMissileFlame(ctx, projected.x, projected.y, heading, now);
           }
 
-          // Distinct military silhouettes
-          let color = "#7dd3fc"; // aircraft
-          if (type === "uav") color = "#ef4444"; // red
-          if (type === "munition") color = "#f97316"; // orange
-          if (type === "helicopter") color = "#10b981"; // emerald
-          if (type === "thermal") color = "#eab308"; // yellow
+          let color = "#7dd3fc";
+          if (type === "uav") color = "#ef4444";
+          if (type === "munition") color = "#f97316";
+          if (type === "helicopter") color = "#10b981";
+          if (type === "thermal") color = "#eab308";
 
           if (type === "uav") {
             drawUavSilhouette(ctx, projected.x, projected.y, scale, heading, color);
@@ -732,7 +725,7 @@ export const MapView = ({
               ctx.beginPath();
               ctx.moveTo(projected.x, projected.y);
 
-              const waypoints = [300, 600, 900]; // 5, 10, 15 minutes
+              const waypoints = [300, 600, 900];
               const wpCoords: Array<{ x: number; y: number; min: number }> = [];
 
               for (const sec of waypoints) {
