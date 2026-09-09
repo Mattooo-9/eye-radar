@@ -4,7 +4,7 @@ import type { TrackPacket } from "../hooks/useWsRadar";
 import type { TrustedLocation } from "../location/useTrustedLocation";
 import { destinationPoint, haversineMeters } from "../lib/geo";
 import { soundEngine } from "../lib/sound";
-import { getSubsolarPoint, getTerminatorCoordinates } from "../lib/solarTerminator";
+import { getSubsolarPoint, getTerminatorCoordinates, getLocalSolarStatus } from "../lib/solarTerminator";
 import type { FilterState } from "./StatusPanel";
 
 export type VisionMode = "satellite" | "nvg" | "flir" | "tactical";
@@ -610,77 +610,88 @@ export const MapView = ({
 
         // B. Planetary Solar Day/Night Terminator Mesh
         if (showDayNightRef.current !== false) {
-          const subsolar = getSubsolarPoint();
-          const terminatorPts = getTerminatorCoordinates();
-
           ctx.save();
-          const screenPoints: Array<{ x: number; y: number }> = [];
+          if (zoom <= 6.5) {
+            const subsolar = getSubsolarPoint();
+            const terminatorPts = getTerminatorCoordinates();
+            const screenPoints: Array<{ x: number; y: number }> = [];
 
-          for (const [tLon, tLat] of terminatorPts) {
-            const pt = map.project([tLon, tLat]);
-            screenPoints.push(pt);
-          }
-
-          if (screenPoints.length > 2) {
-            // Determine polar darkness hemisphere
-            const polarLat = subsolar.lat >= 0 ? -82 : 82;
-            const pRight = map.project([180, polarLat]);
-            const pLeft = map.project([-180, polarLat]);
-
-            ctx.beginPath();
-            ctx.moveTo(screenPoints[0].x, screenPoints[0].y);
-            for (let i = 1; i < screenPoints.length; i++) {
-              ctx.lineTo(screenPoints[i].x, screenPoints[i].y);
+            for (const [tLon, tLat] of terminatorPts) {
+              const pt = map.project([tLon, tLat]);
+              screenPoints.push(pt);
             }
-            ctx.lineTo(pRight.x, pRight.y);
-            ctx.lineTo(pLeft.x, pLeft.y);
-            ctx.closePath();
 
-            // Night hemisphere atmospheric shadow
-            ctx.fillStyle = "rgba(4, 9, 20, 0.44)";
-            ctx.fill();
+            if (screenPoints.length > 2) {
+              // Determine polar darkness hemisphere
+              const polarLat = subsolar.lat >= 0 ? -82 : 82;
+              const pRight = map.project([180, polarLat]);
+              const pLeft = map.project([-180, polarLat]);
 
-            // Golden twilight terminator line (Dusk / Dawn boundary)
-            ctx.beginPath();
-            ctx.moveTo(screenPoints[0].x, screenPoints[0].y);
-            for (let i = 1; i < screenPoints.length; i++) {
-              ctx.lineTo(screenPoints[i].x, screenPoints[i].y);
+              ctx.beginPath();
+              ctx.moveTo(screenPoints[0].x, screenPoints[0].y);
+              for (let i = 1; i < screenPoints.length; i++) {
+                ctx.lineTo(screenPoints[i].x, screenPoints[i].y);
+              }
+              ctx.lineTo(pRight.x, pRight.y);
+              ctx.lineTo(pLeft.x, pLeft.y);
+              ctx.closePath();
+
+              // Night hemisphere atmospheric shadow
+              ctx.fillStyle = "rgba(4, 9, 20, 0.44)";
+              ctx.fill();
+
+              // Golden twilight terminator line (Dusk / Dawn boundary)
+              ctx.beginPath();
+              ctx.moveTo(screenPoints[0].x, screenPoints[0].y);
+              for (let i = 1; i < screenPoints.length; i++) {
+                ctx.lineTo(screenPoints[i].x, screenPoints[i].y);
+              }
+              ctx.strokeStyle = "rgba(251, 191, 36, 0.55)";
+              ctx.lineWidth = 2.5;
+              ctx.stroke();
+
+              // Soft outer twilight glow
+              ctx.strokeStyle = "rgba(245, 158, 11, 0.2)";
+              ctx.lineWidth = 8;
+              ctx.stroke();
             }
-            ctx.strokeStyle = "rgba(251, 191, 36, 0.55)";
-            ctx.lineWidth = 2.5;
-            ctx.stroke();
 
-            // Soft outer twilight glow
-            ctx.strokeStyle = "rgba(245, 158, 11, 0.2)";
-            ctx.lineWidth = 8;
-            ctx.stroke();
+            // Subsolar Point Indicator (☀️ Zenith)
+            const sunPt = map.project([subsolar.lon, subsolar.lat]);
+            if (sunPt.x >= -60 && sunPt.x <= width + 60 && sunPt.y >= -60 && sunPt.y <= height + 60) {
+              ctx.beginPath();
+              ctx.arc(sunPt.x, sunPt.y, 7, 0, Math.PI * 2);
+              ctx.fillStyle = "#fef08a";
+              ctx.fill();
+              ctx.strokeStyle = "rgba(250, 204, 21, 0.5)";
+              ctx.lineWidth = 5;
+              ctx.stroke();
+              drawTextWithOutline(ctx, "☀️ ЗЕНІТ СОНЦЯ", sunPt.x + 12, sunPt.y + 4, "#fef08a", "rgba(0,0,0,0.8)", "10px monospace");
+            }
+
+            // Anti-solar Point Indicator (🌙 Midnight)
+            const antiLon = ((((subsolar.lon + 180) + 180) % 360) + 360) % 360 - 180;
+            const antiLat = -subsolar.lat;
+            const moonPt = map.project([antiLon, antiLat]);
+            if (moonPt.x >= -60 && moonPt.x <= width + 60 && moonPt.y >= -60 && moonPt.y <= height + 60) {
+              ctx.beginPath();
+              ctx.arc(moonPt.x, moonPt.y, 6, 0, Math.PI * 2);
+              ctx.fillStyle = "#93c5fd";
+              ctx.fill();
+              drawTextWithOutline(ctx, "🌙 ОПІВНІЧ", moonPt.x + 12, moonPt.y + 4, "#93c5fd", "rgba(0,0,0,0.8)", "10px monospace");
+            }
+          } else {
+            // Local tactical scale: smooth ambient day/night tint based on local solar elevation
+            const center = map.getCenter();
+            const localSun = getLocalSolarStatus(center.lat, center.lng);
+            if (localSun.phase === "night") {
+              ctx.fillStyle = "rgba(4, 9, 24, 0.35)";
+              ctx.fillRect(0, 0, width, height);
+            } else if (localSun.phase === "twilight") {
+              ctx.fillStyle = "rgba(245, 158, 11, 0.12)";
+              ctx.fillRect(0, 0, width, height);
+            }
           }
-
-          // Subsolar Point Indicator (☀️ Zenith)
-          const sunPt = map.project([subsolar.lon, subsolar.lat]);
-          if (sunPt.x >= -60 && sunPt.x <= width + 60 && sunPt.y >= -60 && sunPt.y <= height + 60) {
-            ctx.beginPath();
-            ctx.arc(sunPt.x, sunPt.y, 7, 0, Math.PI * 2);
-            ctx.fillStyle = "#fef08a";
-            ctx.fill();
-            ctx.strokeStyle = "rgba(250, 204, 21, 0.5)";
-            ctx.lineWidth = 5;
-            ctx.stroke();
-            drawTextWithOutline(ctx, "☀️ ЗЕНІТ СОНЦЯ", sunPt.x + 12, sunPt.y + 4, "#fef08a", "rgba(0,0,0,0.8)", "10px monospace");
-          }
-
-          // Anti-solar Point Indicator (🌙 Midnight)
-          const antiLon = ((((subsolar.lon + 180) + 180) % 360) + 360) % 360 - 180;
-          const antiLat = -subsolar.lat;
-          const moonPt = map.project([antiLon, antiLat]);
-          if (moonPt.x >= -60 && moonPt.x <= width + 60 && moonPt.y >= -60 && moonPt.y <= height + 60) {
-            ctx.beginPath();
-            ctx.arc(moonPt.x, moonPt.y, 6, 0, Math.PI * 2);
-            ctx.fillStyle = "#93c5fd";
-            ctx.fill();
-            drawTextWithOutline(ctx, "🌙 ОПІВНІЧ", moonPt.x + 12, moonPt.y + 4, "#93c5fd", "rgba(0,0,0,0.8)", "10px monospace");
-          }
-
           ctx.restore();
         }
 
@@ -723,34 +734,46 @@ export const MapView = ({
         ctx.stroke();
         ctx.restore();
 
-        // 1. Draw Range Rings around user
+        // 1. Draw True Geodesic Perspective Range Rings around observer
         if (currentLoc) {
           const userPoint = map.project([currentLoc.lon, currentLoc.lat]);
-          const mPerPx = metersPerPixel(currentLoc.lat, zoom);
-
           const rings = [15_000, 30_000, 50_000];
+
           ctx.save();
           for (const radiusM of rings) {
-            const radiusPx = radiusM / mPerPx;
-            if (radiusPx >= 12) {
-              ctx.beginPath();
-              ctx.arc(userPoint.x, userPoint.y, radiusPx, 0, Math.PI * 2);
-              ctx.strokeStyle = "rgba(59, 130, 246, 0.28)";
-              ctx.lineWidth = 1;
-              ctx.setLineDash([5, 5]);
-              ctx.stroke();
+            let labelPt: { x: number; y: number } | null = null;
+            let firstPt: { x: number; y: number } | null = null;
 
-              if (radiusPx >= 45) {
-                drawTextWithOutline(
-                  ctx,
-                  `${radiusM / 1000} км`,
-                  userPoint.x + radiusPx + 4,
-                  userPoint.y + 3,
-                  "rgba(147, 197, 253, 0.85)",
-                  "rgba(0, 0, 0, 0.8)",
-                  "10px Inter, monospace"
-                );
+            ctx.beginPath();
+            for (let deg = 0; deg <= 360; deg += 10) {
+              const ptGeo = destinationPoint(currentLoc, deg, radiusM);
+              const ptProj = map.project([ptGeo.lon, ptGeo.lat]);
+              if (deg === 0) {
+                firstPt = ptProj;
+                ctx.moveTo(ptProj.x, ptProj.y);
+              } else {
+                ctx.lineTo(ptProj.x, ptProj.y);
               }
+              if (deg === 90) {
+                labelPt = ptProj;
+              }
+            }
+            ctx.closePath();
+            ctx.strokeStyle = "rgba(59, 130, 246, 0.38)";
+            ctx.lineWidth = 1.2;
+            ctx.setLineDash([5, 5]);
+            ctx.stroke();
+
+            if (labelPt && firstPt && Math.hypot(labelPt.x - firstPt.x, labelPt.y - firstPt.y) >= 42) {
+              drawTextWithOutline(
+                ctx,
+                `${radiusM / 1000} км`,
+                labelPt.x + 4,
+                labelPt.y + 3,
+                "rgba(147, 197, 253, 0.9)",
+                "rgba(0, 0, 0, 0.85)",
+                "10px Inter, monospace"
+              );
             }
           }
           ctx.restore();
@@ -804,9 +827,7 @@ export const MapView = ({
             continue;
           }
 
-          const scale = Math.max(22, 12 + zoom * 1.5);
-          const metersPx = Math.max(metersPerPixel(predicted.lat, zoom), 0.1);
-          const velocityLine = Math.max(25, Math.min(180, (speed * 12) / metersPx));
+          const scale = Math.min(32, Math.max(14, 10 + zoom * 1.6));
 
           // 3D Altitude perspective offset & Ground terrain projection
           const effectiveAltM =
@@ -824,6 +845,38 @@ export const MapView = ({
           const altElevationPx = Math.min(54, (effectiveAltM / 1000) * (zoom * 0.7));
           const airX = groundPoint.x;
           const airY = groundPoint.y - altElevationPx;
+
+          // Geographically synchronized forward projection vector
+          const futureSec = Math.max(15, Math.min(90, 450 / Math.max(1, zoom)));
+          const futureGeo = destinationPoint({ lat, lon }, heading, speed * (elapsedSeconds + futureSec));
+          const futureProj = map.project([futureGeo.lon, futureGeo.lat]);
+          const futureAir = { x: futureProj.x, y: futureProj.y - altElevationPx };
+
+          // Screen heading strictly matching the projected vector on camera
+          const vDx = futureAir.x - airX;
+          const vDy = futureAir.y - airY;
+          const vDist = Math.hypot(vDx, vDy);
+          const screenHeadingDeg = vDist > 0.5 ? (Math.atan2(vDx, -vDy) * 180) / Math.PI : heading;
+
+          // Scale Level-of-Detail (LOD)
+          const isSelected = Boolean(currentSelected && currentSelected[0] === id);
+          const isHighThreat = type === "uav" || type === "munition";
+          const isLowZoom = zoom < 5.0;
+
+          let color = "#7dd3fc";
+          if (type === "uav") color = "#ef4444";
+          if (type === "munition") color = "#f97316";
+          if (type === "helicopter") color = "#10b981";
+          if (type === "thermal") color = "#eab308";
+
+          if (isLowZoom && !isSelected && !isHighThreat) {
+            // Orbital blip: crisp tactical radar dot
+            ctx.beginPath();
+            ctx.arc(airX, airY, 3, 0, Math.PI * 2);
+            ctx.fillStyle = color;
+            ctx.fill();
+            continue;
+          }
 
           // Draw ground footprint shadow & vertical altitude stem connecting terrain to airborne craft
           if (altElevationPx > 4) {
@@ -848,7 +901,7 @@ export const MapView = ({
           }
 
           if (speed > 5) {
-            drawUncertaintyCone(ctx, airX, airY, heading, velocityLine * 1.8);
+            drawUncertaintyCone(ctx, airX, airY, screenHeadingDeg, Math.min(100, Math.max(20, vDist * 1.2)));
           }
 
           if (type === "uav") {
@@ -861,52 +914,49 @@ export const MapView = ({
           }
 
           if (type === "munition") {
-            drawMissileFlame(ctx, airX, airY, heading, now);
+            drawMissileFlame(ctx, airX, airY, screenHeadingDeg, now);
           }
-
-          let color = "#7dd3fc";
-          if (type === "uav") color = "#ef4444";
-          if (type === "munition") color = "#f97316";
-          if (type === "helicopter") color = "#10b981";
-          if (type === "thermal") color = "#eab308";
 
           if (type === "uav") {
-            drawUavSilhouette(ctx, airX, airY, scale, heading, color);
+            drawUavSilhouette(ctx, airX, airY, scale, screenHeadingDeg, color);
           } else if (type === "munition") {
-            drawMissileSilhouette(ctx, airX, airY, scale, heading, color);
+            drawMissileSilhouette(ctx, airX, airY, scale, screenHeadingDeg, color);
           } else if (type === "helicopter") {
-            drawHelicopterSilhouette(ctx, airX, airY, scale, heading, color, now);
+            drawHelicopterSilhouette(ctx, airX, airY, scale, screenHeadingDeg, color, now);
           } else {
-            drawAircraftSilhouette(ctx, airX, airY, scale, heading, color);
+            drawAircraftSilhouette(ctx, airX, airY, scale, screenHeadingDeg, color);
           }
 
-          // Velocity vector
-          ctx.save();
-          ctx.strokeStyle = color;
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.moveTo(airX, airY);
-          ctx.lineTo(
-            airX + Math.sin((heading * Math.PI) / 180) * velocityLine,
-            airY - Math.cos((heading * Math.PI) / 180) * velocityLine
-          );
-          ctx.stroke();
-          ctx.restore();
+          // Geographically synchronized velocity vector
+          if (speed > 5 && vDist > 2) {
+            ctx.save();
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(airX, airY);
+            ctx.lineTo(futureAir.x, futureAir.y);
+            ctx.stroke();
+            ctx.restore();
+          }
 
-          // Target Tag & Telemetry with high-contrast outlines
-          const displayId = id.startsWith("adsb-") ? `FLIGHT ${id.slice(5).toUpperCase()}` : id.toUpperCase();
-          const speedText = `${Math.round(speed * 3.6)} км/год`;
-          const altLabel = effectiveAltM >= 1000 ? `${(effectiveAltM / 1000).toFixed(1)} км` : `${Math.round(effectiveAltM)} м`;
-          drawTextWithOutline(ctx, displayId, airX + 14, airY - 8, "#f8fafc");
-          drawTextWithOutline(
-            ctx,
-            `${speedText} • H:${altLabel}`,
-            airX + 14,
-            airY + 6,
-            "rgba(226, 232, 240, 0.85)",
-            "rgba(0, 0, 0, 0.85)",
-            "10px monospace"
-          );
+          // Target Tag & Telemetry with high-contrast outlines (shown when zoom >= 5.5 or target is selected/threat)
+          if (zoom >= 5.5 || isSelected || isHighThreat) {
+            const displayId = id.startsWith("adsb-") ? `FLIGHT ${id.slice(5).toUpperCase()}` : id.toUpperCase();
+            const speedText = `${Math.round(speed * 3.6)} км/год`;
+            const altLabel = effectiveAltM >= 1000 ? `${(effectiveAltM / 1000).toFixed(1)} км` : `${Math.round(effectiveAltM)} м`;
+            drawTextWithOutline(ctx, displayId, airX + 14, airY - 8, "#f8fafc");
+            if (zoom >= 7.0 || isSelected) {
+              drawTextWithOutline(
+                ctx,
+                `${speedText} • H:${altLabel}`,
+                airX + 14,
+                airY + 6,
+                "rgba(226, 232, 240, 0.85)",
+                "rgba(0, 0, 0, 0.85)",
+                "10px monospace"
+              );
+            }
+          }
 
           // Selected target Lock Reticle & 15-minute Intercept Vector
           if (currentSelected && currentSelected[0] === id) {
