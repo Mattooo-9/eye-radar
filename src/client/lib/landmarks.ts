@@ -1,4 +1,4 @@
-﻿import { haversineMeters, bearingDegrees } from "./geo";
+import { haversineMeters, bearingDegrees } from "./geo";
 
 interface Landmark {
   name: string;
@@ -37,6 +37,35 @@ const LANDMARKS: Landmark[] = [
   { name: "Конотоп", lat: 51.242, lon: 33.2037, region: "Сумська обл." },
   { name: "Старокостянтинів", lat: 49.7562, lon: 27.2212, region: "Хмельницька обл." },
   { name: "Яворів", lat: 49.937, lon: 23.394, region: "Львівська обл." },
+
+  // District Centers & Strategic Nodes
+  { name: "Бориспіль", lat: 50.3524, lon: 30.9576, region: "Київська обл." },
+  { name: "Бровари", lat: 50.5114, lon: 30.7902, region: "Київська обл." },
+  { name: "Васильків", lat: 50.1772, lon: 30.3168, region: "Київська обл." },
+  { name: "Ірпінь / Буча", lat: 50.5186, lon: 30.2396, region: "Київська обл." },
+  { name: "Фастів", lat: 50.0784, lon: 29.9171, region: "Київська обл." },
+  { name: "Обухів", lat: 50.1264, lon: 30.6276, region: "Київська обл." },
+  { name: "Прилуки", lat: 50.5904, lon: 32.3872, region: "Чернігівська обл." },
+  { name: "Ніжин", lat: 51.0485, lon: 31.8845, region: "Чернігівська обл." },
+  { name: "Миргород", lat: 49.9658, lon: 33.6121, region: "Полтавська обл." },
+  { name: "Лубни", lat: 50.0153, lon: 32.9996, region: "Полтавська обл." },
+  { name: "Шостка", lat: 51.8642, lon: 33.4862, region: "Сумська обл." },
+  { name: "Охтирка", lat: 50.3101, lon: 34.8988, region: "Сумська обл." },
+  { name: "Олександрія", lat: 48.6711, lon: 33.1166, region: "Кіровоградська обл." },
+  { name: "Сміла", lat: 49.2319, lon: 31.8706, region: "Черкаська обл." },
+  { name: "Бердичів", lat: 49.8928, lon: 28.5833, region: "Житомирська обл." },
+  { name: "Коростень", lat: 50.9501, lon: 28.6477, region: "Житомирська обл." },
+  { name: "Звягель (Новоград)", lat: 50.5878, lon: 27.6253, region: "Житомирська обл." },
+  { name: "Шепетівка", lat: 50.1833, lon: 27.0667, region: "Хмельницька обл." },
+  { name: "Дубно", lat: 50.4187, lon: 25.7347, region: "Рівненська обл." },
+  { name: "Стрий", lat: 49.2558, lon: 23.8512, region: "Львівська обл." },
+  { name: "Дрогобич", lat: 49.3541, lon: 23.5055, region: "Львівська обл." },
+  { name: "Вознесенськ", lat: 47.5647, lon: 31.3328, region: "Миколаївська обл." },
+  { name: "Первомайськ", lat: 48.0442, lon: 30.8506, region: "Миколаївська обл." },
+  { name: "Южноукраїнськ", lat: 47.8219, lon: 31.1764, region: "Миколаївська обл." },
+  { name: "Чорноморськ", lat: 46.2997, lon: 30.6558, region: "Одеська обл." },
+  { name: "Павлоград", lat: 48.5298, lon: 35.8711, region: "Дніпропетровська обл." },
+  { name: "Нікополь", lat: 47.5675, lon: 34.3967, region: "Дніпропетровська обл." },
 
   // Border & Maritime References
   { name: "Жешув / Пшемисль", lat: 50.041, lon: 22.003, region: "Польща (прикордоння)" },
@@ -85,4 +114,42 @@ export const findNearestLandmark = (lat: number, lon: number): string => {
   const dir = getCompassDirectionUk(bearing);
 
   return `~${distKm} км на ${dir} від м. ${closest.name} (${closest.region ?? ""})`.trim();
+};
+
+export const predictDestinationLandmark = (
+  lat: number,
+  lon: number,
+  heading: number,
+  speedMps: number
+): { destinationName: string; etaMinutes: number; distanceKm: number } | null => {
+  if (speedMps < 5) return null;
+
+  let bestLandmark: Landmark | null = null;
+  let minDiff = 32;
+  let bestDistM = Infinity;
+
+  for (const lm of LANDMARKS) {
+    const d = haversineMeters({ lat, lon }, { lat: lm.lat, lon: lm.lon });
+    if (d < 5000 || d > 350000) continue;
+
+    const b = bearingDegrees({ lat, lon }, { lat: lm.lat, lon: lm.lon });
+    const diff = Math.min(Math.abs(heading - b), 360 - Math.abs(heading - b));
+
+    if (diff < minDiff) {
+      minDiff = diff;
+      bestLandmark = lm;
+      bestDistM = d;
+    }
+  }
+
+  if (!bestLandmark) return null;
+
+  const etaMinutes = Math.round(bestDistM / speedMps / 60);
+  const distanceKm = Math.round(bestDistM / 1000);
+
+  return {
+    destinationName: bestLandmark.name,
+    etaMinutes,
+    distanceKm
+  };
 };

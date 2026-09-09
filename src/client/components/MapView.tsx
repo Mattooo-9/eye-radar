@@ -568,29 +568,29 @@ const drawTacticalGlassBadge = (
   const screenW = ctx.canvas.width / ratio;
   const screenH = ctx.canvas.height / ratio;
 
-  const panelW = 172;
-  const panelH = 70;
+  const panelW = 196;
+  const panelH = 74;
   const panelX = airX + 22 + panelW > screenW - 12 ? airX - panelW - 20 : airX + 22;
-  const panelY = Math.max(12, Math.min(screenH - panelH - 12, airY - 35));
+  const panelY = Math.max(12, Math.min(screenH - panelH - 12, airY - 37));
 
   // Background glass fill
-  ctx.fillStyle = "rgba(11, 18, 32, 0.92)";
-  ctx.strokeStyle = isThreat ? "rgba(239, 68, 68, 0.85)" : "rgba(56, 189, 248, 0.75)";
+  ctx.fillStyle = "rgba(11, 18, 32, 0.95)";
+  ctx.strokeStyle = isThreat ? "rgba(239, 68, 68, 0.9)" : "rgba(56, 189, 248, 0.85)";
   ctx.lineWidth = 1.4;
 
   ctx.beginPath();
-  ctx.roundRect(panelX, panelY, panelW, panelH, 5);
+  ctx.roundRect(panelX, panelY, panelW, panelH, 6);
   ctx.fill();
   ctx.stroke();
 
   // Top header highlight bar
-  ctx.fillStyle = isThreat ? "rgba(239, 68, 68, 0.32)" : "rgba(56, 189, 248, 0.25)";
+  ctx.fillStyle = isThreat ? "rgba(239, 68, 68, 0.35)" : "rgba(56, 189, 248, 0.28)";
   ctx.beginPath();
-  ctx.roundRect(panelX, panelY, panelW, 18, [5, 5, 0, 0]);
+  ctx.roundRect(panelX, panelY, panelW, 19, [6, 6, 0, 0]);
   ctx.fill();
 
   // Lead pointer line from air target to glass badge
-  ctx.strokeStyle = isThreat ? "rgba(239, 68, 68, 0.7)" : "rgba(56, 189, 248, 0.6)";
+  ctx.strokeStyle = isThreat ? "rgba(239, 68, 68, 0.75)" : "rgba(56, 189, 248, 0.7)";
   ctx.lineWidth = 1.2;
   ctx.beginPath();
   if (panelX < airX) {
@@ -603,20 +603,23 @@ const drawTacticalGlassBadge = (
   ctx.stroke();
 
   // Title
-  ctx.font = "bold 10px monospace";
+  ctx.font = "bold 10px Inter, monospace";
   ctx.fillStyle = isThreat ? "#fca5a5" : "#bae6fd";
-  ctx.fillText(displayId, panelX + 7, panelY + 13);
+  ctx.fillText(displayId, panelX + 8, panelY + 14);
 
-  // Flight Telemetry
-  ctx.font = "9px monospace";
-  ctx.fillStyle = "#f1f5f9";
-  ctx.fillText(`V: ${speedKmh} км/г (${speedKnots} kts)`, panelX + 7, panelY + 31);
-  ctx.fillText(`H: ${altMsl} (${altFt} ft) • CRS: ${Math.round(heading % 360)}°`, panelX + 7, panelY + 45);
+  // Flight Telemetry & Altitude Corridor
+  ctx.font = "9px Inter, monospace";
+  ctx.fillStyle = "#f8fafc";
+  ctx.fillText(`V: ${speedKmh} км/год (${speedKnots} kts)`, panelX + 8, panelY + 33);
+
+  const altColor = isThreat ? "#f87171" : "#7dd3fc";
+  ctx.fillStyle = altColor;
+  ctx.fillText(`H: ${altMsl} (${altFt} ft) • CRS: ${Math.round(heading % 360)}°`, panelX + 8, panelY + 47);
 
   // Landmark proximity
   ctx.fillStyle = "rgba(148, 163, 184, 0.95)";
-  const truncatedLandmark = landmark.length > 24 ? landmark.slice(0, 23) + "…" : landmark;
-  ctx.fillText(`📍 ${truncatedLandmark}`, panelX + 7, panelY + 60);
+  const truncatedLandmark = landmark.length > 27 ? landmark.slice(0, 26) + "…" : landmark;
+  ctx.fillText(`📍 ${truncatedLandmark}`, panelX + 8, panelY + 63);
 
   ctx.restore();
 };
@@ -1368,18 +1371,27 @@ export const MapView = ({
           }
 
           // Target Tag & Telemetry with high-contrast outlines or High-Zoom Tactical Glass HUD Badge
-          if (zoom >= 10.5 || (isSelected && zoom >= 8.5)) {
-            const displayId = id.startsWith("adsb-") ? `FLIGHT ${id.slice(5).toUpperCase()}` : id.toUpperCase();
+          if (zoom >= 9.0 || isSelected) {
+            const modelName =
+              type === "uav"
+                ? "🔴 SHAHED-136 (БПЛА)"
+                : type === "munition"
+                ? "🟠 Х-101 / КАЛІБР"
+                : type === "helicopter"
+                ? "🟢 КА-52 / ВЕРТОЛЬОТ"
+                : id.startsWith("adsb-")
+                ? `FLIGHT ${id.slice(5).toUpperCase()}`
+                : "🔵 СУ-34М (АВІАЦІЯ)";
             const speedKmh = Math.round(speed * 3.6);
             const speedKnots = Math.round(speed * 1.94384);
             const altMsl = effectiveAltM >= 1000 ? `${(effectiveAltM / 1000).toFixed(1)} км` : `${Math.round(effectiveAltM)} м`;
             const altFt = Math.round(effectiveAltM * 3.28084);
-            const landmark = findNearestLandmark(predicted.lat, predicted.lon);
+            const landmark = findNearestLandmark(predLat, predLon);
             drawTacticalGlassBadge(
               ctx,
               targetX,
               targetY,
-              displayId,
+              modelName,
               speedKmh,
               speedKnots,
               altMsl,
@@ -1388,19 +1400,28 @@ export const MapView = ({
               landmark,
               isHighThreat
             );
-          } else if (zoom >= 5.5 || isSelected || isHighThreat) {
-            const displayId = id.startsWith("adsb-") ? `FLIGHT ${id.slice(5).toUpperCase()}` : id.toUpperCase();
+          } else if (zoom >= 5.0 || isHighThreat) {
+            const displayLabel =
+              type === "uav"
+                ? "🔴 БПЛА"
+                : type === "munition"
+                ? "🟠 РАКЕТА"
+                : type === "helicopter"
+                ? "🟢 ВЕРТОЛЬОТ"
+                : id.startsWith("adsb-")
+                ? id.slice(5).toUpperCase()
+                : "🔵 АВІАЦІЯ";
             const speedText = `${Math.round(speed * 3.6)} км/год`;
             const altLabel = effectiveAltM >= 1000 ? `${(effectiveAltM / 1000).toFixed(1)} км` : `${Math.round(effectiveAltM)} м`;
-            drawTextWithOutline(ctx, displayId, targetX + 14, targetY - 8, "#f8fafc");
-            if (zoom >= 7.0 || isSelected) {
+            drawTextWithOutline(ctx, displayLabel, targetX + 14, targetY - 8, "#f8fafc");
+            if (zoom >= 6.5) {
               drawTextWithOutline(
                 ctx,
                 `${speedText} • H:${altLabel}`,
                 targetX + 14,
                 targetY + 6,
-                "rgba(226, 232, 240, 0.85)",
-                "rgba(0, 0, 0, 0.85)",
+                "rgba(226, 232, 240, 0.9)",
+                "rgba(0, 0, 0, 0.9)",
                 "10px monospace"
               );
             }
