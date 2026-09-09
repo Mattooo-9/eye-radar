@@ -5,6 +5,8 @@ import type { TrustedLocation } from "../location/useTrustedLocation";
 import { destinationPoint, haversineMeters } from "../lib/geo";
 import { soundEngine } from "../lib/sound";
 import { getSubsolarPoint, getTerminatorCoordinates, getLocalSolarStatus } from "../lib/solarTerminator";
+import { findNearestLandmark } from "../lib/landmarks";
+import { getLiveWeatherRadarTileUrl } from "../lib/weatherRadar";
 import type { FilterState } from "./StatusPanel";
 
 export type VisionMode = "satellite" | "nvg" | "flir" | "tactical";
@@ -19,6 +21,7 @@ interface MapViewProps {
   selectedTarget?: TrackPacket | null;
   isPickingLocation?: boolean;
   showDayNight?: boolean;
+  showWeather?: boolean;
   onMapReady?: (map: Map) => void;
   onSelectTarget?: (packet: TrackPacket) => void;
   onPickLocation?: (lat: number, lon: number) => void;
@@ -38,6 +41,13 @@ const SATELLITE_STYLE = {
       type: "raster" as const,
       tiles: [
         "https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}"
+      ],
+      tileSize: 256
+    },
+    "esri-transportation": {
+      type: "raster" as const,
+      tiles: [
+        "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}"
       ],
       tileSize: 256
     },
@@ -65,6 +75,16 @@ const SATELLITE_STYLE = {
       source: "esri-hillshade",
       paint: {
         "raster-opacity": 0.28,
+        "raster-fade-duration": 0
+      }
+    },
+    {
+      id: "esri-transportation-layer",
+      type: "raster" as const,
+      source: "esri-transportation",
+      minzoom: 8,
+      paint: {
+        "raster-opacity": 0.85,
         "raster-fade-duration": 0
       }
     },
@@ -380,6 +400,168 @@ const drawMissileFlame = (
   ctx.restore();
 };
 
+const drawGroundReticle = (
+  ctx: CanvasRenderingContext2D,
+  gx: number,
+  gy: number,
+  isThreat: boolean,
+  timeMs: number
+) => {
+  ctx.save();
+  const bSize = 14;
+  const bLen = 5;
+  const pulse = Math.sin(timeMs / 180) * 0.2 + 0.8;
+  const strokeCol = isThreat
+    ? `rgba(239, 68, 68, ${pulse})`
+    : `rgba(56, 189, 248, ${pulse})`;
+
+  ctx.strokeStyle = strokeCol;
+  ctx.lineWidth = 1.6;
+
+  // 4 corner brackets pinned to ground
+  ctx.beginPath();
+  // Top-left
+  ctx.moveTo(gx - bSize, gy - bSize + bLen);
+  ctx.lineTo(gx - bSize, gy - bSize);
+  ctx.lineTo(gx - bSize + bLen, gy - bSize);
+  // Top-right
+  ctx.moveTo(gx + bSize - bLen, gy - bSize);
+  ctx.lineTo(gx + bSize, gy - bSize);
+  ctx.lineTo(gx + bSize, gy - bSize + bLen);
+  // Bottom-right
+  ctx.moveTo(gx + bSize, gy + bSize - bLen);
+  ctx.lineTo(gx + bSize, gy + bSize);
+  ctx.lineTo(gx + bSize - bLen, gy + bSize);
+  // Bottom-left
+  ctx.moveTo(gx - bSize + bLen, gy + bSize);
+  ctx.lineTo(gx - bSize, gy + bSize);
+  ctx.lineTo(gx - bSize, gy + bSize - bLen);
+  ctx.stroke();
+
+  // Fine crosshair ticks
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(gx - 4, gy);
+  ctx.lineTo(gx + 4, gy);
+  ctx.moveTo(gx, gy - 4);
+  ctx.lineTo(gx, gy + 4);
+  ctx.stroke();
+
+  // Central nadir pin
+  ctx.fillStyle = isThreat ? "#ef4444" : "#38bdf8";
+  ctx.beginPath();
+  ctx.arc(gx, gy, 2, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+};
+
+const drawTacticalGlassBadge = (
+  ctx: CanvasRenderingContext2D,
+  airX: number,
+  airY: number,
+  displayId: string,
+  speedKmh: number,
+  speedKnots: number,
+  altMsl: string,
+  altFt: number,
+  heading: number,
+  landmark: string,
+  isThreat: boolean
+) => {
+  ctx.save();
+  const panelW = 168;
+  const panelH = 70;
+  const panelX = airX + 20;
+  const panelY = airY - 35;
+
+  // Background glass fill
+  ctx.fillStyle = "rgba(11, 18, 32, 0.92)";
+  ctx.strokeStyle = isThreat ? "rgba(239, 68, 68, 0.85)" : "rgba(56, 189, 248, 0.75)";
+  ctx.lineWidth = 1.4;
+
+  ctx.beginPath();
+  ctx.roundRect(panelX, panelY, panelW, panelH, 5);
+  ctx.fill();
+  ctx.stroke();
+
+  // Top header highlight bar
+  ctx.fillStyle = isThreat ? "rgba(239, 68, 68, 0.32)" : "rgba(56, 189, 248, 0.25)";
+  ctx.beginPath();
+  ctx.roundRect(panelX, panelY, panelW, 18, [5, 5, 0, 0]);
+  ctx.fill();
+
+  // Lead pointer line from air target to glass badge
+  ctx.strokeStyle = isThreat ? "rgba(239, 68, 68, 0.7)" : "rgba(56, 189, 248, 0.6)";
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(airX + 8, airY);
+  ctx.lineTo(panelX, panelY + 12);
+  ctx.stroke();
+
+  // Title
+  ctx.font = "bold 10px monospace";
+  ctx.fillStyle = isThreat ? "#fca5a5" : "#bae6fd";
+  ctx.fillText(displayId, panelX + 7, panelY + 13);
+
+  // Flight Telemetry
+  ctx.font = "9px monospace";
+  ctx.fillStyle = "#f1f5f9";
+  ctx.fillText(`V: ${speedKmh} км/г (${speedKnots} kts)`, panelX + 7, panelY + 31);
+  ctx.fillText(`H: ${altMsl} (${altFt} ft) • CRS: ${Math.round(heading % 360)}°`, panelX + 7, panelY + 45);
+
+  // Landmark proximity
+  ctx.fillStyle = "rgba(148, 163, 184, 0.95)";
+  const truncatedLandmark = landmark.length > 24 ? landmark.slice(0, 23) + "…" : landmark;
+  ctx.fillText(`📍 ${truncatedLandmark}`, panelX + 7, panelY + 60);
+
+  ctx.restore();
+};
+
+const syncWeatherLayer = async (map: maplibregl.Map, visible: boolean) => {
+  try {
+    if (!map || !map.isStyleLoaded()) return;
+    const tileUrl = await getLiveWeatherRadarTileUrl();
+    if (!tileUrl || !map || !map.isStyleLoaded()) return;
+
+    if (!map.getSource("rainviewer-radar")) {
+      map.addSource("rainviewer-radar", {
+        type: "raster",
+        tiles: [tileUrl],
+        tileSize: 256,
+        attribution: "RainViewer"
+      });
+    }
+
+    if (!map.getLayer("rainviewer-radar-layer")) {
+      const beforeLayer = map.getLayer("esri-reference-layer") ? "esri-reference-layer" : undefined;
+      map.addLayer(
+        {
+          id: "rainviewer-radar-layer",
+          type: "raster",
+          source: "rainviewer-radar",
+          paint: {
+            "raster-opacity": 0.65,
+            "raster-fade-duration": 300
+          },
+          layout: {
+            visibility: visible ? "visible" : "none"
+          }
+        },
+        beforeLayer
+      );
+    } else {
+      map.setLayoutProperty(
+        "rainviewer-radar-layer",
+        "visibility",
+        visible ? "visible" : "none"
+      );
+    }
+  } catch {
+    // Graceful fallback if weather radar tile fails
+  }
+};
+
 export const MapView = ({
   packets,
   mapStyleUrl,
@@ -389,6 +571,7 @@ export const MapView = ({
   selectedTarget,
   isPickingLocation,
   showDayNight = true,
+  showWeather = true,
   onMapReady,
   onSelectTarget,
   onPickLocation
@@ -416,6 +599,9 @@ export const MapView = ({
 
   const showDayNightRef = useRef(showDayNight);
   showDayNightRef.current = showDayNight;
+
+  const showWeatherRef = useRef(showWeather);
+  showWeatherRef.current = showWeather;
 
   const onSelectTargetRef = useRef(onSelectTarget);
   onSelectTargetRef.current = onSelectTarget;
@@ -465,9 +651,11 @@ export const MapView = ({
       style: initialStyle,
       center: [31.5, 49.0], // Center of Ukraine
       zoom: 6.2,
+      minZoom: 1.5,
+      maxZoom: 19,
       pitch: 52, // 3D orbital perspective
       bearing: -10,
-      maxPitch: 82,
+      maxPitch: 85,
       antialias: true,
       attributionControl: false
     });
@@ -526,6 +714,7 @@ export const MapView = ({
 
     map.on("load", () => {
       resizeCanvasSafe();
+      syncWeatherLayer(map, showWeatherRef.current !== false);
     });
     map.on("resize", () => {
       resizeCanvasSafe();
@@ -555,6 +744,17 @@ export const MapView = ({
       map.setStyle(targetStyle);
     }
   }, [mapStyleUrl, visionMode]);
+
+  // 3. Live Weather Radar synchronization with RainViewer
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (map.isStyleLoaded()) {
+      syncWeatherLayer(map, showWeather !== false);
+    } else {
+      map.once("styledata", () => syncWeatherLayer(map, showWeather !== false));
+    }
+  }, [showWeather, visionMode]);
 
   // 3. Smooth flyTo user location on first GPS acquisition
   useEffect(() => {
@@ -900,6 +1100,11 @@ export const MapView = ({
             ctx.restore();
           }
 
+          // Ultra-precise ground targeting reticle pinned directly to terrain nadir
+          if (zoom >= 10.5) {
+            drawGroundReticle(ctx, groundPoint.x, groundPoint.y, isHighThreat, now);
+          }
+
           if (speed > 5) {
             drawUncertaintyCone(ctx, airX, airY, screenHeadingDeg, Math.min(100, Math.max(20, vDist * 1.2)));
           }
@@ -939,8 +1144,28 @@ export const MapView = ({
             ctx.restore();
           }
 
-          // Target Tag & Telemetry with high-contrast outlines (shown when zoom >= 5.5 or target is selected/threat)
-          if (zoom >= 5.5 || isSelected || isHighThreat) {
+          // Target Tag & Telemetry with high-contrast outlines or High-Zoom Tactical Glass HUD Badge
+          if (zoom >= 10.5 || (isSelected && zoom >= 8.5)) {
+            const displayId = id.startsWith("adsb-") ? `FLIGHT ${id.slice(5).toUpperCase()}` : id.toUpperCase();
+            const speedKmh = Math.round(speed * 3.6);
+            const speedKnots = Math.round(speed * 1.94384);
+            const altMsl = effectiveAltM >= 1000 ? `${(effectiveAltM / 1000).toFixed(1)} км` : `${Math.round(effectiveAltM)} м`;
+            const altFt = Math.round(effectiveAltM * 3.28084);
+            const landmark = findNearestLandmark(predicted.lat, predicted.lon);
+            drawTacticalGlassBadge(
+              ctx,
+              airX,
+              airY,
+              displayId,
+              speedKmh,
+              speedKnots,
+              altMsl,
+              altFt,
+              heading,
+              landmark,
+              isHighThreat
+            );
+          } else if (zoom >= 5.5 || isSelected || isHighThreat) {
             const displayId = id.startsWith("adsb-") ? `FLIGHT ${id.slice(5).toUpperCase()}` : id.toUpperCase();
             const speedText = `${Math.round(speed * 3.6)} км/год`;
             const altLabel = effectiveAltM >= 1000 ? `${(effectiveAltM / 1000).toFixed(1)} км` : `${Math.round(effectiveAltM)} м`;

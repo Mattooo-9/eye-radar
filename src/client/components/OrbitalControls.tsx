@@ -6,6 +6,8 @@ interface OrbitalControlsProps {
   visionMode: VisionMode;
   showDayNight?: boolean;
   onToggleDayNight?: () => void;
+  showWeather?: boolean;
+  onToggleWeather?: () => void;
   onCycleVision: () => void;
   onFlyToUser: () => void;
   onOpenParams: () => void;
@@ -16,6 +18,8 @@ export const OrbitalControls = ({
   visionMode,
   showDayNight = true,
   onToggleDayNight,
+  showWeather = true,
+  onToggleWeather,
   onCycleVision,
   onFlyToUser,
   onOpenParams
@@ -96,6 +100,20 @@ export const OrbitalControls = ({
           title="Динамічний цикл дня і ночі на планеті"
         >
           {showDayNight ? "☀️/🌙 Доба" : "☀️ День"}
+        </button>
+      )}
+
+      {onToggleWeather && (
+        <button
+          type="button"
+          className={`orbital-btn ${showWeather ? "active" : ""}`}
+          onClick={() => {
+            triggerHaptic();
+            onToggleWeather();
+          }}
+          title="Радар опадів та хмарності в реальному часі (RainViewer)"
+        >
+          {showWeather ? "🌦️ Погода" : "⛅ Без хмар"}
         </button>
       )}
 
