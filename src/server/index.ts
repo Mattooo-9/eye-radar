@@ -323,8 +323,8 @@ setInterval(async () => {
   const now = Date.now();
   cycleCounter += 1;
 
-  // Poll ADS-B open feed every 10 seconds
-  if (cycleCounter % 10 === 0) {
+  // Poll ADS-B open feed immediately on cycle 1, then every 10 seconds
+  if (cycleCounter === 1 || cycleCounter % 10 === 0) {
     const t0 = Date.now();
     try {
       const flights = await airplanesSource.fetchBorderFlights();
@@ -337,8 +337,8 @@ setInterval(async () => {
     }
   }
 
-  // Poll Alerts every 15 seconds
-  if (cycleCounter % 15 === 0) {
+  // Poll Alerts immediately on cycle 1, then every 15 seconds
+  if (cycleCounter === 1 || cycleCounter % 15 === 0) {
     const t0 = Date.now();
     try {
       await alertsSource.fetchAlerts();

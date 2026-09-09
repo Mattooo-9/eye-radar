@@ -11,6 +11,9 @@ interface SimEntity {
   turnRateDegPerSec: number;
   lifetimeSec: number;
   ageSec: number;
+  initialLat: number;
+  initialLon: number;
+  initialHeading: number;
 }
 
 export class AirspaceSimulator {
@@ -33,7 +36,10 @@ export class AirspaceSimulator {
         speedMs: 52, // ~187 km/h
         turnRateDegPerSec: -0.15,
         lifetimeSec: 600,
-        ageSec: 0
+        ageSec: 0,
+        initialLat: 51.15,
+        initialLon: 34.95,
+        initialHeading: 215
       },
       {
         id: "sim-shahed-02",
@@ -44,7 +50,10 @@ export class AirspaceSimulator {
         speedMs: 50,
         turnRateDegPerSec: -0.1,
         lifetimeSec: 600,
-        ageSec: 0
+        ageSec: 0,
+        initialLat: 51.08,
+        initialLon: 35.12,
+        initialHeading: 220
       },
       // Shahed flying from south towards Dnipro/Kryvyi Rih
       {
@@ -56,7 +65,10 @@ export class AirspaceSimulator {
         speedMs: 48,
         turnRateDegPerSec: 0.1,
         lifetimeSec: 500,
-        ageSec: 0
+        ageSec: 0,
+        initialLat: 47.12,
+        initialLon: 33.85,
+        initialHeading: 350
       },
       // Cruise missile simulation (fast, direct)
       {
@@ -68,7 +80,10 @@ export class AirspaceSimulator {
         speedMs: 230, // ~830 km/h
         turnRateDegPerSec: -0.05,
         lifetimeSec: 350,
-        ageSec: 0
+        ageSec: 0,
+        initialLat: 48.95,
+        initialLon: 36.80,
+        initialHeading: 260
       },
       // Civilian / patrol flight near western border
       {
@@ -80,7 +95,10 @@ export class AirspaceSimulator {
         speedMs: 160,
         turnRateDegPerSec: 0.0,
         lifetimeSec: 800,
-        ageSec: 0
+        ageSec: 0,
+        initialLat: 49.70,
+        initialLon: 23.60,
+        initialHeading: 110
       }
     ];
   }
@@ -120,15 +138,9 @@ export class AirspaceSimulator {
       // Respawn if lifetime exceeded
       if (entity.ageSec >= entity.lifetimeSec) {
         entity.ageSec = 0;
-        if (entity.id === "sim-shahed-01") {
-          entity.lat = 51.15;
-          entity.lon = 34.95;
-          entity.heading = 215;
-        } else if (entity.id === "sim-missile-101") {
-          entity.lat = 48.95;
-          entity.lon = 36.80;
-          entity.heading = 260;
-        }
+        entity.lat = entity.initialLat;
+        entity.lon = entity.initialLon;
+        entity.heading = entity.initialHeading;
       }
     }
 

@@ -8,7 +8,7 @@ interface InternalTrack {
   filter: KalmanFilter2D;
 }
 
-const STALE_AFTER_MS = 60_000;
+const STALE_AFTER_MS = 120_000;
 
 export class TrackManager {
   private readonly tracks = new Map<string, InternalTrack>();
@@ -86,13 +86,14 @@ export class TrackManager {
 
   tick(now = Date.now()): void {
     for (const [id, entry] of this.tracks.entries()) {
-      if (now - entry.state.timestamp > STALE_AFTER_MS) {
+      const lastSeen = entry.state.lastUpdated ?? entry.state.timestamp;
+      if (now - lastSeen > STALE_AFTER_MS) {
         this.tracks.delete(id);
         continue;
       }
 
       // If no measurement arrived in the last 2 seconds, extrapolate position smoothly
-      const timeSinceLastUpdate = (now - (entry.state.lastUpdated ?? entry.state.timestamp)) / 1000;
+      const timeSinceLastUpdate = (now - lastSeen) / 1000;
       if (timeSinceLastUpdate >= 2) {
         const predicted = entry.filter.predict(now);
         if (predicted) {
@@ -102,6 +103,7 @@ export class TrackManager {
           entry.state.covLon = predicted.covLon;
           entry.state.uncertaintyRadius = Math.round(predicted.uncertaintyRadiusMeters);
           entry.state.lastUpdated = now;
+          entry.state.timestamp = now;
         }
       }
     }
@@ -109,7 +111,8 @@ export class TrackManager {
 
   prune(now = Date.now()): void {
     for (const [id, track] of this.tracks.entries()) {
-      if (now - track.state.timestamp > STALE_AFTER_MS) {
+      const lastSeen = track.state.lastUpdated ?? track.state.timestamp;
+      if (now - lastSeen > STALE_AFTER_MS) {
         this.tracks.delete(id);
       }
     }
