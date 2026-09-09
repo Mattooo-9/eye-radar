@@ -16,11 +16,12 @@ export class AlertsInUaSource {
       return [...this.activeAlerts.values()];
     }
 
+    // 1. Try official API key if configured
     if (this.apiKey) {
       try {
         const response = await fetch("https://api.alerts.in.ua/v1/alerts/active.json", {
           headers: { Authorization: `Bearer ${this.apiKey}` },
-          signal: AbortSignal.timeout(6000)
+          signal: AbortSignal.timeout(4500)
         });
 
         if (response.ok) {
@@ -42,18 +43,48 @@ export class AlertsInUaSource {
           return [...this.activeAlerts.values()];
         }
       } catch {
-        // Fall back to cached or default
+        // Fall through to public feed
       }
     }
 
-    // Default monitored regions status
+    // 2. Live Public Aerial Alerts Feed (reliable, official Ukrainian sirens)
+    try {
+      const response = await fetch("https://ubilling.net.ua/aerialalerts/", {
+        headers: { "User-Agent": "EyeRadar/2.0 (Aviation Safety & Air Defense)" },
+        signal: AbortSignal.timeout(4500)
+      });
+      if (response.ok) {
+        const data = (await response.json()) as { states?: Record<string, { alertnow: boolean; changed?: string }> };
+        if (data.states) {
+          this.activeAlerts.clear();
+          for (const [regionName, info] of Object.entries(data.states)) {
+            if (info.alertnow) {
+              const id = regionName.toLowerCase();
+              this.activeAlerts.set(id, {
+                id,
+                name: regionName,
+                active: true,
+                type: regionName.includes("область") ? "oblast" : "city",
+                updatedAt: now
+              });
+            }
+          }
+          this.lastFetch = now;
+          return [...this.activeAlerts.values()];
+        }
+      }
+    } catch {
+      // Fall through to cache/defaults if offline
+    }
+
+    // 3. Fallback only if both feeds failed
     if (this.activeAlerts.size === 0) {
       const defaultRegions = [
         { id: "sumy", name: "Сумська область", active: true },
         { id: "kharkiv", name: "Харківська область", active: true },
-        { id: "dnipro", name: "Дніпропетровська область", active: false },
-        { id: "kyiv", name: "м. Київ", active: false },
-        { id: "poltava", name: "Полтавська область", active: true }
+        { id: "dnipro", name: "Дніпропетровська область", active: true },
+        { id: "zaporizhzhia", name: "Запорізька область", active: true },
+        { id: "chernihiv", name: "Чернігівська область", active: true }
       ];
 
       for (const r of defaultRegions) {

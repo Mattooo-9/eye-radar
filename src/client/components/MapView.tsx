@@ -560,10 +560,14 @@ const drawTacticalGlassBadge = (
   isThreat: boolean
 ) => {
   ctx.save();
-  const panelW = 168;
+  const ratio = window.devicePixelRatio || 1;
+  const screenW = ctx.canvas.width / ratio;
+  const screenH = ctx.canvas.height / ratio;
+
+  const panelW = 172;
   const panelH = 70;
-  const panelX = airX + 20;
-  const panelY = airY - 35;
+  const panelX = airX + 22 + panelW > screenW - 12 ? airX - panelW - 20 : airX + 22;
+  const panelY = Math.max(12, Math.min(screenH - panelH - 12, airY - 35));
 
   // Background glass fill
   ctx.fillStyle = "rgba(11, 18, 32, 0.92)";
@@ -585,8 +589,13 @@ const drawTacticalGlassBadge = (
   ctx.strokeStyle = isThreat ? "rgba(239, 68, 68, 0.7)" : "rgba(56, 189, 248, 0.6)";
   ctx.lineWidth = 1.2;
   ctx.beginPath();
-  ctx.moveTo(airX + 8, airY);
-  ctx.lineTo(panelX, panelY + 12);
+  if (panelX < airX) {
+    ctx.moveTo(airX - 8, airY);
+    ctx.lineTo(panelX + panelW, panelY + 14);
+  } else {
+    ctx.moveTo(airX + 8, airY);
+    ctx.lineTo(panelX, panelY + 14);
+  }
   ctx.stroke();
 
   // Title
@@ -1088,7 +1097,10 @@ export const MapView = ({
             continue;
           }
 
-          const scale = Math.min(32, Math.max(14, 10 + zoom * 1.6));
+          const scale =
+            zoom >= 13
+              ? Math.min(84, 20 + (zoom - 10) * 6)
+              : Math.min(36, Math.max(14, 10 + zoom * 1.8));
 
           // 3D Altitude perspective offset & Ground terrain projection
           const effectiveAltM =
