@@ -33,8 +33,16 @@ const getUserId = (): string => {
 
 export const App = () => {
   const userId = useMemo(getUserId, []);
-  const { location, trustScore, flags, needsManualConfirm, setManualLocation } =
-    useTrustedLocation();
+  const {
+    location,
+    isManual,
+    trustScore,
+    flags,
+    needsManualConfirm,
+    setManualLocation,
+    resetToGps
+  } = useTrustedLocation();
+  const [isPickingLocation, setIsPickingLocation] = useState(false);
   const { packets, connectionState, mapStyleUrl } = useWsRadar(
     userId,
     location,
@@ -170,6 +178,19 @@ export const App = () => {
     }
   };
 
+  const handlePickLocation = (lat: number, lon: number) => {
+    setManualLocation({ lat, lon });
+    setIsPickingLocation(false);
+    if (mapInstance) {
+      mapInstance.flyTo({
+        center: [lon, lat],
+        zoom: 9.0,
+        pitch: 58,
+        duration: 1200
+      });
+    }
+  };
+
   const handleFlyToUser = () => {
     if (!mapInstance || !location) return;
     mapInstance.flyTo({
@@ -213,7 +234,9 @@ export const App = () => {
         filters={filters}
         visionMode={visionMode}
         selectedTarget={selectedTarget}
+        isPickingLocation={isPickingLocation}
         onMapReady={(m) => setMapInstance(m)}
+        onPickLocation={handlePickLocation}
         onSelectTarget={(target) => {
           setSelectedTarget(target);
           setInspectedTarget(target);
@@ -221,7 +244,13 @@ export const App = () => {
       />
 
       <div className="top-controls">
-        <CitySelector onSelectCity={handleSelectCity} />
+        <CitySelector
+          onSelectCity={handleSelectCity}
+          isManual={isManual}
+          isPickingLocation={isPickingLocation}
+          onTogglePickLocation={() => setIsPickingLocation((prev) => !prev)}
+          onResetGps={resetToGps}
+        />
       </div>
 
       {activeAlerts.length > 0 && (

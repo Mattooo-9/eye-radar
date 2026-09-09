@@ -16,8 +16,10 @@ interface MapViewProps {
   satelliteMode?: boolean;
   visionMode?: VisionMode;
   selectedTarget?: TrackPacket | null;
+  isPickingLocation?: boolean;
   onMapReady?: (map: Map) => void;
   onSelectTarget?: (packet: TrackPacket) => void;
+  onPickLocation?: (lat: number, lon: number) => void;
 }
 
 const SATELLITE_STYLE = {
@@ -27,6 +29,13 @@ const SATELLITE_STYLE = {
       type: "raster" as const,
       tiles: [
         "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+      ],
+      tileSize: 256
+    },
+    "esri-hillshade": {
+      type: "raster" as const,
+      tiles: [
+        "https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}"
       ],
       tileSize: 256
     },
@@ -49,11 +58,20 @@ const SATELLITE_STYLE = {
       }
     },
     {
+      id: "esri-hillshade-layer",
+      type: "raster" as const,
+      source: "esri-hillshade",
+      paint: {
+        "raster-opacity": 0.28,
+        "raster-fade-duration": 0
+      }
+    },
+    {
       id: "esri-reference-layer",
       type: "raster" as const,
       source: "esri-reference",
       paint: {
-        "raster-opacity": 0.85,
+        "raster-opacity": 0.9,
         "raster-fade-duration": 0
       }
     }
@@ -367,8 +385,10 @@ export const MapView = ({
   filters,
   visionMode = "satellite",
   selectedTarget,
+  isPickingLocation,
   onMapReady,
-  onSelectTarget
+  onSelectTarget,
+  onPickLocation
 }: MapViewProps) => {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -388,8 +408,14 @@ export const MapView = ({
   const selectedTargetRef = useRef(selectedTarget);
   selectedTargetRef.current = selectedTarget;
 
+  const isPickingLocationRef = useRef(isPickingLocation);
+  isPickingLocationRef.current = isPickingLocation;
+
   const onSelectTargetRef = useRef(onSelectTarget);
   onSelectTargetRef.current = onSelectTarget;
+
+  const onPickLocationRef = useRef(onPickLocation);
+  onPickLocationRef.current = onPickLocation;
 
   const onMapReadyRef = useRef(onMapReady);
   onMapReadyRef.current = onMapReady;
@@ -444,21 +470,35 @@ export const MapView = ({
     onMapReadyRef.current?.(map);
 
     const handleMapClick = (e: maplibregl.MapMouseEvent) => {
+      if (isPickingLocationRef.current) {
+        onPickLocationRef.current?.(e.lngLat.lat, e.lngLat.lng);
+        window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.("medium");
+        return;
+      }
+
       if (!onSelectTargetRef.current) return;
 
       const clickX = e.point.x;
       const clickY = e.point.y;
+      const currentZoom = map.getZoom();
 
       let closest: TrackPacket | null = null;
-      let minDistance = 38;
+      let minDistance = 42;
 
       for (const packet of packetsRef.current) {
-        const [, , lat, lon, heading, speed, timestamp] = packet;
+        const [, type, lat, lon, heading, speed, timestamp, , , , altitude] = packet;
         const elapsedSeconds = Math.max(0, (Date.now() - timestamp) / 1000);
         const predicted = destinationPoint({ lat, lon }, heading, speed * elapsedSeconds);
-        const projected = map.project([predicted.lon, predicted.lat]);
+        const ground = map.project([predicted.lon, predicted.lat]);
 
-        const dist = Math.hypot(projected.x - clickX, projected.y - clickY);
+        const effAlt = altitude ?? (type === "aircraft" ? 9800 : type === "helicopter" ? 750 : 250);
+        const altElev = Math.min(54, (effAlt / 1000) * (currentZoom * 0.7));
+        const airPoint = { x: ground.x, y: ground.y - altElev };
+
+        const distAir = Math.hypot(airPoint.x - clickX, airPoint.y - clickY);
+        const distGround = Math.hypot(ground.x - clickX, ground.y - clickY);
+        const dist = Math.min(distAir, distGround);
+
         if (dist < minDistance) {
           minDistance = dist;
           closest = packet;
@@ -648,7 +688,7 @@ export const MapView = ({
 
         // 2. Draw Air Targets with exact military silhouettes & forward trajectories
         for (const packet of currentPackets) {
-          const [id, type, lat, lon, heading, speed, timestamp] = packet;
+          const [id, type, lat, lon, heading, speed, timestamp, , , , altitude] = packet;
 
           if (currentFilters) {
             if (type === "uav" && !currentFilters.uav) continue;
@@ -658,13 +698,13 @@ export const MapView = ({
 
           const elapsedSeconds = Math.max(0, (now - timestamp) / 1000);
           const predicted = destinationPoint({ lat, lon }, heading, speed * elapsedSeconds);
-          const projected = map.project([predicted.lon, predicted.lat]);
+          const groundPoint = map.project([predicted.lon, predicted.lat]);
 
           if (
-            projected.x < -100 ||
-            projected.x > width + 100 ||
-            projected.y < -100 ||
-            projected.y > height + 100
+            groundPoint.x < -100 ||
+            groundPoint.x > width + 100 ||
+            groundPoint.y < -100 ||
+            groundPoint.y > height + 100
           ) {
             continue;
           }
@@ -673,21 +713,60 @@ export const MapView = ({
           const metersPx = Math.max(metersPerPixel(predicted.lat, zoom), 0.1);
           const velocityLine = Math.max(25, Math.min(180, (speed * 12) / metersPx));
 
+          // 3D Altitude perspective offset & Ground terrain projection
+          const effectiveAltM =
+            altitude !== undefined && altitude !== null
+              ? altitude
+              : type === "aircraft"
+              ? 9800
+              : type === "helicopter"
+              ? 750
+              : type === "munition"
+              ? 450
+              : 180;
+
+          // In perspective view with pitch, altitude elevates target visually upwards on the screen
+          const altElevationPx = Math.min(54, (effectiveAltM / 1000) * (zoom * 0.7));
+          const airX = groundPoint.x;
+          const airY = groundPoint.y - altElevationPx;
+
+          // Draw ground footprint shadow & vertical altitude stem connecting terrain to airborne craft
+          if (altElevationPx > 4) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.ellipse(groundPoint.x, groundPoint.y, scale * 0.36, scale * 0.18, 0, 0, Math.PI * 2);
+            ctx.fillStyle = "rgba(0, 0, 0, 0.42)";
+            ctx.fill();
+            ctx.strokeStyle = "rgba(148, 163, 184, 0.35)";
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            // Vertical dashed altitude stem
+            ctx.beginPath();
+            ctx.setLineDash([2, 3]);
+            ctx.moveTo(groundPoint.x, groundPoint.y);
+            ctx.lineTo(airX, airY);
+            ctx.strokeStyle = "rgba(226, 232, 240, 0.35)";
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            ctx.restore();
+          }
+
           if (speed > 5) {
-            drawUncertaintyCone(ctx, projected.x, projected.y, heading, velocityLine * 1.8);
+            drawUncertaintyCone(ctx, airX, airY, heading, velocityLine * 1.8);
           }
 
           if (type === "uav") {
             const pulseRadius = (Math.sin(now / 200) * 0.5 + 0.5) * 16 + 10;
             ctx.beginPath();
-            ctx.arc(projected.x, projected.y, pulseRadius, 0, Math.PI * 2);
+            ctx.arc(airX, airY, pulseRadius, 0, Math.PI * 2);
             ctx.strokeStyle = "rgba(239, 68, 68, 0.4)";
             ctx.lineWidth = 1.5;
             ctx.stroke();
           }
 
           if (type === "munition") {
-            drawMissileFlame(ctx, projected.x, projected.y, heading, now);
+            drawMissileFlame(ctx, airX, airY, heading, now);
           }
 
           let color = "#7dd3fc";
@@ -697,13 +776,13 @@ export const MapView = ({
           if (type === "thermal") color = "#eab308";
 
           if (type === "uav") {
-            drawUavSilhouette(ctx, projected.x, projected.y, scale, heading, color);
+            drawUavSilhouette(ctx, airX, airY, scale, heading, color);
           } else if (type === "munition") {
-            drawMissileSilhouette(ctx, projected.x, projected.y, scale, heading, color);
+            drawMissileSilhouette(ctx, airX, airY, scale, heading, color);
           } else if (type === "helicopter") {
-            drawHelicopterSilhouette(ctx, projected.x, projected.y, scale, heading, color, now);
+            drawHelicopterSilhouette(ctx, airX, airY, scale, heading, color, now);
           } else {
-            drawAircraftSilhouette(ctx, projected.x, projected.y, scale, heading, color);
+            drawAircraftSilhouette(ctx, airX, airY, scale, heading, color);
           }
 
           // Velocity vector
@@ -711,10 +790,10 @@ export const MapView = ({
           ctx.strokeStyle = color;
           ctx.lineWidth = 2;
           ctx.beginPath();
-          ctx.moveTo(projected.x, projected.y);
+          ctx.moveTo(airX, airY);
           ctx.lineTo(
-            projected.x + Math.sin((heading * Math.PI) / 180) * velocityLine,
-            projected.y - Math.cos((heading * Math.PI) / 180) * velocityLine
+            airX + Math.sin((heading * Math.PI) / 180) * velocityLine,
+            airY - Math.cos((heading * Math.PI) / 180) * velocityLine
           );
           ctx.stroke();
           ctx.restore();
@@ -722,12 +801,13 @@ export const MapView = ({
           // Target Tag & Telemetry with high-contrast outlines
           const displayId = id.startsWith("adsb-") ? `FLIGHT ${id.slice(5).toUpperCase()}` : id.toUpperCase();
           const speedText = `${Math.round(speed * 3.6)} км/год`;
-          drawTextWithOutline(ctx, displayId, projected.x + 14, projected.y - 8, "#f8fafc");
+          const altLabel = effectiveAltM >= 1000 ? `${(effectiveAltM / 1000).toFixed(1)} км` : `${Math.round(effectiveAltM)} м`;
+          drawTextWithOutline(ctx, displayId, airX + 14, airY - 8, "#f8fafc");
           drawTextWithOutline(
             ctx,
-            speedText,
-            projected.x + 14,
-            projected.y + 6,
+            `${speedText} • H:${altLabel}`,
+            airX + 14,
+            airY + 6,
             "rgba(226, 232, 240, 0.85)",
             "rgba(0, 0, 0, 0.85)",
             "10px monospace"
@@ -735,7 +815,7 @@ export const MapView = ({
 
           // Selected target Lock Reticle & 15-minute Intercept Vector
           if (currentSelected && currentSelected[0] === id) {
-            drawLockReticle(ctx, projected.x, projected.y, (now / 40) % 360);
+            drawLockReticle(ctx, airX, airY, (now / 40) % 360);
 
             if (speed > 5) {
               ctx.save();
@@ -743,7 +823,7 @@ export const MapView = ({
               ctx.strokeStyle = "#38bdf8";
               ctx.lineWidth = 2;
               ctx.beginPath();
-              ctx.moveTo(projected.x, projected.y);
+              ctx.moveTo(airX, airY);
 
               const waypoints = [300, 600, 900];
               const wpCoords: Array<{ x: number; y: number; min: number }> = [];
@@ -751,8 +831,8 @@ export const MapView = ({
               for (const sec of waypoints) {
                 const wpGeo = destinationPoint({ lat, lon }, heading, speed * (elapsedSeconds + sec));
                 const wpProj = map.project([wpGeo.lon, wpGeo.lat]);
-                ctx.lineTo(wpProj.x, wpProj.y);
-                wpCoords.push({ x: wpProj.x, y: wpProj.y, min: sec / 60 });
+                ctx.lineTo(wpProj.x, wpProj.y - altElevationPx);
+                wpCoords.push({ x: wpProj.x, y: wpProj.y - altElevationPx, min: sec / 60 });
               }
               ctx.stroke();
               ctx.restore();
@@ -788,10 +868,19 @@ export const MapView = ({
   }, []);
 
   return (
-    <div className={`map-shell map-view-container vision-${visionMode}`}>
+    <div
+      className={`map-shell map-view-container vision-${visionMode} ${
+        isPickingLocation ? "is-picking-location" : ""
+      }`}
+    >
       <div ref={mapContainerRef} className="map-root" />
       <canvas ref={canvasRef} className="map-overlay" />
       <div className="space-vignette" />
+      {isPickingLocation && (
+        <div className="picking-prompt-pill">
+          🎯 Клікніть на карті для встановлення точки спостереження
+        </div>
+      )}
     </div>
   );
 };

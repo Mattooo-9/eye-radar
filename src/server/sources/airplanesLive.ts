@@ -78,10 +78,13 @@ export class AirplanesLiveSource {
 
     const obsMap = new Map<string, Observation>();
 
-    // 1. Fetch from adsb.fi across Ukrainian border corridors (West & South-Black Sea)
+    // 1. Fetch from adsb.fi across Ukrainian border corridors (West, South, North, Black Sea, Central Europe)
     const adsbFiEndpoints = [
       "https://opendata.adsb.fi/api/v2/lat/50.0/lon/24.5/dist/250", // West Corridor (Poland / Slovakia / Hungary / West UA)
-      "https://opendata.adsb.fi/api/v2/lat/46.5/lon/28.5/dist/250"  // South Corridor (Romania / Moldova / Black Sea)
+      "https://opendata.adsb.fi/api/v2/lat/46.5/lon/28.5/dist/250", // South Corridor (Romania / Moldova / Black Sea)
+      "https://opendata.adsb.fi/api/v2/lat/53.5/lon/24.0/dist/250", // North Corridor (Baltics / Poland-Belarus border)
+      "https://opendata.adsb.fi/api/v2/lat/44.5/lon/29.5/dist/250", // Black Sea Maritime Transit (Constanta / Varna approach)
+      "https://opendata.adsb.fi/api/v2/lat/48.2/lon/21.0/dist/250"  // Central Europe / Carpathian Corridor
     ];
 
     await Promise.allSettled(

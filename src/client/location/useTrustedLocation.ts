@@ -51,6 +51,9 @@ export const useTrustedLocation = () => {
     void loadCoarse();
   }, []);
 
+  const [isManual, setIsManual] = useState(false);
+  const lastGpsRef = useRef<TrustedLocation | null>(null);
+
   useEffect(() => {
     if (!("geolocation" in navigator)) {
       setNeedsManualConfirm(true);
@@ -68,28 +71,33 @@ export const useTrustedLocation = () => {
           timestamp: position.timestamp
         };
 
+        const gpsLoc: TrustedLocation = {
+          lat: sample.lat,
+          lon: sample.lon,
+          accuracy: sample.accuracy,
+          timestamp: sample.timestamp
+        };
+        lastGpsRef.current = gpsLoc;
+
         const anomaly = detectLocationAnomaly(previousRef.current, sample, coarseLocation);
         previousRef.current = sample;
 
         setTrustScore(anomaly.trustScore);
         setFlags(anomaly.flags);
 
-        if (anomaly.trustScore < 55 && coarseLocation) {
-          setLocation(coarseLocation);
-          setNeedsManualConfirm(true);
-          return;
-        }
+        if (!isManual) {
+          if (anomaly.trustScore < 55 && coarseLocation) {
+            setLocation(coarseLocation);
+            setNeedsManualConfirm(true);
+            return;
+          }
 
-        setNeedsManualConfirm(anomaly.trustScore < 55);
-        setLocation({
-          lat: sample.lat,
-          lon: sample.lon,
-          accuracy: sample.accuracy,
-          timestamp: sample.timestamp
-        });
+          setNeedsManualConfirm(anomaly.trustScore < 55);
+          setLocation(gpsLoc);
+        }
       },
       () => {
-        if (coarseLocation) {
+        if (!isManual && coarseLocation) {
           setLocation(coarseLocation);
         }
         setNeedsManualConfirm(true);
@@ -102,7 +110,7 @@ export const useTrustedLocation = () => {
     );
 
     return () => navigator.geolocation.clearWatch(watchId);
-  }, [coarseLocation]);
+  }, [coarseLocation, isManual]);
 
   const setManualLocation = useCallback((value: ManualLocationInput) => {
     const manualLocation = {
@@ -117,20 +125,32 @@ export const useTrustedLocation = () => {
       speed: 0,
       heading: null
     };
+    setIsManual(true);
     setLocation(manualLocation);
     setNeedsManualConfirm(false);
     setTrustScore(80);
     setFlags((current) => [...current.filter((flag) => flag !== "manual_override"), "manual_override"]);
   }, []);
 
+  const resetToGps = useCallback(() => {
+    setIsManual(false);
+    if (lastGpsRef.current) {
+      setLocation(lastGpsRef.current);
+      setTrustScore(95);
+      setFlags((current) => current.filter((flag) => flag !== "manual_override"));
+    }
+  }, []);
+
   return useMemo(
     () => ({
       location,
+      isManual,
       trustScore,
       flags,
       needsManualConfirm,
-      setManualLocation
+      setManualLocation,
+      resetToGps
     }),
-    [flags, location, needsManualConfirm, setManualLocation, trustScore]
+    [flags, isManual, location, needsManualConfirm, resetToGps, setManualLocation, trustScore]
   );
 };

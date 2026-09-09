@@ -1,6 +1,7 @@
 import type { TrackPacket } from "../hooks/useWsRadar";
 import type { TrustedLocation } from "../location/useTrustedLocation";
 import { bearingDegrees, haversineMeters } from "../lib/geo";
+import { findNearestLandmark } from "../lib/landmarks";
 
 interface TargetCardProps {
   packet: TrackPacket;
@@ -60,6 +61,11 @@ export const TargetCard = ({ packet, location, onClose }: TargetCardProps) => {
             <span className="target-id">{id}</span>
           </div>
           <button className="close-btn" onClick={onClose}>✕</button>
+        </div>
+
+        <div className="target-card-landmark">
+          <span className="landmark-pin">📍</span>
+          <span className="landmark-desc">{findNearestLandmark(lat, lon)}</span>
         </div>
 
         <div className="target-card-grid">

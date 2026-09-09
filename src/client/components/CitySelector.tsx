@@ -2,6 +2,10 @@ import { useState } from "react";
 
 interface CitySelectorProps {
   onSelectCity: (lat: number, lon: number, cityName: string) => void;
+  isManual?: boolean;
+  isPickingLocation?: boolean;
+  onTogglePickLocation?: () => void;
+  onResetGps?: () => void;
 }
 
 const CITIES = [
@@ -22,13 +26,41 @@ const CITIES = [
   { name: "Кременчук", lat: 49.063, lon: 33.404 }
 ];
 
-export const CitySelector = ({ onSelectCity }: CitySelectorProps) => {
+export const CitySelector = ({
+  onSelectCity,
+  isManual,
+  isPickingLocation,
+  onTogglePickLocation,
+  onResetGps
+}: CitySelectorProps) => {
   const [open, setOpen] = useState(false);
 
   return (
     <div className="city-selector-container">
-      <button className="city-btn" onClick={() => setOpen(!open)}>
-        📍 Обрати місто
+      <button
+        type="button"
+        className={`city-btn ${!isManual ? "active-gps" : ""}`}
+        onClick={onResetGps}
+        title="Автоматичний GPS спостерігача"
+      >
+        🛰️ GPS {!isManual && "●"}
+      </button>
+
+      <button
+        type="button"
+        className={`city-btn ${isPickingLocation ? "picking-active" : ""}`}
+        onClick={onTogglePickLocation}
+        title="Вказати точку спостереження на карті"
+      >
+        🎯 {isPickingLocation ? "Клікніть на карту..." : "Точка"}
+      </button>
+
+      <button
+        type="button"
+        className="city-btn"
+        onClick={() => setOpen(!open)}
+      >
+        🏙️ Міста
       </button>
 
       {open && (
