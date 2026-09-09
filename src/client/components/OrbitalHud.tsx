@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Map } from "maplibre-gl";
+import { getLocalSolarStatus } from "../lib/solarTerminator";
 
 interface OrbitalHudProps {
   map: Map | null;
@@ -10,6 +11,12 @@ interface OrbitalHudProps {
 export const OrbitalHud = ({ map, trackCount, onOpenBriefing }: OrbitalHudProps) => {
   const [coords, setCoords] = useState({ lat: 49.0, lon: 31.5 });
   const [bearing, setBearing] = useState(-10);
+  const [nowDate, setNowDate] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNowDate(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (!map) return;
@@ -27,6 +34,11 @@ export const OrbitalHud = ({ map, trackCount, onOpenBriefing }: OrbitalHudProps)
     };
   }, [map]);
 
+  const solarStatus = useMemo(
+    () => getLocalSolarStatus(coords.lat, coords.lon, nowDate),
+    [coords.lat, coords.lon, nowDate]
+  );
+
   const normBearing = ((bearing % 360) + 360) % 360;
   const getCompassDir = (b: number) => {
     if (b >= 337.5 || b < 22.5) return "N";
@@ -38,6 +50,8 @@ export const OrbitalHud = ({ map, trackCount, onOpenBriefing }: OrbitalHudProps)
     if (b >= 247.5 && b < 292.5) return "W";
     return "NW";
   };
+
+  const utcTimeStr = nowDate.toISOString().slice(11, 19) + " UTC";
 
   return (
     <div className="orbital-hud">
@@ -51,7 +65,9 @@ export const OrbitalHud = ({ map, trackCount, onOpenBriefing }: OrbitalHudProps)
         />
         <div>
           <span className="hud-label">EYE RADAR // ORBITAL DEFENSE</span>
-          <span className="hud-sub">ALT: 480 KM • INC: 51.6° • FUSION: ACTIVE</span>
+          <span className="hud-sub">
+            {utcTimeStr} • ALT: 480 KM • INC: 51.6°
+          </span>
         </div>
       </div>
       <div className="orbital-hud-center">
@@ -60,6 +76,13 @@ export const OrbitalHud = ({ map, trackCount, onOpenBriefing }: OrbitalHudProps)
         </span>
         <span className="hud-bearing">
           🧭 {normBearing}° {getCompassDir(normBearing)}
+        </span>
+        <span
+          className="hud-solar-pill"
+          title={`Висота сонця: ${solarStatus.elevationDeg.toFixed(1)}°`}
+        >
+          {solarStatus.phaseIcon} {solarStatus.phaseTitle} ({solarStatus.elevationDeg > 0 ? "+" : ""}
+          {solarStatus.elevationDeg.toFixed(0)}°)
         </span>
       </div>
       <div className="orbital-hud-right">

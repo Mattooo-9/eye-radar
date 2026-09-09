@@ -4,6 +4,8 @@ import type { VisionMode } from "./MapView";
 interface OrbitalControlsProps {
   map: Map | null;
   visionMode: VisionMode;
+  showDayNight?: boolean;
+  onToggleDayNight?: () => void;
   onCycleVision: () => void;
   onFlyToUser: () => void;
   onOpenParams: () => void;
@@ -12,6 +14,8 @@ interface OrbitalControlsProps {
 export const OrbitalControls = ({
   map,
   visionMode,
+  showDayNight = true,
+  onToggleDayNight,
   onCycleVision,
   onFlyToUser,
   onOpenParams
@@ -31,6 +35,18 @@ export const OrbitalControls = ({
     } else {
       map.easeTo({ pitch: 58, bearing: -12, duration: 1000 });
     }
+  };
+
+  const handleFlyOrbit = () => {
+    triggerHaptic();
+    if (!map) return;
+    map.flyTo({
+      center: [31.5, 30.0],
+      zoom: 2.2,
+      pitch: 42,
+      bearing: 0,
+      duration: 1600
+    });
   };
 
   const handleResetUkraine = () => {
@@ -54,17 +70,47 @@ export const OrbitalControls = ({
       case "flir":
         return "🔥 FLIR (Тепло)";
       case "tactical":
-        return "🗺️ Векторний";
+        return "🗺️ Вектор";
     }
   };
 
   return (
     <div className="orbital-controls">
-      <button className="orbital-btn" onClick={handleToggle3D} title="Перемикання 3D/2D">
-        🪐 3D / 2D
-      </button>
       <button
-        className={`orbital-btn active`}
+        type="button"
+        className="orbital-btn"
+        onClick={handleFlyOrbit}
+        title="Орбітальний огляд всієї планети"
+      >
+        🌍 Орбіта
+      </button>
+
+      {onToggleDayNight && (
+        <button
+          type="button"
+          className={`orbital-btn ${showDayNight ? "active" : ""}`}
+          onClick={() => {
+            triggerHaptic();
+            onToggleDayNight();
+          }}
+          title="Динамічний цикл дня і ночі на планеті"
+        >
+          {showDayNight ? "☀️/🌙 Доба" : "☀️ День"}
+        </button>
+      )}
+
+      <button
+        type="button"
+        className="orbital-btn"
+        onClick={handleToggle3D}
+        title="Перемикання 3D/2D"
+      >
+        🪐 3D/2D
+      </button>
+
+      <button
+        type="button"
+        className="orbital-btn active"
         onClick={() => {
           triggerHaptic();
           onCycleVision();
@@ -73,20 +119,18 @@ export const OrbitalControls = ({
       >
         {getVisionTitle()}
       </button>
+
       <button
+        type="button"
         className="orbital-btn"
-        onClick={() => {
-          triggerHaptic();
-          onOpenParams();
-        }}
-        title="Тактичні параметри та авто-режим"
+        onClick={handleResetUkraine}
+        title="Театр дій: Україна"
       >
-        ⚙️ Параметри
-      </button>
-      <button className="orbital-btn" onClick={handleResetUkraine} title="Огляд України">
         🇺🇦 Україна
       </button>
+
       <button
+        type="button"
         className="orbital-btn"
         onClick={() => {
           triggerHaptic();

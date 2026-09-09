@@ -58,6 +58,7 @@ export const App = () => {
   const [paramsOpen, setParamsOpen] = useState(false);
   const [selectedCityName, setSelectedCityName] = useState<string>("");
   const [activeAlerts, setActiveAlerts] = useState<string[]>([]);
+  const [showDayNight, setShowDayNight] = useState(true);
 
   const [tacticalFilters, setTacticalFilters] = useState<TacticalFilters>({
     autoTracking: true,
@@ -235,6 +236,7 @@ export const App = () => {
         visionMode={visionMode}
         selectedTarget={selectedTarget}
         isPickingLocation={isPickingLocation}
+        showDayNight={showDayNight}
         onMapReady={(m) => setMapInstance(m)}
         onPickLocation={handlePickLocation}
         onSelectTarget={(target) => {
@@ -264,6 +266,8 @@ export const App = () => {
       <OrbitalControls
         map={mapInstance}
         visionMode={visionMode}
+        showDayNight={showDayNight}
+        onToggleDayNight={() => setShowDayNight((prev) => !prev)}
         onCycleVision={handleCycleVision}
         onFlyToUser={handleFlyToUser}
         onOpenParams={() => setParamsOpen(true)}

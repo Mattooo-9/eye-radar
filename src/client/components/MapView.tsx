@@ -4,6 +4,7 @@ import type { TrackPacket } from "../hooks/useWsRadar";
 import type { TrustedLocation } from "../location/useTrustedLocation";
 import { destinationPoint, haversineMeters } from "../lib/geo";
 import { soundEngine } from "../lib/sound";
+import { getSubsolarPoint, getTerminatorCoordinates } from "../lib/solarTerminator";
 import type { FilterState } from "./StatusPanel";
 
 export type VisionMode = "satellite" | "nvg" | "flir" | "tactical";
@@ -17,6 +18,7 @@ interface MapViewProps {
   visionMode?: VisionMode;
   selectedTarget?: TrackPacket | null;
   isPickingLocation?: boolean;
+  showDayNight?: boolean;
   onMapReady?: (map: Map) => void;
   onSelectTarget?: (packet: TrackPacket) => void;
   onPickLocation?: (lat: number, lon: number) => void;
@@ -386,6 +388,7 @@ export const MapView = ({
   visionMode = "satellite",
   selectedTarget,
   isPickingLocation,
+  showDayNight = true,
   onMapReady,
   onSelectTarget,
   onPickLocation
@@ -410,6 +413,9 @@ export const MapView = ({
 
   const isPickingLocationRef = useRef(isPickingLocation);
   isPickingLocationRef.current = isPickingLocation;
+
+  const showDayNightRef = useRef(showDayNight);
+  showDayNightRef.current = showDayNight;
 
   const onSelectTargetRef = useRef(onSelectTarget);
   onSelectTargetRef.current = onSelectTarget;
@@ -588,6 +594,95 @@ export const MapView = ({
         const currentPackets = packetsRef.current;
         const currentFilters = filtersRef.current;
         const currentSelected = selectedTargetRef.current;
+
+        // A. Orbital Space Starfield (deep space perspective when zoomed out)
+        if (zoom <= 4.5) {
+          ctx.save();
+          for (let i = 0; i < 65; i++) {
+            const sx = (i * 149.3 + 47) % width;
+            const sy = (i * 211.7 + 83) % height;
+            const twinkle = Math.sin(now / 350 + i) * 0.45 + 0.55;
+            ctx.fillStyle = `rgba(226, 232, 240, ${twinkle * 0.55})`;
+            ctx.fillRect(sx, sy, 1.5, 1.5);
+          }
+          ctx.restore();
+        }
+
+        // B. Planetary Solar Day/Night Terminator Mesh
+        if (showDayNightRef.current !== false) {
+          const subsolar = getSubsolarPoint();
+          const terminatorPts = getTerminatorCoordinates();
+
+          ctx.save();
+          const screenPoints: Array<{ x: number; y: number }> = [];
+
+          for (const [tLon, tLat] of terminatorPts) {
+            const pt = map.project([tLon, tLat]);
+            screenPoints.push(pt);
+          }
+
+          if (screenPoints.length > 2) {
+            // Determine polar darkness hemisphere
+            const polarLat = subsolar.lat >= 0 ? -82 : 82;
+            const pRight = map.project([180, polarLat]);
+            const pLeft = map.project([-180, polarLat]);
+
+            ctx.beginPath();
+            ctx.moveTo(screenPoints[0].x, screenPoints[0].y);
+            for (let i = 1; i < screenPoints.length; i++) {
+              ctx.lineTo(screenPoints[i].x, screenPoints[i].y);
+            }
+            ctx.lineTo(pRight.x, pRight.y);
+            ctx.lineTo(pLeft.x, pLeft.y);
+            ctx.closePath();
+
+            // Night hemisphere atmospheric shadow
+            ctx.fillStyle = "rgba(4, 9, 20, 0.44)";
+            ctx.fill();
+
+            // Golden twilight terminator line (Dusk / Dawn boundary)
+            ctx.beginPath();
+            ctx.moveTo(screenPoints[0].x, screenPoints[0].y);
+            for (let i = 1; i < screenPoints.length; i++) {
+              ctx.lineTo(screenPoints[i].x, screenPoints[i].y);
+            }
+            ctx.strokeStyle = "rgba(251, 191, 36, 0.55)";
+            ctx.lineWidth = 2.5;
+            ctx.stroke();
+
+            // Soft outer twilight glow
+            ctx.strokeStyle = "rgba(245, 158, 11, 0.2)";
+            ctx.lineWidth = 8;
+            ctx.stroke();
+          }
+
+          // Subsolar Point Indicator (☀️ Zenith)
+          const sunPt = map.project([subsolar.lon, subsolar.lat]);
+          if (sunPt.x >= -60 && sunPt.x <= width + 60 && sunPt.y >= -60 && sunPt.y <= height + 60) {
+            ctx.beginPath();
+            ctx.arc(sunPt.x, sunPt.y, 7, 0, Math.PI * 2);
+            ctx.fillStyle = "#fef08a";
+            ctx.fill();
+            ctx.strokeStyle = "rgba(250, 204, 21, 0.5)";
+            ctx.lineWidth = 5;
+            ctx.stroke();
+            drawTextWithOutline(ctx, "☀️ ЗЕНІТ СОНЦЯ", sunPt.x + 12, sunPt.y + 4, "#fef08a", "rgba(0,0,0,0.8)", "10px monospace");
+          }
+
+          // Anti-solar Point Indicator (🌙 Midnight)
+          const antiLon = ((((subsolar.lon + 180) + 180) % 360) + 360) % 360 - 180;
+          const antiLat = -subsolar.lat;
+          const moonPt = map.project([antiLon, antiLat]);
+          if (moonPt.x >= -60 && moonPt.x <= width + 60 && moonPt.y >= -60 && moonPt.y <= height + 60) {
+            ctx.beginPath();
+            ctx.arc(moonPt.x, moonPt.y, 6, 0, Math.PI * 2);
+            ctx.fillStyle = "#93c5fd";
+            ctx.fill();
+            drawTextWithOutline(ctx, "🌙 ОПІВНІЧ", moonPt.x + 12, moonPt.y + 4, "#93c5fd", "rgba(0,0,0,0.8)", "10px monospace");
+          }
+
+          ctx.restore();
+        }
 
         // 0. Radar Beam Sweep Scan (continuous 360 deg sweep)
         const sweepPeriod = 5000;
