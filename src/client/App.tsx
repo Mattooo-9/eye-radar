@@ -7,9 +7,11 @@ import { MapView, type VisionMode } from "./components/MapView";
 import { OrbitalControls } from "./components/OrbitalControls";
 import { OrbitalHud } from "./components/OrbitalHud";
 import { type FilterState, StatusPanel } from "./components/StatusPanel";
+import { TacticalParamsModal, type TacticalFilters } from "./components/TacticalParamsModal";
 import { TargetCard } from "./components/TargetCard";
 import { ThreatBanner } from "./components/ThreatBanner";
 import { type TrackPacket, useWsRadar } from "./hooks/useWsRadar";
+import { haversineMeters } from "./lib/geo";
 import { soundEngine } from "./lib/sound";
 import { useTrustedLocation } from "./location/useTrustedLocation";
 
@@ -44,7 +46,18 @@ export const App = () => {
   const [visionMode, setVisionMode] = useState<VisionMode>("satellite");
   const [selectedTarget, setSelectedTarget] = useState<TrackPacket | null>(null);
   const [briefingOpen, setBriefingOpen] = useState(false);
+  const [paramsOpen, setParamsOpen] = useState(false);
   const [selectedCityName, setSelectedCityName] = useState<string>("");
+
+  const [tacticalFilters, setTacticalFilters] = useState<TacticalFilters>({
+    autoTracking: true,
+    minSpeedKmh: 0,
+    maxSpeedKmh: 2500,
+    threatOnly: false,
+    dangerRadiusKm: 35,
+    showWind: false
+  });
+
   const [filters, setFilters] = useState<FilterState>({
     uav: true,
     munition: true,
@@ -69,6 +82,49 @@ export const App = () => {
       return "satellite";
     });
   };
+
+  const filteredPackets = useMemo(() => {
+    return packets.filter((p) => {
+      const [, type, , , , speed] = p;
+      const speedKmh = speed * 3.6;
+
+      if (speedKmh < tacticalFilters.minSpeedKmh || speedKmh > tacticalFilters.maxSpeedKmh) {
+        return false;
+      }
+
+      if (tacticalFilters.threatOnly && type !== "uav" && type !== "munition") {
+        return false;
+      }
+
+      return true;
+    });
+  }, [packets, tacticalFilters]);
+
+  useEffect(() => {
+    if (!tacticalFilters.autoTracking || !location || filteredPackets.length === 0) {
+      return;
+    }
+
+    let closest: TrackPacket | null = null;
+    let minD = Infinity;
+
+    for (const p of filteredPackets) {
+      const [, type, lat, lon] = p;
+      if (type === "uav" || type === "munition") {
+        const d = haversineMeters({ lat, lon }, { lat: location.lat, lon: location.lon });
+        if (d < minD) {
+          minD = d;
+          closest = p;
+        }
+      }
+    }
+
+    if (closest && minD <= tacticalFilters.dangerRadiusKm * 1000) {
+      if (!selectedTarget || selectedTarget[0] !== closest[0]) {
+        setSelectedTarget(closest);
+      }
+    }
+  }, [filteredPackets, location, tacticalFilters, selectedTarget]);
 
   const handleSelectCity = (lat: number, lon: number, cityName: string) => {
     setSelectedCityName(cityName);
@@ -106,18 +162,18 @@ export const App = () => {
     <main className="app-shell">
       <OrbitalHud
         map={mapInstance}
-        trackCount={packets.length}
+        trackCount={filteredPackets.length}
         onOpenBriefing={() => setBriefingOpen(true)}
       />
 
       <ThreatBanner
-        packets={packets}
+        packets={filteredPackets}
         location={location}
         onSelectTarget={(target) => setSelectedTarget(target)}
       />
 
       <MapView
-        packets={packets}
+        packets={filteredPackets}
         mapStyleUrl={mapStyleUrl}
         location={location}
         filters={filters}
@@ -136,10 +192,11 @@ export const App = () => {
         visionMode={visionMode}
         onCycleVision={handleCycleVision}
         onFlyToUser={handleFlyToUser}
+        onOpenParams={() => setParamsOpen(true)}
       />
 
       <StatusPanel
-        trackCount={packets.length}
+        trackCount={filteredPackets.length}
         connectionState={connectionState}
         trustScore={trustScore}
         flags={flags}
@@ -163,6 +220,14 @@ export const App = () => {
         isOpen={briefingOpen}
         cityName={selectedCityName}
         onClose={() => setBriefingOpen(false)}
+      />
+
+      <TacticalParamsModal
+        isOpen={paramsOpen}
+        onClose={() => setParamsOpen(false)}
+        filters={tacticalFilters}
+        onChangeFilters={setTacticalFilters}
+        location={location}
       />
     </main>
   );

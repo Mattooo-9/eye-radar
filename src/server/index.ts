@@ -241,6 +241,48 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "POST" && url.pathname === "/api/drill/inject") {
+    try {
+      const raw = await readBody(req);
+      const payload = JSON.parse(raw) as {
+        type: "uav" | "munition" | "aircraft";
+        lat: number;
+        lon: number;
+        heading: number;
+        speed: number;
+        label?: string;
+      };
+
+      const obs: Observation = {
+        id: `drill-${Date.now().toString(36)}`,
+        type: payload.type || "uav",
+        lat: payload.lat,
+        lon: payload.lon,
+        heading: payload.heading,
+        speed: (payload.speed || 180) / 3.6, // km/h to m/s
+        timestamp: Date.now(),
+        source: "manual",
+        confidence: 0.99,
+        meta: { drill: true, label: payload.label || "Навчальна ціль" }
+      };
+
+      trackManager.ingest(obs);
+      hub.broadcastTracks(trackManager.toPackets());
+      json(res, 200, { ok: true, injected: obs.id });
+    } catch {
+      json(res, 400, { error: "Invalid drill payload" });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/targets") {
+    json(res, 200, {
+      count: trackManager.snapshot().length,
+      tracks: trackManager.snapshot()
+    });
+    return;
+  }
+
   if (
     (req.method === "GET" || req.method === "HEAD") &&
     (url.pathname === "/" || url.pathname.startsWith(env.webAppPath) || url.pathname.startsWith("/assets") || url.pathname === "/avatar.jpg" || url.pathname === "/favicon.ico")

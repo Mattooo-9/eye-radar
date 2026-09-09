@@ -6,13 +6,15 @@ interface OrbitalControlsProps {
   visionMode: VisionMode;
   onCycleVision: () => void;
   onFlyToUser: () => void;
+  onOpenParams: () => void;
 }
 
 export const OrbitalControls = ({
   map,
   visionMode,
   onCycleVision,
-  onFlyToUser
+  onFlyToUser,
+  onOpenParams
 }: OrbitalControlsProps) => {
   const triggerHaptic = () => {
     try {
@@ -70,6 +72,16 @@ export const OrbitalControls = ({
         title="Перемикання оптичних та сенсорних режимів"
       >
         {getVisionTitle()}
+      </button>
+      <button
+        className="orbital-btn"
+        onClick={() => {
+          triggerHaptic();
+          onOpenParams();
+        }}
+        title="Тактичні параметри та авто-режим"
+      >
+        ⚙️ Параметри
       </button>
       <button className="orbital-btn" onClick={handleResetUkraine} title="Огляд України">
         🇺🇦 Україна
