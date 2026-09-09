@@ -1,8 +1,11 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { CitySelector } from "./components/CitySelector";
 import { ManualLocationPrompt } from "./components/ManualLocationPrompt";
 import { MapView } from "./components/MapView";
 import { StatusPanel } from "./components/StatusPanel";
-import { useWsRadar } from "./hooks/useWsRadar";
+import { TargetCard } from "./components/TargetCard";
+import { ThreatBanner } from "./components/ThreatBanner";
+import { type TrackPacket, useWsRadar } from "./hooks/useWsRadar";
 import { useTrustedLocation } from "./location/useTrustedLocation";
 
 const getUserId = (): string => {
@@ -32,21 +35,54 @@ export const App = () => {
     flags
   );
 
+  const [selectedTarget, setSelectedTarget] = useState<TrackPacket | null>(null);
+
   useEffect(() => {
     window.Telegram?.WebApp?.ready();
     window.Telegram?.WebApp?.expand();
   }, []);
 
+  const handleSelectCity = (lat: number, lon: number, cityName: string) => {
+    setManualLocation({ lat, lon });
+  };
+
   return (
     <main className="app-shell">
-      <MapView packets={packets} mapStyleUrl={mapStyleUrl} location={location} />
+      <ThreatBanner
+        packets={packets}
+        location={location}
+        onSelectTarget={(target) => setSelectedTarget(target)}
+      />
+
+      <MapView
+        packets={packets}
+        mapStyleUrl={mapStyleUrl}
+        location={location}
+        onSelectTarget={(target) => setSelectedTarget(target)}
+      />
+
+      <div className="top-controls">
+        <CitySelector onSelectCity={handleSelectCity} />
+      </div>
+
       <StatusPanel
         trackCount={packets.length}
         connectionState={connectionState}
         trustScore={trustScore}
         flags={flags}
       />
-      {needsManualConfirm ? <ManualLocationPrompt onSubmit={setManualLocation} /> : null}
+
+      {selectedTarget && (
+        <TargetCard
+          packet={selectedTarget}
+          location={location}
+          onClose={() => setSelectedTarget(null)}
+        />
+      )}
+
+      {needsManualConfirm && (
+        <ManualLocationPrompt onSubmit={setManualLocation} />
+      )}
     </main>
   );
 };

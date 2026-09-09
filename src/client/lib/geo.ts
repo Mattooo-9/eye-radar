@@ -21,6 +21,20 @@ export const haversineMeters = (a: GeoPoint, b: GeoPoint): number => {
   return 2 * EARTH_RADIUS_M * Math.asin(Math.sqrt(value));
 };
 
+export const bearingDegrees = (a: GeoPoint, b: GeoPoint): number => {
+  const lat1Rad = toRadians(a.lat);
+  const lat2Rad = toRadians(b.lat);
+  const dLon = toRadians(b.lon - a.lon);
+
+  const y = Math.sin(dLon) * Math.cos(lat2Rad);
+  const x =
+    Math.cos(lat1Rad) * Math.sin(lat2Rad) -
+    Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(dLon);
+
+  const deg = toDegrees(Math.atan2(y, x));
+  return (deg + 360) % 360;
+};
+
 export const destinationPoint = (
   point: GeoPoint,
   heading: number,

@@ -37,39 +37,52 @@ const invert2 = (matrix: number[][]): number[][] => {
   ];
 };
 
+export interface FilterResult {
+  lat: number;
+  lon: number;
+  velocityLat: number;
+  velocityLon: number;
+  uncertaintyRadiusMeters: number;
+  covLat: number;
+  covLon: number;
+}
+
 export class KalmanFilter2D {
   private state?: KalmanState;
 
   constructor(
-    private readonly processNoise = 2.5,
-    private readonly measurementNoise = 18
+    private readonly processNoise = 0.0001,
+    private readonly measurementNoise = 0.005
   ) {}
 
   reset(): void {
     this.state = undefined;
   }
 
-  update(
-    timestamp: number,
-    measurementLat: number,
-    measurementLon: number
-  ): { lat: number; lon: number; velocityLat: number; velocityLon: number } {
-    if (!this.state) {
-      this.state = {
-        x: [measurementLat, measurementLon, 0, 0],
-        p: identity4().map((row) => row.map((value) => value * 100)),
-        timestamp
-      };
+  getState(): KalmanState | undefined {
+    return this.state;
+  }
 
-      return {
-        lat: measurementLat,
-        lon: measurementLon,
-        velocityLat: 0,
-        velocityLon: 0
-      };
+  private calculateUncertainty(lat: number, p: number[][]): { radius: number; covLat: number; covLon: number } {
+    const covLat = Math.max(0, p[0][0]);
+    const covLon = Math.max(0, p[1][1]);
+    const stdLatDeg = Math.sqrt(covLat);
+    const stdLonDeg = Math.sqrt(covLon);
+
+    const latMeters = stdLatDeg * 111_139;
+    const lonMeters = stdLonDeg * 111_139 * Math.cos((lat * Math.PI) / 180);
+
+    const radius = Math.max(200, Math.min(50_000, Math.sqrt(latMeters ** 2 + lonMeters ** 2)));
+
+    return { radius, covLat, covLon };
+  }
+
+  predict(timestamp: number): FilterResult | null {
+    if (!this.state) {
+      return null;
     }
 
-    const dt = Math.max((timestamp - this.state.timestamp) / 1000, 0.25);
+    const dt = Math.max((timestamp - this.state.timestamp) / 1000, 0.1);
     const f = [
       [1, 0, dt, 0],
       [0, 1, 0, dt],
@@ -78,10 +91,75 @@ export class KalmanFilter2D {
     ];
 
     const q = [
-      [this.processNoise * dt, 0, 0, 0],
-      [0, this.processNoise * dt, 0, 0],
-      [0, 0, this.processNoise, 0],
-      [0, 0, 0, this.processNoise]
+      [this.processNoise * (dt ** 3) / 3, 0, this.processNoise * (dt ** 2) / 2, 0],
+      [0, this.processNoise * (dt ** 3) / 3, 0, this.processNoise * (dt ** 2) / 2],
+      [this.processNoise * (dt ** 2) / 2, 0, this.processNoise * dt, 0],
+      [0, this.processNoise * (dt ** 2) / 2, 0, this.processNoise * dt]
+    ];
+
+    const predictedX = multiplyVector(f, this.state.x);
+    const predictedP = addMatrix(multiplyMatrix(multiplyMatrix(f, this.state.p), transpose(f)), q);
+
+    this.state = { x: predictedX, p: predictedP, timestamp };
+
+    const { radius, covLat, covLon } = this.calculateUncertainty(predictedX[0], predictedP);
+
+    return {
+      lat: predictedX[0],
+      lon: predictedX[1],
+      velocityLat: predictedX[2],
+      velocityLon: predictedX[3],
+      uncertaintyRadiusMeters: radius,
+      covLat,
+      covLon
+    };
+  }
+
+  update(
+    timestamp: number,
+    measurementLat: number,
+    measurementLon: number
+  ): FilterResult {
+    if (!this.state) {
+      const initialP = [
+        [0.001, 0, 0, 0],
+        [0, 0.001, 0, 0],
+        [0, 0, 0.01, 0],
+        [0, 0, 0, 0.01]
+      ];
+
+      this.state = {
+        x: [measurementLat, measurementLon, 0, 0],
+        p: initialP,
+        timestamp
+      };
+
+      const { radius, covLat, covLon } = this.calculateUncertainty(measurementLat, initialP);
+
+      return {
+        lat: measurementLat,
+        lon: measurementLon,
+        velocityLat: 0,
+        velocityLon: 0,
+        uncertaintyRadiusMeters: radius,
+        covLat,
+        covLon
+      };
+    }
+
+    const dt = Math.max((timestamp - this.state.timestamp) / 1000, 0.1);
+    const f = [
+      [1, 0, dt, 0],
+      [0, 1, 0, dt],
+      [0, 0, 1, 0],
+      [0, 0, 0, 1]
+    ];
+
+    const q = [
+      [this.processNoise * (dt ** 3) / 3, 0, this.processNoise * (dt ** 2) / 2, 0],
+      [0, this.processNoise * (dt ** 3) / 3, 0, this.processNoise * (dt ** 2) / 2],
+      [this.processNoise * (dt ** 2) / 2, 0, this.processNoise * dt, 0],
+      [0, this.processNoise * (dt ** 2) / 2, 0, this.processNoise * dt]
     ];
 
     const predictedX = multiplyVector(f, this.state.x);
@@ -112,11 +190,16 @@ export class KalmanFilter2D {
 
     this.state = { x: correctedX, p: correctedP, timestamp };
 
+    const { radius, covLat, covLon } = this.calculateUncertainty(correctedX[0], correctedP);
+
     return {
       lat: correctedX[0],
       lon: correctedX[1],
       velocityLat: correctedX[2],
-      velocityLon: correctedX[3]
+      velocityLon: correctedX[3],
+      uncertaintyRadiusMeters: radius,
+      covLat,
+      covLon
     };
   }
 }

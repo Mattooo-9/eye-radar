@@ -1,0 +1,32 @@
+name: Auto Push
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  autopush:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.AUTO_PUSH_TOKEN }}
+          fetch-depth: 0
+
+      - name: Configure and autopush
+        run: |
+          git config user.name "autopush-bot"
+          git config user.email "autopush@users.noreply.github.com"
+          git remote set-url origin "https://x-access-token:${{ secrets.AUTO_PUSH_TOKEN }}@github.com/Mattooo-9/eye-radar.git"
+          git add --all
+          if git diff --cached --quiet; then
+            echo "No changes to push"
+            exit 0
+          fi
+          git commit -m "chore: auto-commit [$(date -u +'%Y-%m-%d %H:%M UTC')]"
+          git push --force origin main

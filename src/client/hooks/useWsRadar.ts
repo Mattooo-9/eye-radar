@@ -8,7 +8,10 @@ export type TrackPacket = [
   lon: number,
   heading: number,
   speed: number,
-  timestamp: number
+  timestamp: number,
+  confidence?: number,
+  uncertaintyRadius?: number,
+  threatLevel?: string
 ];
 
 interface ConfigResponse {
