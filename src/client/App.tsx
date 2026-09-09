@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Map } from "maplibre-gl";
+import { AiBriefingModal } from "./components/AiBriefingModal";
 import { CitySelector } from "./components/CitySelector";
 import { ManualLocationPrompt } from "./components/ManualLocationPrompt";
 import { MapView } from "./components/MapView";
@@ -42,6 +43,8 @@ export const App = () => {
   const [mapInstance, setMapInstance] = useState<Map | null>(null);
   const [satelliteMode, setSatelliteMode] = useState(true);
   const [selectedTarget, setSelectedTarget] = useState<TrackPacket | null>(null);
+  const [briefingOpen, setBriefingOpen] = useState(false);
+  const [selectedCityName, setSelectedCityName] = useState<string>("");
   const [filters, setFilters] = useState<FilterState>({
     uav: true,
     munition: true,
@@ -55,6 +58,7 @@ export const App = () => {
   }, []);
 
   const handleSelectCity = (lat: number, lon: number, cityName: string) => {
+    setSelectedCityName(cityName);
     setManualLocation({ lat, lon });
     if (mapInstance) {
       mapInstance.flyTo({
@@ -87,7 +91,11 @@ export const App = () => {
 
   return (
     <main className="app-shell">
-      <OrbitalHud map={mapInstance} trackCount={packets.length} />
+      <OrbitalHud
+        map={mapInstance}
+        trackCount={packets.length}
+        onOpenBriefing={() => setBriefingOpen(true)}
+      />
 
       <ThreatBanner
         packets={packets}
@@ -137,6 +145,12 @@ export const App = () => {
       {needsManualConfirm && (
         <ManualLocationPrompt onSubmit={setManualLocation} />
       )}
+
+      <AiBriefingModal
+        isOpen={briefingOpen}
+        cityName={selectedCityName}
+        onClose={() => setBriefingOpen(false)}
+      />
     </main>
   );
 };

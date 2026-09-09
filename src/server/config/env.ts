@@ -34,7 +34,12 @@ export const env = {
   mapStyleUrl:
     process.env.MAP_STYLE_URL ?? "https://demotiles.maplibre.org/style.json",
   jitterRadiusKm: numberValue("JITTER_RADIUS_KM", 15),
-  trustMinScore: numberValue("TRUST_MIN_SCORE", 55)
+  trustMinScore: numberValue("TRUST_MIN_SCORE", 55),
+  upstashRedisRestUrl: process.env.UPSTASH_REDIS_REST_URL,
+  upstashRedisRestToken: process.env.UPSTASH_REDIS_REST_TOKEN,
+  openrouterApiKey: process.env.OPENROUTER_API_KEY,
+  groqApiKey: process.env.GROQ_API_KEY,
+  openaiApiKey: process.env.OPENAI_API_KEY
 };
 
 export const isProduction = env.nodeEnv === "production";

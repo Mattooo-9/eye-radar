@@ -4,9 +4,10 @@ import type { Map } from "maplibre-gl";
 interface OrbitalHudProps {
   map: Map | null;
   trackCount: number;
+  onOpenBriefing?: () => void;
 }
 
-export const OrbitalHud = ({ map, trackCount }: OrbitalHudProps) => {
+export const OrbitalHud = ({ map, trackCount, onOpenBriefing }: OrbitalHudProps) => {
   const [coords, setCoords] = useState({ lat: 49.0, lon: 31.5 });
 
   useEffect(() => {
@@ -34,9 +35,14 @@ export const OrbitalHud = ({ map, trackCount }: OrbitalHudProps) => {
         </span>
       </div>
       <div className="orbital-hud-right">
-        <span className="hud-status-badge">
-          {trackCount > 0 ? `🚨 ${trackCount} ЦІЛЕЙ У НЕБІ` : "🟢 СЕКТОР ЧИСТИЙ"}
-        </span>
+        <button
+          className="hud-status-badge"
+          onClick={onOpenBriefing}
+          title="Натисніть для тактичного AI-зведення"
+          style={{ cursor: "pointer", border: "1px solid rgba(56,189,248,0.5)" }}
+        >
+          {trackCount > 0 ? `🚨 ${trackCount} ЦІЛЕЙ (AI)` : "🟢 СЕКТОР ЧИСТИЙ (AI)"}
+        </button>
       </div>
     </div>
   );

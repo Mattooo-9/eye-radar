@@ -1,5 +1,6 @@
 import { Telegraf } from "telegraf";
 import { env } from "../config/env.js";
+import { AiBriefingService } from "../core/aiBriefing.js";
 import { StorageManager } from "../core/storage.js";
 import { ThreatEngine } from "../core/threatEngine.js";
 import type { AlertRegion, TrackState, UserAlertPreference } from "../domain/types.js";
@@ -10,8 +11,10 @@ export class EyeRadarBotManager {
   private bot: Telegraf | null = null;
   private readonly storage = new StorageManager();
   private readonly threatEngine = new ThreatEngine();
+  private readonly aiBriefing = new AiBriefingService();
   private healthTracker?: SourceHealthTracker;
   private trackCountProvider?: () => number;
+  private tracksProvider?: () => TrackState[];
 
   constructor() {
     if (!env.botToken || env.botToken === "YOUR_TELEGRAM_BOT_TOKEN") {
@@ -27,9 +30,10 @@ export class EyeRadarBotManager {
     }
   }
 
-  setHealthTracker(tracker: SourceHealthTracker, trackCountProvider: () => number): void {
+  setHealthTracker(tracker: SourceHealthTracker, trackCountProvider: () => number, tracksProvider?: () => TrackState[]): void {
     this.healthTracker = tracker;
     this.trackCountProvider = trackCountProvider;
+    this.tracksProvider = tracksProvider;
   }
 
   private setupHandlers(): void {
@@ -40,7 +44,8 @@ export class EyeRadarBotManager {
 
     bot.telegram.setMyCommands([
       { command: "start", description: "Запустити радар та налаштування" },
-      { command: "radar", description: "Відкрити інтерактивну карту" },
+      { command: "radar", description: "Відкрити інтерактивну карту (Mini App)" },
+      { command: "briefing", description: "Оперативне тактичне AI-зведення" },
       { command: "alerts", description: "Поточні повітряні тривоги" },
       { command: "setlocation", description: "Встановити місто чи координати для сповіщень" },
       { command: "radius", description: "Встановити радіус тривоги (наприклад: /radius 30)" },
@@ -79,7 +84,10 @@ export class EyeRadarBotManager {
               inline_keyboard: [
                 [getRadarButton()],
                 [
-                  { text: "🔔 Стан тривог", callback_data: "cmd_alerts" },
+                  { text: "📊 AI-Зведення", callback_data: "cmd_briefing" },
+                  { text: "🔔 Тривоги", callback_data: "cmd_alerts" }
+                ],
+                [
                   { text: "⚙️ Статус системи", callback_data: "cmd_status" }
                 ]
               ]
@@ -90,6 +98,35 @@ export class EyeRadarBotManager {
         console.error("Failed to send launch message:", err);
       }
     };
+
+    const handleBriefing = async (ctx: any) => {
+      const waitMsg = await ctx.reply("⏳ Аналіз повітряного простору та генерація AI-зведення...");
+      const pref = this.storage.getPreference(ctx.chat.id);
+      const tracks = this.tracksProvider ? this.tracksProvider() : [];
+
+      const summary = await this.aiBriefing.generateBriefing({
+        tracks,
+        userCity: pref ? `Координати ${pref.lat.toFixed(2)}, ${pref.lon.toFixed(2)} (радіус ${pref.radiusKm} км)` : undefined,
+        userCoords: pref ? { lat: pref.lat, lon: pref.lon } : undefined
+      });
+
+      try {
+        await ctx.telegram.deleteMessage(ctx.chat.id, waitMsg.message_id);
+      } catch {}
+
+      await ctx.reply(summary, {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [[getRadarButton("🛰️ Відкрити 3D Радар")]]
+        }
+      });
+    };
+
+    bot.command("briefing", handleBriefing);
+    bot.action("cmd_briefing", async (ctx) => {
+      await ctx.answerCbQuery();
+      await handleBriefing(ctx);
+    });
 
     bot.start(async (ctx) => {
       await sendLaunchMessage(ctx.chat.id);

@@ -5,6 +5,7 @@ import { extname, join, resolve } from "node:path";
 import { WebSocketServer } from "ws";
 import { createTelegramBot } from "./bot/telegramBot.js";
 import { env } from "./config/env.js";
+import { AiBriefingService } from "./core/aiBriefing.js";
 import { TrackManager } from "./core/trackManager.js";
 import type { Observation } from "./domain/types.js";
 import { parseOsintText } from "./ingest/osintParser.js";
@@ -180,6 +181,17 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && url.pathname === "/api/briefing") {
+    const ai = new AiBriefingService();
+    const city = url.searchParams.get("city") || undefined;
+    const briefing = await ai.generateBriefing({
+      tracks: trackManager.snapshot(),
+      userCity: city
+    });
+    json(res, 200, { briefing });
+    return;
+  }
+
   if (req.method === "GET" && url.pathname === "/api/location/ip") {
     const ip = getIpAddress(req);
     const resolved = await resolveIpLocation(ip);
@@ -243,7 +255,11 @@ const server = createServer(async (req, res) => {
 const wss = new WebSocketServer({ noServer: true });
 const hub = new RadarHub(wss);
 const botManager = createTelegramBot();
-botManager.setHealthTracker(healthTracker, () => trackManager.snapshot().length);
+botManager.setHealthTracker(
+  healthTracker,
+  () => trackManager.snapshot().length,
+  () => trackManager.snapshot()
+);
 
 server.on("upgrade", (req, socket, head) => {
   const url = new URL(req.url ?? "/", env.publicBaseUrl);
