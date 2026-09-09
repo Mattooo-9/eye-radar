@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import type { Map } from "maplibre-gl";
 import type { VisionMode } from "./MapView";
 
@@ -9,6 +9,8 @@ interface OrbitalControlsProps {
   onToggleDayNight?: () => void;
   showWeather?: boolean;
   onToggleWeather?: () => void;
+  showSatellites?: boolean;
+  onToggleSatellites?: () => void;
   onCycleVision: () => void;
   onFlyToUser: () => void;
   onOpenParams: () => void;
@@ -21,17 +23,53 @@ export const OrbitalControls = ({
   onToggleDayNight,
   showWeather = true,
   onToggleWeather,
+  showSatellites = true,
+  onToggleSatellites,
   onCycleVision,
   onFlyToUser,
   onOpenParams
 }: OrbitalControlsProps) => {
-  const [collapsed, setCollapsed] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const closeTimeoutRef = useRef<number | null>(null);
 
   const triggerHaptic = () => {
     try {
       window.Telegram?.WebApp?.HapticFeedback?.impactOccurred("light");
     } catch {}
   };
+
+  const handleMouseEnter = () => {
+    if (closeTimeoutRef.current) {
+      clearTimeout(closeTimeoutRef.current);
+      closeTimeoutRef.current = null;
+    }
+    setIsOpen(true);
+  };
+
+  const handleMouseLeave = () => {
+    closeTimeoutRef.current = window.setTimeout(() => {
+      setIsOpen(false);
+    }, 320);
+  };
+
+  const handleToggleClick = () => {
+    triggerHaptic();
+    setIsOpen((prev) => !prev);
+  };
+
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+      if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+    };
+  }, []);
 
   const handleToggle3D = () => {
     triggerHaptic();
@@ -61,7 +99,7 @@ export const OrbitalControls = ({
     if (!map) return;
     map.flyTo({
       center: [31.5, 49.0],
-      zoom: 6.0,
+      zoom: 6.2,
       pitch: 52,
       bearing: -10,
       duration: 1200
@@ -95,119 +133,141 @@ export const OrbitalControls = ({
   };
 
   return (
-    <div className={`orbital-controls-dock ${collapsed ? "is-collapsed" : ""}`}>
+    <div
+      ref={containerRef}
+      className={`orbital-controls-dock ${isOpen ? "is-open" : ""}`}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
       <button
         type="button"
-        className="dock-toggle-btn"
-        onClick={() => {
-          triggerHaptic();
-          setCollapsed((prev) => !prev);
-        }}
-        title={collapsed ? "Розгорнути панель управління" : "Згорнути панель управління"}
+        className="dock-toggle-pill"
+        onClick={handleToggleClick}
+        title="Опції та управління мапою (наведіть або натисніть)"
+        aria-expanded={isOpen}
       >
-        {collapsed ? "🛡️" : "✕"}
+        <span className="dock-pill-icon">{getVisionIcon()}</span>
+        <span className="dock-pill-text">Опції</span>
+        <span className="dock-pill-chevron">{isOpen ? "▲" : "▼"}</span>
       </button>
 
-      {!collapsed && (
-        <div className="dock-buttons">
-          <button
-            type="button"
-            className="orbital-btn"
-            onClick={handleFlyOrbit}
-            title="Орбітальний огляд всієї планети"
-          >
-            <span className="btn-icon">🌍</span>
-            <span className="btn-label">Орбіта</span>
-          </button>
-
-          <button
-            type="button"
-            className="orbital-btn"
-            onClick={handleResetUkraine}
-            title="Фокус на театрі дій: Україна"
-          >
-            <span className="btn-icon">🇺🇦</span>
-            <span className="btn-label">Україна</span>
-          </button>
-
-          <button
-            type="button"
-            className="orbital-btn"
-            onClick={handleToggle3D}
-            title="Перемикання 3D/2D проєкції"
-          >
-            <span className="btn-icon">🪐</span>
-            <span className="btn-label">3D/2D</span>
-          </button>
-
-          <button
-            type="button"
-            className="orbital-btn active"
-            onClick={() => {
-              triggerHaptic();
-              onCycleVision();
-            }}
-            title="Режим оптики (Супутник / ПНБ / FLIR / Вектор)"
-          >
-            <span className="btn-icon">{getVisionIcon()}</span>
-            <span className="btn-label">{getVisionLabel()}</span>
-          </button>
-
-          {onToggleDayNight && (
+      {isOpen && (
+        <div className="dock-dropdown-menu">
+          <div className="dropdown-grid">
             <button
               type="button"
-              className={`orbital-btn ${showDayNight ? "active" : ""}`}
-              onClick={() => {
-                triggerHaptic();
-                onToggleDayNight();
-              }}
-              title="Динамічне сонячне освітлення планети"
+              className="dropdown-item"
+              onClick={handleFlyOrbit}
+              title="Орбітальний огляд всієї планети"
             >
-              <span className="btn-icon">{showDayNight ? "☀️" : "🌙"}</span>
-              <span className="btn-label">{showDayNight ? "Сонце" : "Ніч"}</span>
+              <span className="item-icon">🌍</span>
+              <span className="item-label">Орбіта</span>
             </button>
-          )}
 
-          {onToggleWeather && (
             <button
               type="button"
-              className={`orbital-btn ${showWeather ? "active" : ""}`}
+              className="dropdown-item"
+              onClick={handleResetUkraine}
+              title="Фокус на театрі дій: Україна"
+            >
+              <span className="item-icon">🇺🇦</span>
+              <span className="item-label">Україна</span>
+            </button>
+
+            <button
+              type="button"
+              className="dropdown-item"
+              onClick={handleToggle3D}
+              title="Перемикання 3D/2D проєкції"
+            >
+              <span className="item-icon">🪐</span>
+              <span className="item-label">3D/2D</span>
+            </button>
+
+            <button
+              type="button"
+              className="dropdown-item active-vision"
               onClick={() => {
                 triggerHaptic();
-                onToggleWeather();
+                onCycleVision();
               }}
-              title="Радар опадів RainViewer у реальному часі"
+              title="Режим оптики: Супутник / ПНБ / FLIR / Вектор"
             >
-              <span className="btn-icon">🌦️</span>
-              <span className="btn-label">Хмари</span>
+              <span className="item-icon">{getVisionIcon()}</span>
+              <span className="item-label">{getVisionLabel()}</span>
             </button>
-          )}
 
-          <button
-            type="button"
-            className="orbital-btn"
-            onClick={() => {
-              triggerHaptic();
-              onFlyToUser();
-            }}
-            title="Моя геопозиція (GPS)"
-          >
-            <span className="btn-icon">📍</span>
-            <span className="btn-label">До мене</span>
-          </button>
+            {onToggleDayNight && (
+              <button
+                type="button"
+                className={`dropdown-item ${showDayNight ? "active-toggle" : ""}`}
+                onClick={() => {
+                  triggerHaptic();
+                  onToggleDayNight();
+                }}
+                title="Динамічне сонячне освітлення (День / Ніч)"
+              >
+                <span className="item-icon">{showDayNight ? "☀️" : "🌙"}</span>
+                <span className="item-label">{showDayNight ? "Сонце" : "Ніч"}</span>
+              </button>
+            )}
 
-          <button
-            type="button"
-            className="orbital-btn"
-            onClick={() => {
-              triggerHaptic();
-              onOpenParams();
-            }}
-            title="Тактичні параметри та фільтри"
-          >
-            <span className="btn-icon">⚙️</span>
-            <span className="btn-label">Фільтри</span>
-          </button>
+            {onToggleWeather && (
+              <button
+                type="button"
+                className={`dropdown-item ${showWeather ? "active-toggle" : ""}`}
+                onClick={() => {
+                  triggerHaptic();
+                  onToggleWeather();
+                }}
+                title="Радар опадів та хмарності RainViewer"
+              >
+                <span className="item-icon">🌦️</span>
+                <span className="item-label">{showWeather ? "Хмари ON" : "Хмари OFF"}</span>
+              </button>
+            )}
+
+            {onToggleSatellites && (
+              <button
+                type="button"
+                className={`dropdown-item ${showSatellites ? "active-toggle" : ""}`}
+                onClick={() => {
+                  triggerHaptic();
+                  onToggleSatellites();
+                }}
+                title="Орбітальні розвідсупутники РФ (Персона, Барс, Лотос, Кондор-ФКА)"
+              >
+                <span className="item-icon">🛰️</span>
+                <span className="item-label">Супутники</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              className="dropdown-item"
+              onClick={() => {
+                triggerHaptic();
+                onFlyToUser();
+              }}
+              title="Моя геопозиція (GPS)"
+            >
+              <span className="item-icon">📍</span>
+              <span className="item-label">До мене</span>
+            </button>
+
+            <button
+              type="button"
+              className="dropdown-item highlight-btn"
+              onClick={() => {
+                triggerHaptic();
+                onOpenParams();
+              }}
+              title="Тактичні параметри та фільтри швидкості/висоти"
+            >
+              <span className="item-icon">⚙️</span>
+              <span className="item-label">Фільтри</span>
+            </button>
+          </div>
         </div>
       )}
     </div>

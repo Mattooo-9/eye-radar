@@ -7,6 +7,7 @@ import { soundEngine } from "../lib/sound";
 import { getSubsolarPoint, getTerminatorCoordinates, getLocalSolarStatus } from "../lib/solarTerminator";
 import { findNearestLandmark } from "../lib/landmarks";
 import { getLiveWeatherRadarTileUrl } from "../lib/weatherRadar";
+import { calculateSatellitePositions, type SatelliteTrack } from "../lib/satelliteRecon";
 import type { FilterState } from "./StatusPanel";
 
 export type VisionMode = "satellite" | "nvg" | "flir" | "tactical";
@@ -22,6 +23,7 @@ interface MapViewProps {
   isPickingLocation?: boolean;
   showDayNight?: boolean;
   showWeather?: boolean;
+  showSatellites?: boolean;
   followingTargetId?: string | null;
   onStopFollow?: () => void;
   onMapReady?: (map: Map) => void;
@@ -642,7 +644,7 @@ const syncWeatherLayer = async (map: maplibregl.Map, visible: boolean) => {
           type: "raster",
           source: "rainviewer-radar",
           paint: {
-            "raster-opacity": 0.65,
+            "raster-opacity": 0.45,
             "raster-fade-duration": 300
           },
           layout: {
@@ -663,6 +665,101 @@ const syncWeatherLayer = async (map: maplibregl.Map, visible: boolean) => {
   }
 };
 
+const drawSatelliteReconLayer = (
+  ctx: CanvasRenderingContext2D,
+  map: maplibregl.Map,
+  satellites: SatelliteTrack[],
+  now: number,
+  width: number,
+  height: number
+) => {
+  ctx.save();
+  for (const sat of satellites) {
+    const satPt = map.project([sat.lon, sat.lat]);
+
+    // Draw only if within viewing margin
+    if (satPt.x < -120 || satPt.x > width + 120 || satPt.y < -120 || satPt.y > height + 120) {
+      continue;
+    }
+
+    // 1. Orbital ground track swath
+    const swathRadiusPx = Math.min(100, (sat.swathWidthKm / 12) * Math.max(1, map.getZoom() * 0.7));
+    const pulse = Math.sin(now / 240) * 0.2 + 0.8;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(satPt.x, satPt.y, swathRadiusPx, 0, Math.PI * 2);
+    ctx.fillStyle = sat.type === "sar_radar"
+      ? `rgba(168, 85, 247, ${0.08 * pulse})`
+      : sat.type === "elint"
+      ? `rgba(234, 179, 8, ${0.08 * pulse})`
+      : `rgba(56, 189, 248, ${0.08 * pulse})`;
+    ctx.fill();
+    ctx.strokeStyle = sat.type === "sar_radar"
+      ? `rgba(168, 85, 247, ${0.45 * pulse})`
+      : sat.type === "elint"
+      ? `rgba(234, 179, 8, ${0.45 * pulse})`
+      : `rgba(56, 189, 248, ${0.45 * pulse})`;
+    ctx.lineWidth = 1.2;
+    ctx.setLineDash([3, 3]);
+    ctx.stroke();
+    ctx.restore();
+
+    // 2. Satellite craft icon
+    ctx.save();
+    ctx.translate(satPt.x, satPt.y);
+    ctx.rotate((sat.heading * Math.PI) / 180);
+
+    // Central satellite payload bus
+    ctx.fillStyle = "#f8fafc";
+    ctx.fillRect(-3.5, -5, 7, 10);
+    ctx.strokeStyle = "#38bdf8";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(-3.5, -5, 7, 10);
+
+    // Solar panels
+    ctx.fillStyle = "#0284c7";
+    ctx.fillRect(-15, -3, 11, 6);
+    ctx.fillRect(4, -3, 11, 6);
+    ctx.strokeStyle = "#93c5fd";
+    ctx.lineWidth = 0.8;
+    ctx.strokeRect(-15, -3, 11, 6);
+    ctx.strokeRect(4, -3, 11, 6);
+
+    // Sensor dish/lens indicator
+    ctx.beginPath();
+    ctx.arc(0, -6, 2, 0, Math.PI * 2);
+    ctx.fillStyle = sat.type === "sar_radar" ? "#c084fc" : "#38bdf8";
+    ctx.fill();
+    ctx.restore();
+
+    // 3. Telemetry badge
+    const typeLabel = sat.type === "sar_radar" ? "РАДАР-SAR" : sat.type === "elint" ? "РТР-ELINT" : "ОПТИКА-HD";
+    drawTextWithOutline(
+      ctx,
+      `🛰️ ${sat.name} [${typeLabel}] • ${sat.altitudeKm} км`,
+      satPt.x + 16,
+      satPt.y - 4,
+      sat.inRangeOfUkraine ? "#f43f5e" : "#38bdf8",
+      "rgba(0, 0, 0, 0.95)",
+      "9px Inter, monospace"
+    );
+
+    if (sat.inRangeOfUkraine) {
+      drawTextWithOutline(
+        ctx,
+        `⚠️ ЗОНА СКАНУВАННЯ УКРАЇНИ (${sat.swathWidthKm} км)`,
+        satPt.x + 16,
+        satPt.y + 9,
+        "#fbbf24",
+        "rgba(0, 0, 0, 0.95)",
+        "8px Inter, monospace"
+      );
+    }
+  }
+  ctx.restore();
+};
+
 export const MapView = ({
   packets,
   mapStyleUrl,
@@ -673,6 +770,7 @@ export const MapView = ({
   isPickingLocation,
   showDayNight = true,
   showWeather = true,
+  showSatellites = true,
   followingTargetId,
   onStopFollow,
   onMapReady,
@@ -711,6 +809,9 @@ export const MapView = ({
 
   const showWeatherRef = useRef(showWeather);
   showWeatherRef.current = showWeather;
+
+  const showSatellitesRef = useRef(showSatellites);
+  showSatellitesRef.current = showSatellites;
 
   const onSelectTargetRef = useRef(onSelectTarget);
   onSelectTargetRef.current = onSelectTarget;
@@ -919,101 +1020,63 @@ export const MapView = ({
           ctx.restore();
         }
 
-        // B. Planetary Solar Day/Night Terminator Mesh
+        // B. Dynamic Planetary & Local Solar Illumination (Astronomical Real-Time Synchronization)
         if (showDayNightRef.current !== false) {
+          const center = map.getCenter();
+          const localSun = getLocalSolarStatus(center.lat, center.lng);
+          const elev = localSun.elevationDeg;
+
           ctx.save();
-          if (zoom <= 6.5) {
-            const subsolar = getSubsolarPoint();
-            const terminatorPts = getTerminatorCoordinates();
-            const screenPoints: Array<{ x: number; y: number }> = [];
+          if (elev < 0) {
+            // Sun is below horizon: astronomical night / dusk transition
+            // At elev = -15 deg, full astronomical night is reached (factor = 1.0)
+            const nightFactor = Math.min(1, Math.max(0, -elev / 15));
+            const baseAlpha = 0.52 + nightFactor * 0.28; // 0.52 at dusk -> 0.80 at deep night
 
-            for (const [tLon, tLat] of terminatorPts) {
-              const pt = map.project([tLon, tLat]);
-              screenPoints.push(pt);
+            // Atmosphere midnight gradient
+            const nightGrad = ctx.createLinearGradient(0, 0, 0, height);
+            nightGrad.addColorStop(0, `rgba(2, 6, 23, ${Math.min(0.88, baseAlpha + 0.06)})`);
+            nightGrad.addColorStop(0.4, `rgba(3, 8, 26, ${baseAlpha})`);
+            nightGrad.addColorStop(1, `rgba(4, 10, 30, ${Math.max(0.42, baseAlpha - 0.05)})`);
+            ctx.fillStyle = nightGrad;
+            ctx.fillRect(0, 0, width, height);
+
+            // Twilight golden/amber glow along the horizon if dusk/dawn (-12 < elev < 0)
+            if (elev > -12) {
+              const twilightFactor = 1 - (-elev / 12);
+              const twiGrad = ctx.createLinearGradient(0, height * 0.65, 0, height);
+              twiGrad.addColorStop(0, "rgba(217, 119, 6, 0)");
+              twiGrad.addColorStop(1, `rgba(217, 119, 6, ${0.16 * twilightFactor})`);
+              ctx.fillStyle = twiGrad;
+              ctx.fillRect(0, height * 0.65, width, height * 0.35);
             }
 
-            if (screenPoints.length > 2) {
-              // Determine polar darkness hemisphere
-              const polarLat = subsolar.lat >= 0 ? -82 : 82;
-              const pRight = map.project([180, polarLat]);
-              const pLeft = map.project([-180, polarLat]);
-
-              ctx.beginPath();
-              ctx.moveTo(screenPoints[0].x, screenPoints[0].y);
-              for (let i = 1; i < screenPoints.length; i++) {
-                ctx.lineTo(screenPoints[i].x, screenPoints[i].y);
+            // High-altitude stars in space on orbital view
+            if (zoom <= 5.5) {
+              for (let i = 0; i < 50; i++) {
+                const sx = (i * 157.3 + 37) % width;
+                const sy = (i * 223.7 + 61) % (height * 0.6);
+                const twinkle = Math.sin(now / 320 + i) * 0.4 + 0.6;
+                ctx.fillStyle = `rgba(241, 245, 249, ${twinkle * 0.65})`;
+                ctx.fillRect(sx, sy, 1.5, 1.5);
               }
-              ctx.lineTo(pRight.x, pRight.y);
-              ctx.lineTo(pLeft.x, pLeft.y);
-              ctx.closePath();
-
-              // Night hemisphere atmospheric shadow
-              ctx.fillStyle = "rgba(4, 9, 20, 0.44)";
-              ctx.fill();
-
-              // Golden twilight terminator line (Dusk / Dawn boundary)
-              ctx.beginPath();
-              ctx.moveTo(screenPoints[0].x, screenPoints[0].y);
-              for (let i = 1; i < screenPoints.length; i++) {
-                ctx.lineTo(screenPoints[i].x, screenPoints[i].y);
-              }
-              ctx.strokeStyle = "rgba(251, 191, 36, 0.55)";
-              ctx.lineWidth = 2.5;
-              ctx.stroke();
-
-              // Soft outer twilight glow
-              ctx.strokeStyle = "rgba(245, 158, 11, 0.2)";
-              ctx.lineWidth = 8;
-              ctx.stroke();
             }
-
-            // Subsolar Point Indicator (☀️ Zenith)
-            const sunPt = map.project([subsolar.lon, subsolar.lat]);
-            if (sunPt.x >= -60 && sunPt.x <= width + 60 && sunPt.y >= -60 && sunPt.y <= height + 60) {
-              ctx.beginPath();
-              ctx.arc(sunPt.x, sunPt.y, 6, 0, Math.PI * 2);
-              ctx.fillStyle = "#fef08a";
-              ctx.fill();
-              ctx.strokeStyle = "rgba(250, 204, 21, 0.45)";
-              ctx.lineWidth = 4;
-              ctx.stroke();
-            }
-
-            // Anti-solar Point Indicator (🌙 Midnight)
-            const antiLon = ((((subsolar.lon + 180) + 180) % 360) + 360) % 360 - 180;
-            const antiLat = -subsolar.lat;
-            const moonPt = map.project([antiLon, antiLat]);
-            if (moonPt.x >= -60 && moonPt.x <= width + 60 && moonPt.y >= -60 && moonPt.y <= height + 60) {
-              ctx.beginPath();
-              ctx.arc(moonPt.x, moonPt.y, 5, 0, Math.PI * 2);
-              ctx.fillStyle = "#93c5fd";
-              ctx.fill();
-            }
-          } else {
-            // Local tactical scale: seamless realistic natural lighting without artificial text tags
-            const center = map.getCenter();
-            const localSun = getLocalSolarStatus(center.lat, center.lng);
-            const elev = localSun.elevationDeg;
-
-            if (elev < 0) {
-              // Twilight transition (0 to -12 deg) smoothly darkens into deep night
-              const nightFactor = Math.min(1, Math.max(0, -elev / 12));
-              if (nightFactor < 1) {
-                // Golden-dusk twilight haze
-                ctx.fillStyle = `rgba(180, 83, 9, ${0.14 * (1 - nightFactor)})`;
-                ctx.fillRect(0, 0, width, height);
-              }
-              // Dark night atmosphere (preserving city lights / highways on satellite)
-              ctx.fillStyle = `rgba(2, 6, 20, ${0.15 + nightFactor * 0.32})`;
-              ctx.fillRect(0, 0, width, height);
-            } else if (elev < 15) {
-              // Sunrise / sunset golden hour warm rim lighting
-              const goldenFactor = (15 - elev) / 15;
-              ctx.fillStyle = `rgba(245, 158, 11, ${goldenFactor * 0.10})`;
-              ctx.fillRect(0, 0, width, height);
-            }
+          } else if (elev < 14) {
+            // Golden hour warm tint
+            const goldenFactor = (14 - elev) / 14;
+            ctx.fillStyle = `rgba(245, 158, 11, ${goldenFactor * 0.12})`;
+            ctx.fillRect(0, 0, width, height);
           }
           ctx.restore();
+
+          // Physical MapLibre satellite tile brightness synchronization
+          if (map.getLayer("esri-satellite-layer")) {
+            const nightFactor = Math.min(1, Math.max(0, -elev / 15));
+            const targetBrightness = elev < 0 ? Math.max(0.38, 1.0 - nightFactor * 0.58) : 1.0;
+            try {
+              map.setPaintProperty("esri-satellite-layer", "raster-brightness-max", targetBrightness);
+            } catch {}
+          }
         }
 
         // 1. Draw True Geodesic Perspective Range Rings around observer
@@ -1124,10 +1187,15 @@ export const MapView = ({
             continue;
           }
 
+          // Geometrically proportionate scale strictly preventing map obstruction on regional views
           const scale =
-            zoom >= 13
-              ? Math.min(84, 20 + (zoom - 10) * 6)
-              : Math.min(36, Math.max(14, 10 + zoom * 1.8));
+            zoom < 7.0
+              ? 9.5
+              : zoom < 10.0
+              ? 10.0 + (zoom - 7.0) * 1.8
+              : zoom < 14.0
+              ? 16.0 + (zoom - 10.0) * 3.5
+              : Math.min(78, 30.0 + (zoom - 14.0) * 8.0);
 
           // 3D Altitude perspective offset & Ground terrain projection
           const effectiveAltM =
@@ -1179,7 +1247,49 @@ export const MapView = ({
             continue;
           }
 
-          // Draw ground footprint shadow & vertical altitude stem connecting terrain to airborne craft
+          // 1. EXACT GROUND NADIR ANCHOR PINPOINT (Ground Zero)
+          ctx.save();
+          const groundPulse = Math.sin(now / 240) * 0.3 + 0.7;
+          ctx.beginPath();
+          ctx.arc(groundPoint.x, groundPoint.y, zoom >= 10 ? 6.5 : 3.5, 0, Math.PI * 2);
+          ctx.strokeStyle = isHighThreat ? `rgba(239, 68, 68, ${groundPulse})` : `rgba(56, 189, 248, ${groundPulse})`;
+          ctx.lineWidth = 1.3;
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.arc(groundPoint.x, groundPoint.y, 2, 0, Math.PI * 2);
+          ctx.fillStyle = isHighThreat ? "#ef4444" : "#38bdf8";
+          ctx.fill();
+
+          // Ground crosshair cardinal ticks
+          const tick = zoom >= 10 ? 5 : 3;
+          ctx.beginPath();
+          ctx.moveTo(groundPoint.x - tick - 2, groundPoint.y);
+          ctx.lineTo(groundPoint.x - 2, groundPoint.y);
+          ctx.moveTo(groundPoint.x + 2, groundPoint.y);
+          ctx.lineTo(groundPoint.x + tick + 2, groundPoint.y);
+          ctx.moveTo(groundPoint.x, groundPoint.y - tick - 2);
+          ctx.lineTo(groundPoint.x, groundPoint.y - 2);
+          ctx.moveTo(groundPoint.x, groundPoint.y + 2);
+          ctx.lineTo(groundPoint.x, groundPoint.y + tick + 2);
+          ctx.stroke();
+
+          // Precise landmark name at ground point so the observer instantly sees the location!
+          if (zoom >= 6.0 || isSelected) {
+            const nearestTown = findNearestLandmark(predLat, predLon);
+            drawTextWithOutline(
+              ctx,
+              `📍 ${nearestTown}`,
+              groundPoint.x + 8,
+              groundPoint.y + 11,
+              isHighThreat ? "#fca5a5" : "#7dd3fc",
+              "rgba(0, 0, 0, 0.95)",
+              "10px Inter, monospace"
+            );
+          }
+          ctx.restore();
+
+          // Draw vertical altitude stem connecting terrain to airborne craft
           if (altElevationPx > 4) {
             ctx.save();
             ctx.beginPath();
@@ -1206,16 +1316,17 @@ export const MapView = ({
             drawGroundReticle(ctx, groundPoint.x, groundPoint.y, isHighThreat, now);
           }
 
-          if (speed > 5) {
-            drawUncertaintyCone(ctx, airX, airY, screenHeadingDeg, Math.min(100, Math.max(20, vDist * 1.2)));
+          // Subtle uncertainty cone ONLY on selected targets or high zoom (never blocking whole regions)
+          if ((isSelected || zoom >= 11) && speed > 5) {
+            drawUncertaintyCone(ctx, airX, airY, screenHeadingDeg, Math.min(36, vDist * 0.8));
           }
 
           if (type === "uav") {
-            const pulseRadius = (Math.sin(now / 200) * 0.5 + 0.5) * 16 + 10;
+            const pulseRadius = (Math.sin(now / 200) * 0.5 + 0.5) * 10 + 6;
             ctx.beginPath();
             ctx.arc(airX, airY, pulseRadius, 0, Math.PI * 2);
-            ctx.strokeStyle = "rgba(239, 68, 68, 0.4)";
-            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = "rgba(239, 68, 68, 0.45)";
+            ctx.lineWidth = 1.3;
             ctx.stroke();
           }
 
@@ -1233,15 +1344,21 @@ export const MapView = ({
             drawAircraftSilhouette(ctx, airX, airY, scale, screenHeadingDeg, color, now);
           }
 
-          // Geographically synchronized velocity vector
+          // Geographically synchronized velocity vector with 5-minute waypoint tick
           if (speed > 5 && vDist > 2) {
             ctx.save();
             ctx.strokeStyle = color;
-            ctx.lineWidth = 2;
+            ctx.lineWidth = zoom >= 10 ? 1.8 : 1.2;
+            ctx.setLineDash([3, 3]);
             ctx.beginPath();
             ctx.moveTo(airX, airY);
             ctx.lineTo(futureAir.x, futureAir.y);
             ctx.stroke();
+
+            ctx.beginPath();
+            ctx.arc(futureAir.x, futureAir.y, 2, 0, Math.PI * 2);
+            ctx.fillStyle = color;
+            ctx.fill();
             ctx.restore();
           }
 
@@ -1326,6 +1443,12 @@ export const MapView = ({
               }
             }
           }
+        }
+
+        // 3. Draw Active Reconnaissance Satellites (Persona-3, Bars-M, Lotos-S1, Kondor-FKA)
+        if (showSatellitesRef.current !== false) {
+          const satellites = calculateSatellitePositions(now);
+          drawSatelliteReconLayer(ctx, map, satellites, now, width, height);
         }
       }
 
