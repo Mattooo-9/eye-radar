@@ -130,34 +130,50 @@ const drawUavSilhouette = (
   y: number,
   size: number,
   rotation: number,
-  color: string
+  color: string,
+  timeMs: number
 ) => {
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate((rotation * Math.PI) / 180);
 
-  // Shahed delta wing
+  // Shahed-136 delta wing with swept leading edge & straight trailing edge
   ctx.fillStyle = color;
   ctx.beginPath();
-  ctx.moveTo(0, -size * 0.85);
-  ctx.lineTo(size * 0.65, size * 0.45);
-  ctx.lineTo(size * 0.65, size * 0.6);
-  ctx.lineTo(size * 0.18, size * 0.4);
-  ctx.lineTo(0, size * 0.55);
-  ctx.lineTo(-size * 0.18, size * 0.4);
-  ctx.lineTo(-size * 0.65, size * 0.6);
-  ctx.lineTo(-size * 0.65, size * 0.45);
+  ctx.moveTo(0, -size * 0.9);
+  ctx.lineTo(size * 0.72, size * 0.5);
+  ctx.lineTo(size * 0.72, size * 0.65); // Wingtip vertical stabilizer
+  ctx.lineTo(size * 0.62, size * 0.65);
+  ctx.lineTo(size * 0.15, size * 0.45);
+  ctx.lineTo(0, size * 0.58); // Central pusher propeller mount
+  ctx.lineTo(-size * 0.15, size * 0.45);
+  ctx.lineTo(-size * 0.62, size * 0.65);
+  ctx.lineTo(-size * 0.72, size * 0.65);
+  ctx.lineTo(-size * 0.72, size * 0.5);
   ctx.closePath();
   ctx.fill();
 
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.9)";
-  ctx.lineWidth = 1.2;
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.95)";
+  ctx.lineWidth = 1.3;
   ctx.stroke();
 
-  // Winglet markers
+  // Wingtip vertical stabilizer fins
   ctx.fillStyle = "#ffffff";
-  ctx.fillRect(-size * 0.65, size * 0.4, 2, 4);
-  ctx.fillRect(size * 0.65 - 2, size * 0.4, 2, 4);
+  ctx.fillRect(-size * 0.72, size * 0.42, 2.5, size * 0.22);
+  ctx.fillRect(size * 0.72 - 2.5, size * 0.42, 2.5, size * 0.22);
+
+  // Rear pusher propeller disk
+  const propAngle = (timeMs / 12) % 360;
+  ctx.save();
+  ctx.translate(0, size * 0.58);
+  ctx.rotate((propAngle * Math.PI) / 180);
+  ctx.strokeStyle = "rgba(254, 202, 202, 0.75)";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(-size * 0.25, 0);
+  ctx.lineTo(size * 0.25, 0);
+  ctx.stroke();
+  ctx.restore();
 
   ctx.restore();
 };
@@ -174,29 +190,41 @@ const drawMissileSilhouette = (
   ctx.translate(x, y);
   ctx.rotate((rotation * Math.PI) / 180);
 
-  // Cruise missile body
+  // Cruise missile body (Kh-101 / Kalibr)
   ctx.fillStyle = color;
   ctx.beginPath();
-  ctx.moveTo(0, -size * 0.95);
-  ctx.lineTo(size * 0.22, -size * 0.35);
-  ctx.lineTo(size * 0.55, -size * 0.05);
-  ctx.lineTo(size * 0.22, 0);
-  ctx.lineTo(size * 0.22, size * 0.5);
-  ctx.lineTo(size * 0.4, size * 0.65);
-  ctx.lineTo(size * 0.15, size * 0.65);
-  ctx.lineTo(0, size * 0.62);
-  ctx.lineTo(-size * 0.15, size * 0.65);
-  ctx.lineTo(-size * 0.4, size * 0.65);
-  ctx.lineTo(-size * 0.22, size * 0.5);
-  ctx.lineTo(-size * 0.22, 0);
-  ctx.lineTo(-size * 0.55, -size * 0.05);
-  ctx.lineTo(-size * 0.22, -size * 0.35);
+  ctx.moveTo(0, -size * 1.0); // Radome ogive nose
+  ctx.lineTo(size * 0.16, -size * 0.65);
+  ctx.lineTo(size * 0.16, -size * 0.15);
+  ctx.lineTo(size * 0.7, -size * 0.05); // Deployed cruise wing
+  ctx.lineTo(size * 0.7, size * 0.05);
+  ctx.lineTo(size * 0.16, 0);
+  ctx.lineTo(size * 0.16, size * 0.6);
+  ctx.lineTo(size * 0.38, size * 0.75); // Tail fin
+  ctx.lineTo(size * 0.38, size * 0.82);
+  ctx.lineTo(size * 0.14, size * 0.75);
+  ctx.lineTo(0, size * 0.72);
+  ctx.lineTo(-size * 0.14, size * 0.75);
+  ctx.lineTo(-size * 0.38, size * 0.82);
+  ctx.lineTo(-size * 0.38, size * 0.75);
+  ctx.lineTo(-size * 0.16, size * 0.6);
+  ctx.lineTo(-size * 0.16, 0);
+  ctx.lineTo(-size * 0.7, size * 0.05);
+  ctx.lineTo(-size * 0.7, -size * 0.05);
+  ctx.lineTo(-size * 0.16, -size * 0.15);
+  ctx.lineTo(-size * 0.16, -size * 0.65);
   ctx.closePath();
   ctx.fill();
 
   ctx.strokeStyle = "rgba(255, 255, 255, 0.95)";
   ctx.lineWidth = 1.2;
   ctx.stroke();
+
+  // Missile nose radome tip
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.arc(0, -size * 0.95, 1.5, 0, Math.PI * 2);
+  ctx.fill();
 
   ctx.restore();
 };
@@ -207,36 +235,71 @@ const drawAircraftSilhouette = (
   y: number,
   size: number,
   rotation: number,
-  color: string
+  color: string,
+  timeMs: number
 ) => {
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate((rotation * Math.PI) / 180);
 
+  // High-fidelity Civil/Military Jet Aircraft
   ctx.fillStyle = color;
   ctx.beginPath();
-  ctx.moveTo(0, -size * 0.9);
-  ctx.lineTo(size * 0.15, -size * 0.3);
-  ctx.lineTo(size * 0.8, size * 0.25);
-  ctx.lineTo(size * 0.8, size * 0.35);
-  ctx.lineTo(size * 0.18, size * 0.2);
-  ctx.lineTo(size * 0.18, size * 0.6);
-  ctx.lineTo(size * 0.4, size * 0.8);
-  ctx.lineTo(size * 0.4, size * 0.88);
-  ctx.lineTo(0, size * 0.75);
-  ctx.lineTo(-size * 0.4, size * 0.88);
-  ctx.lineTo(-size * 0.4, size * 0.8);
-  ctx.lineTo(-size * 0.18, size * 0.6);
-  ctx.lineTo(-size * 0.18, size * 0.2);
-  ctx.lineTo(-size * 0.8, size * 0.35);
-  ctx.lineTo(-size * 0.8, size * 0.25);
-  ctx.lineTo(-size * 0.15, -size * 0.3);
+  ctx.moveTo(0, -size * 0.95); // Nose cone
+  ctx.lineTo(size * 0.14, -size * 0.55);
+  ctx.lineTo(size * 0.14, -size * 0.15);
+  ctx.lineTo(size * 0.85, size * 0.28); // Swept main wing
+  ctx.lineTo(size * 0.85, size * 0.38);
+  ctx.lineTo(size * 0.18, size * 0.22);
+  ctx.lineTo(size * 0.18, size * 0.68);
+  ctx.lineTo(size * 0.42, size * 0.85); // Horizontal stabilizer
+  ctx.lineTo(size * 0.42, size * 0.92);
+  ctx.lineTo(0, size * 0.80); // Tail cone
+  ctx.lineTo(-size * 0.42, size * 0.92);
+  ctx.lineTo(-size * 0.42, size * 0.85);
+  ctx.lineTo(-size * 0.18, size * 0.68);
+  ctx.lineTo(-size * 0.18, size * 0.22);
+  ctx.lineTo(-size * 0.85, size * 0.38);
+  ctx.lineTo(-size * 0.85, size * 0.28);
+  ctx.lineTo(-size * 0.14, -size * 0.15);
+  ctx.lineTo(-size * 0.14, -size * 0.55);
   ctx.closePath();
   ctx.fill();
 
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.85)";
-  ctx.lineWidth = 1.2;
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.88)";
+  ctx.lineWidth = 1.3;
   ctx.stroke();
+
+  // Cockpit glass canopy highlight
+  ctx.fillStyle = "#bae6fd";
+  ctx.beginPath();
+  ctx.ellipse(0, -size * 0.65, size * 0.08, size * 0.18, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Turbofan engine nacelles under wings
+  ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+  ctx.fillRect(-size * 0.38, size * 0.18, size * 0.1, size * 0.24);
+  ctx.fillRect(size * 0.28, size * 0.18, size * 0.1, size * 0.24);
+
+  // Navigation Lights: Left Wing Port (RED), Right Wing Starboard (GREEN)
+  ctx.fillStyle = "#ef4444";
+  ctx.beginPath();
+  ctx.arc(-size * 0.85, size * 0.33, 2, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#22c55e";
+  ctx.beginPath();
+  ctx.arc(size * 0.85, size * 0.33, 2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Anti-collision strobe flashing at tail
+  const isStrobeOn = timeMs % 1000 < 130;
+  if (isStrobeOn) {
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.arc(0, size * 0.80, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
   ctx.restore();
 };
@@ -254,34 +317,61 @@ const drawHelicopterSilhouette = (
   ctx.translate(x, y);
   ctx.rotate((rotation * Math.PI) / 180);
 
+  // Helicopter Cabin & Cockpit
   ctx.fillStyle = color;
   ctx.beginPath();
-  ctx.ellipse(0, -size * 0.1, size * 0.3, size * 0.55, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, -size * 0.15, size * 0.28, size * 0.52, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.85)";
-  ctx.lineWidth = 1.2;
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.88)";
+  ctx.lineWidth = 1.3;
   ctx.stroke();
 
+  // Cockpit glass
+  ctx.fillStyle = "#bae6fd";
   ctx.beginPath();
-  ctx.moveTo(0, size * 0.45);
-  ctx.lineTo(0, size * 0.95);
-  ctx.lineTo(size * 0.25, size * 0.95);
+  ctx.ellipse(0, -size * 0.42, size * 0.16, size * 0.18, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Tail Boom & Fin
+  ctx.beginPath();
+  ctx.moveTo(0, size * 0.35);
+  ctx.lineTo(0, size * 0.98);
+  ctx.lineTo(size * 0.24, size * 0.98);
   ctx.strokeStyle = color;
-  ctx.lineWidth = 2.5;
+  ctx.lineWidth = 2.8;
   ctx.stroke();
 
-  const rotorAngle = (timeMs / 18) % 360;
+  // Tail rotor
+  const tailRotorAngle = (timeMs / 10) % 360;
   ctx.save();
-  ctx.translate(0, -size * 0.1);
+  ctx.translate(size * 0.24, size * 0.98);
+  ctx.rotate((tailRotorAngle * Math.PI) / 180);
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.8)";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(0, -size * 0.22);
+  ctx.lineTo(0, size * 0.22);
+  ctx.stroke();
+  ctx.restore();
+
+  // Main 4-blade rotor disk with motion blur
+  const rotorAngle = (timeMs / 16) % 360;
+  ctx.save();
+  ctx.translate(0, -size * 0.15);
   ctx.rotate((rotorAngle * Math.PI) / 180);
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.75)";
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.78)";
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.moveTo(0, -size * 0.9);
-  ctx.lineTo(0, size * 0.9);
-  ctx.moveTo(-size * 0.9, 0);
-  ctx.lineTo(size * 0.9, 0);
+  ctx.moveTo(0, -size * 0.95);
+  ctx.lineTo(0, size * 0.95);
+  ctx.moveTo(-size * 0.95, 0);
+  ctx.lineTo(size * 0.95, 0);
   ctx.stroke();
+  // Central rotor mast
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.arc(0, 0, 2.5, 0, Math.PI * 2);
+  ctx.fill();
   ctx.restore();
 
   ctx.restore();
@@ -652,7 +742,7 @@ export const MapView = ({
       center: [31.5, 49.0], // Center of Ukraine
       zoom: 6.2,
       minZoom: 1.5,
-      maxZoom: 19,
+      maxZoom: 20,
       pitch: 52, // 3D orbital perspective
       bearing: -10,
       maxPitch: 85,
@@ -860,13 +950,12 @@ export const MapView = ({
             const sunPt = map.project([subsolar.lon, subsolar.lat]);
             if (sunPt.x >= -60 && sunPt.x <= width + 60 && sunPt.y >= -60 && sunPt.y <= height + 60) {
               ctx.beginPath();
-              ctx.arc(sunPt.x, sunPt.y, 7, 0, Math.PI * 2);
+              ctx.arc(sunPt.x, sunPt.y, 6, 0, Math.PI * 2);
               ctx.fillStyle = "#fef08a";
               ctx.fill();
-              ctx.strokeStyle = "rgba(250, 204, 21, 0.5)";
-              ctx.lineWidth = 5;
+              ctx.strokeStyle = "rgba(250, 204, 21, 0.45)";
+              ctx.lineWidth = 4;
               ctx.stroke();
-              drawTextWithOutline(ctx, "☀️ ЗЕНІТ СОНЦЯ", sunPt.x + 12, sunPt.y + 4, "#fef08a", "rgba(0,0,0,0.8)", "10px monospace");
             }
 
             // Anti-solar Point Indicator (🌙 Midnight)
@@ -875,64 +964,36 @@ export const MapView = ({
             const moonPt = map.project([antiLon, antiLat]);
             if (moonPt.x >= -60 && moonPt.x <= width + 60 && moonPt.y >= -60 && moonPt.y <= height + 60) {
               ctx.beginPath();
-              ctx.arc(moonPt.x, moonPt.y, 6, 0, Math.PI * 2);
+              ctx.arc(moonPt.x, moonPt.y, 5, 0, Math.PI * 2);
               ctx.fillStyle = "#93c5fd";
               ctx.fill();
-              drawTextWithOutline(ctx, "🌙 ОПІВНІЧ", moonPt.x + 12, moonPt.y + 4, "#93c5fd", "rgba(0,0,0,0.8)", "10px monospace");
             }
           } else {
-            // Local tactical scale: smooth ambient day/night tint based on local solar elevation
+            // Local tactical scale: seamless realistic natural lighting without artificial text tags
             const center = map.getCenter();
             const localSun = getLocalSolarStatus(center.lat, center.lng);
-            if (localSun.phase === "night") {
-              ctx.fillStyle = "rgba(4, 9, 24, 0.35)";
+            const elev = localSun.elevationDeg;
+
+            if (elev < 0) {
+              // Twilight transition (0 to -12 deg) smoothly darkens into deep night
+              const nightFactor = Math.min(1, Math.max(0, -elev / 12));
+              if (nightFactor < 1) {
+                // Golden-dusk twilight haze
+                ctx.fillStyle = `rgba(180, 83, 9, ${0.14 * (1 - nightFactor)})`;
+                ctx.fillRect(0, 0, width, height);
+              }
+              // Dark night atmosphere (preserving city lights / highways on satellite)
+              ctx.fillStyle = `rgba(2, 6, 20, ${0.15 + nightFactor * 0.32})`;
               ctx.fillRect(0, 0, width, height);
-            } else if (localSun.phase === "twilight") {
-              ctx.fillStyle = "rgba(245, 158, 11, 0.12)";
+            } else if (elev < 15) {
+              // Sunrise / sunset golden hour warm rim lighting
+              const goldenFactor = (15 - elev) / 15;
+              ctx.fillStyle = `rgba(245, 158, 11, ${goldenFactor * 0.10})`;
               ctx.fillRect(0, 0, width, height);
             }
           }
           ctx.restore();
         }
-
-        // 0. Radar Beam Sweep Scan (continuous 360 deg sweep)
-        const sweepPeriod = 5000;
-        const sweepAngle = ((now % sweepPeriod) / sweepPeriod) * Math.PI * 2;
-        const sweepOrigin = currentLoc
-          ? map.project([currentLoc.lon, currentLoc.lat])
-          : { x: width / 2, y: height / 2 };
-        const sweepRadius = Math.max(100, Math.max(width, height) * 1.1);
-
-        ctx.save();
-        ctx.beginPath();
-        ctx.moveTo(sweepOrigin.x, sweepOrigin.y);
-        ctx.arc(sweepOrigin.x, sweepOrigin.y, sweepRadius, sweepAngle - 0.35, sweepAngle);
-        ctx.closePath();
-
-        const sweepGrad = ctx.createRadialGradient(
-          sweepOrigin.x,
-          sweepOrigin.y,
-          0,
-          sweepOrigin.x,
-          sweepOrigin.y,
-          sweepRadius
-        );
-        sweepGrad.addColorStop(0, "rgba(56, 189, 248, 0.18)");
-        sweepGrad.addColorStop(0.7, "rgba(56, 189, 248, 0.04)");
-        sweepGrad.addColorStop(1, "rgba(56, 189, 248, 0)");
-        ctx.fillStyle = sweepGrad;
-        ctx.fill();
-
-        ctx.beginPath();
-        ctx.moveTo(sweepOrigin.x, sweepOrigin.y);
-        ctx.lineTo(
-          sweepOrigin.x + Math.cos(sweepAngle) * sweepRadius,
-          sweepOrigin.y + Math.sin(sweepAngle) * sweepRadius
-        );
-        ctx.strokeStyle = "rgba(56, 189, 248, 0.45)";
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-        ctx.restore();
 
         // 1. Draw True Geodesic Perspective Range Rings around observer
         if (currentLoc) {
@@ -1123,13 +1184,13 @@ export const MapView = ({
           }
 
           if (type === "uav") {
-            drawUavSilhouette(ctx, airX, airY, scale, screenHeadingDeg, color);
+            drawUavSilhouette(ctx, airX, airY, scale, screenHeadingDeg, color, now);
           } else if (type === "munition") {
             drawMissileSilhouette(ctx, airX, airY, scale, screenHeadingDeg, color);
           } else if (type === "helicopter") {
             drawHelicopterSilhouette(ctx, airX, airY, scale, screenHeadingDeg, color, now);
           } else {
-            drawAircraftSilhouette(ctx, airX, airY, scale, screenHeadingDeg, color);
+            drawAircraftSilhouette(ctx, airX, airY, scale, screenHeadingDeg, color, now);
           }
 
           // Geographically synchronized velocity vector

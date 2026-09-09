@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type { Map } from "maplibre-gl";
-import { getLocalSolarStatus } from "../lib/solarTerminator";
 
 interface OrbitalHudProps {
   map: Map | null;
@@ -33,11 +32,6 @@ export const OrbitalHud = ({ map, trackCount, onOpenBriefing }: OrbitalHudProps)
       map.off("rotate", update);
     };
   }, [map]);
-
-  const solarStatus = useMemo(
-    () => getLocalSolarStatus(coords.lat, coords.lon, nowDate),
-    [coords.lat, coords.lon, nowDate]
-  );
 
   const normBearing = ((bearing % 360) + 360) % 360;
   const getCompassDir = (b: number) => {
@@ -76,13 +70,6 @@ export const OrbitalHud = ({ map, trackCount, onOpenBriefing }: OrbitalHudProps)
         </span>
         <span className="hud-bearing">
           🧭 {normBearing}° {getCompassDir(normBearing)}
-        </span>
-        <span
-          className="hud-solar-pill"
-          title={`Висота сонця: ${solarStatus.elevationDeg.toFixed(1)}°`}
-        >
-          {solarStatus.phaseIcon} {solarStatus.phaseTitle} ({solarStatus.elevationDeg > 0 ? "+" : ""}
-          {solarStatus.elevationDeg.toFixed(0)}°)
         </span>
       </div>
       <div className="orbital-hud-right">

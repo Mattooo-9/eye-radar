@@ -19,7 +19,9 @@ interface AdsbFiAircraft {
 
 interface AdsbFiResponse {
   aircraft?: AdsbFiAircraft[];
+  ac?: AdsbFiAircraft[];
   resultCount?: number;
+  total?: number;
 }
 
 interface OpenSkyResponse {
@@ -78,8 +80,9 @@ export class AirplanesLiveSource {
 
     const obsMap = new Map<string, Observation>();
 
-    // 1. Fetch from adsb.fi across Ukrainian border corridors (West, South, North, Black Sea, Central Europe)
+    // 1. Fetch from adsb.fi across Ukrainian border corridors and military air activity
     const adsbFiEndpoints = [
+      "https://opendata.adsb.fi/api/v2/mil",                          // Regional Military & Reconnaissance Aircraft
       "https://opendata.adsb.fi/api/v2/lat/50.0/lon/24.5/dist/250", // West Corridor (Poland / Slovakia / Hungary / West UA)
       "https://opendata.adsb.fi/api/v2/lat/46.5/lon/28.5/dist/250", // South Corridor (Romania / Moldova / Black Sea)
       "https://opendata.adsb.fi/api/v2/lat/53.5/lon/24.0/dist/250", // North Corridor (Baltics / Poland-Belarus border)
@@ -96,17 +99,25 @@ export class AirplanesLiveSource {
           });
           if (res.ok) {
             const data = (await res.json()) as AdsbFiResponse;
-            for (const a of data.aircraft ?? []) {
+            const aircraftList = data.aircraft ?? data.ac ?? [];
+            for (const a of aircraftList) {
               if (
                 a.lat !== undefined &&
                 a.lon !== undefined &&
                 a.gs !== undefined &&
                 a.gs > 25
               ) {
+                // If fetching military feed, bound to Eastern European / Ukrainian theater
+                if (url.includes("/mil")) {
+                  if (a.lat < 38 || a.lat > 64 || a.lon < 14 || a.lon > 48) {
+                    continue;
+                  }
+                }
+
                 const flightCode = (a.flight ?? "").trim().replace(/\s+/g, "");
-                const callsign = flightCode || a.hex;
+                const callsign = flightCode || a.t || a.hex;
                 const id = flightCode ? `adsb-${flightCode}` : `adsb-${a.hex}`;
-                const model = a.desc ?? a.t ?? "CIVIL_AIRCRAFT";
+                const model = a.desc ?? a.t ?? (url.includes("/mil") ? "MIL_AIRCRAFT" : "CIVIL_AIRCRAFT");
                 const speedMs = a.gs * 0.514444; // knots to m/s
                 const altM = a.alt_baro ? Math.round(a.alt_baro * 0.3048) : undefined;
                 const type: TrackType = this.isHelicopter(a.desc, a.t) ? "helicopter" : "aircraft";
