@@ -532,3 +532,120 @@ body {
   font-weight: 700;
   cursor: pointer;
 }
+
+/* Space vignette & Atmospheric horizon glow */
+.space-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 10%, rgba(56, 189, 248, 0.08) 0%, rgba(2, 8, 23, 0) 65%),
+    linear-gradient(180deg, rgba(2, 8, 23, 0.7) 0%, rgba(2, 8, 23, 0) 18%, rgba(2, 8, 23, 0) 80%, rgba(2, 8, 23, 0.75) 100%);
+  z-index: 10;
+}
+
+/* Orbital HUD */
+.orbital-hud {
+  position: absolute;
+  top: max(8px, env(safe-area-inset-top));
+  left: 12px;
+  right: 12px;
+  z-index: 35;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 14px;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.orbital-hud-left {
+  display: flex;
+  flex-direction: column;
+}
+
+.hud-label {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: #38bdf8;
+  font-family: monospace;
+}
+
+.hud-sub {
+  font-size: 9px;
+  color: #94a3b8;
+  letter-spacing: 0.04em;
+}
+
+.orbital-hud-center {
+  display: flex;
+  align-items: center;
+}
+
+.hud-coords {
+  font-size: 11px;
+  font-family: monospace;
+  color: #e2e8f0;
+  background: rgba(30, 41, 59, 0.8);
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.orbital-hud-right {
+  display: flex;
+  align-items: center;
+}
+
+.hud-status-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #f8fafc;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(30, 41, 59, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+/* Orbital Controls */
+.orbital-controls {
+  position: absolute;
+  right: 14px;
+  top: max(120px, calc(env(safe-area-inset-top) + 110px));
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.orbital-btn {
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  color: #e2e8f0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.orbital-btn:hover, .orbital-btn:active {
+  background: rgba(56, 189, 248, 0.2);
+  color: #38bdf8;
+  border-color: #38bdf8;
+  transform: scale(1.03);
+}
+
+.orbital-btn.active {
+  background: rgba(56, 189, 248, 0.3);
+  color: #38bdf8;
+  border-color: #38bdf8;
+}

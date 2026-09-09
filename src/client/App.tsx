@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
+import type { Map } from "maplibre-gl";
 import { CitySelector } from "./components/CitySelector";
 import { ManualLocationPrompt } from "./components/ManualLocationPrompt";
 import { MapView } from "./components/MapView";
+import { OrbitalControls } from "./components/OrbitalControls";
+import { OrbitalHud } from "./components/OrbitalHud";
 import { type FilterState, StatusPanel } from "./components/StatusPanel";
 import { TargetCard } from "./components/TargetCard";
 import { ThreatBanner } from "./components/ThreatBanner";
@@ -36,6 +39,8 @@ export const App = () => {
     flags
   );
 
+  const [mapInstance, setMapInstance] = useState<Map | null>(null);
+  const [satelliteMode, setSatelliteMode] = useState(true);
   const [selectedTarget, setSelectedTarget] = useState<TrackPacket | null>(null);
   const [filters, setFilters] = useState<FilterState>({
     uav: true,
@@ -51,6 +56,24 @@ export const App = () => {
 
   const handleSelectCity = (lat: number, lon: number, cityName: string) => {
     setManualLocation({ lat, lon });
+    if (mapInstance) {
+      mapInstance.flyTo({
+        center: [lon, lat],
+        zoom: 8.5,
+        pitch: 54,
+        duration: 1200
+      });
+    }
+  };
+
+  const handleFlyToUser = () => {
+    if (!mapInstance || !location) return;
+    mapInstance.flyTo({
+      center: [location.lon, location.lat],
+      zoom: 9.0,
+      pitch: 58,
+      duration: 1400
+    });
   };
 
   const handleToggleFilter = (key: keyof FilterState) => {
@@ -64,6 +87,8 @@ export const App = () => {
 
   return (
     <main className="app-shell">
+      <OrbitalHud map={mapInstance} trackCount={packets.length} />
+
       <ThreatBanner
         packets={packets}
         location={location}
@@ -75,12 +100,22 @@ export const App = () => {
         mapStyleUrl={mapStyleUrl}
         location={location}
         filters={filters}
+        satelliteMode={satelliteMode}
+        selectedTarget={selectedTarget}
+        onMapReady={(m) => setMapInstance(m)}
         onSelectTarget={(target) => setSelectedTarget(target)}
       />
 
       <div className="top-controls">
         <CitySelector onSelectCity={handleSelectCity} />
       </div>
+
+      <OrbitalControls
+        map={mapInstance}
+        satelliteMode={satelliteMode}
+        onToggleSatellite={() => setSatelliteMode(!satelliteMode)}
+        onFlyToUser={handleFlyToUser}
+      />
 
       <StatusPanel
         trackCount={packets.length}

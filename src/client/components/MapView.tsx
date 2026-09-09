@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import maplibregl, { type Map } from "maplibre-gl";
 import type { TrackPacket } from "../hooks/useWsRadar";
 import type { TrustedLocation } from "../location/useTrustedLocation";
@@ -11,8 +11,35 @@ interface MapViewProps {
   mapStyleUrl: string;
   location: TrustedLocation | null;
   filters?: FilterState;
+  satelliteMode?: boolean;
+  selectedTarget?: TrackPacket | null;
+  onMapReady?: (map: Map) => void;
   onSelectTarget?: (packet: TrackPacket) => void;
 }
+
+const SATELLITE_STYLE = {
+  version: 8 as const,
+  sources: {
+    "esri-satellite": {
+      type: "raster" as const,
+      tiles: [
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+      ],
+      tileSize: 256
+    }
+  },
+  layers: [
+    {
+      id: "esri-satellite-layer",
+      type: "raster" as const,
+      source: "esri-satellite",
+      paint: {
+        "raster-brightness-max": 0.82,
+        "raster-contrast": 0.25
+      }
+    }
+  ]
+};
 
 const metersPerPixel = (latitude: number, zoom: number): number =>
   (156543.03392 * Math.cos((latitude * Math.PI) / 180)) / 2 ** zoom;
@@ -30,15 +57,14 @@ const drawArrow = (
   ctx.rotate((rotation * Math.PI) / 180);
   ctx.fillStyle = fillStyle;
   ctx.beginPath();
-  ctx.moveTo(0, -size * 0.72);
-  ctx.lineTo(size * 0.48, size * 0.56);
-  ctx.lineTo(0, size * 0.24);
-  ctx.lineTo(-size * 0.48, size * 0.56);
+  ctx.moveTo(0, -size * 0.75);
+  ctx.lineTo(size * 0.5, size * 0.55);
+  ctx.lineTo(0, size * 0.22);
+  ctx.lineTo(-size * 0.5, size * 0.55);
   ctx.closePath();
   ctx.fill();
 
-  // Subtle border
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.7)";
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.85)";
   ctx.lineWidth = 1.5;
   ctx.stroke();
   ctx.restore();
@@ -50,7 +76,7 @@ const drawUncertaintyCone = (
   y: number,
   heading: number,
   lengthPx: number,
-  spreadAngleDeg = 25
+  spreadAngleDeg = 24
 ) => {
   ctx.save();
   ctx.translate(x, y);
@@ -63,16 +89,100 @@ const drawUncertaintyCone = (
   ctx.arc(0, 0, lengthPx, -Math.PI / 2 + halfSpread, -Math.PI / 2 - halfSpread, true);
   ctx.closePath();
 
-  ctx.fillStyle = "rgba(239, 68, 68, 0.12)";
+  ctx.fillStyle = "rgba(239, 68, 68, 0.15)";
   ctx.fill();
-  ctx.strokeStyle = "rgba(239, 68, 68, 0.35)";
+  ctx.strokeStyle = "rgba(239, 68, 68, 0.4)";
   ctx.lineWidth = 1;
   ctx.setLineDash([4, 4]);
   ctx.stroke();
   ctx.restore();
 };
 
-export const MapView = ({ packets, mapStyleUrl, location, filters, onSelectTarget }: MapViewProps) => {
+const drawLockReticle = (
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  rotationDeg: number
+) => {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate((rotationDeg * Math.PI) / 180);
+
+  const size = 26;
+  const bracket = 8;
+  ctx.strokeStyle = "#38bdf8";
+  ctx.lineWidth = 2;
+
+  // Top-left bracket
+  ctx.beginPath();
+  ctx.moveTo(-size, -size + bracket);
+  ctx.lineTo(-size, -size);
+  ctx.lineTo(-size + bracket, -size);
+  ctx.stroke();
+
+  // Top-right bracket
+  ctx.beginPath();
+  ctx.moveTo(size - bracket, -size);
+  ctx.lineTo(size, -size);
+  ctx.lineTo(size, -size + bracket);
+  ctx.stroke();
+
+  // Bottom-right bracket
+  ctx.beginPath();
+  ctx.moveTo(size, size - bracket);
+  ctx.lineTo(size, size);
+  ctx.lineTo(size - bracket, size);
+  ctx.stroke();
+
+  // Bottom-left bracket
+  ctx.beginPath();
+  ctx.moveTo(-size + bracket, size);
+  ctx.lineTo(-size, size);
+  ctx.lineTo(-size, size - bracket);
+  ctx.stroke();
+
+  ctx.restore();
+};
+
+const drawMissileFlame = (
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  heading: number,
+  timeMs: number
+) => {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(((heading + 180) * Math.PI) / 180);
+
+  const flicker = (Math.sin(timeMs / 35) * 0.5 + 0.5) * 6;
+  const flameLen = 16 + flicker;
+
+  const grad = ctx.createLinearGradient(0, 0, 0, flameLen);
+  grad.addColorStop(0, "rgba(255, 255, 255, 0.95)");
+  grad.addColorStop(0.3, "rgba(251, 146, 60, 0.9)");
+  grad.addColorStop(1, "rgba(239, 68, 68, 0)");
+
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.moveTo(-3, 0);
+  ctx.lineTo(0, flameLen);
+  ctx.lineTo(3, 0);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+};
+
+export const MapView = ({
+  packets,
+  mapStyleUrl,
+  location,
+  filters,
+  satelliteMode,
+  selectedTarget,
+  onMapReady,
+  onSelectTarget
+}: MapViewProps) => {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const mapRef = useRef<Map | null>(null);
@@ -84,16 +194,24 @@ export const MapView = ({ packets, mapStyleUrl, location, filters, onSelectTarge
       return;
     }
 
+    const initialStyle = satelliteMode ? SATELLITE_STYLE : mapStyleUrl;
+
     const map = new maplibregl.Map({
       container: mapContainerRef.current,
-      style: mapStyleUrl,
+      style: initialStyle,
       center: [31.5, 49.0], // Center of Ukraine
-      zoom: 6,
+      zoom: 6.2,
+      pitch: 52, // 3D orbital angle from space
+      bearing: -10, // Slight orbital inclination
+      maxPitch: 82,
       antialias: true,
       attributionControl: false
     });
 
     mapRef.current = map;
+    if (onMapReady) {
+      onMapReady(map);
+    }
 
     const resizeCanvas = () => {
       const canvas = canvasRef.current;
@@ -118,7 +236,7 @@ export const MapView = ({ packets, mapStyleUrl, location, filters, onSelectTarge
       const clickY = e.point.y;
 
       let closest: TrackPacket | null = null;
-      let minDistance = 32; // Click hit radius in px
+      let minDistance = 36;
 
       for (const packet of packets) {
         const [_id, _type, lat, lon, heading, speed, timestamp] = packet;
@@ -138,6 +256,8 @@ export const MapView = ({ packets, mapStyleUrl, location, filters, onSelectTarge
       }
     };
 
+    map.on("load", resizeCanvas);
+    map.on("resize", resizeCanvas);
     map.on("click", handleMapClick);
 
     return () => {
@@ -148,7 +268,14 @@ export const MapView = ({ packets, mapStyleUrl, location, filters, onSelectTarge
       map.remove();
       mapRef.current = null;
     };
-  }, [mapStyleUrl, onSelectTarget, packets]);
+  }, [mapStyleUrl, onMapReady, onSelectTarget, packets, satelliteMode]);
+
+  // Handle Satellite / Tactical switch
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    map.setStyle(satelliteMode ? SATELLITE_STYLE : mapStyleUrl);
+  }, [mapStyleUrl, satelliteMode]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -156,13 +283,14 @@ export const MapView = ({ packets, mapStyleUrl, location, filters, onSelectTarge
       return;
     }
 
-    map.jumpTo({
+    map.flyTo({
       center: [location.lon, location.lat],
-      zoom: 8
+      zoom: 8.5,
+      pitch: 55,
+      duration: 1500
     });
     centeredRef.current = true;
   }, [location]);
-
 
   useEffect(() => {
     const render = () => {
@@ -175,6 +303,7 @@ export const MapView = ({ packets, mapStyleUrl, location, filters, onSelectTarge
         const height = canvas.clientHeight;
         ctx.clearRect(0, 0, width, height);
 
+        const now = Date.now();
         const zoom = map.getZoom();
 
         // 1. Draw Range Rings around user
@@ -188,29 +317,29 @@ export const MapView = ({ packets, mapStyleUrl, location, filters, onSelectTarge
             const radiusPx = radiusM / mPerPx;
             ctx.beginPath();
             ctx.arc(userPoint.x, userPoint.y, radiusPx, 0, Math.PI * 2);
-            ctx.strokeStyle = "rgba(59, 130, 246, 0.22)";
+            ctx.strokeStyle = "rgba(59, 130, 246, 0.25)";
             ctx.lineWidth = 1;
-            ctx.setLineDash([6, 6]);
+            ctx.setLineDash([5, 5]);
             ctx.stroke();
 
-            // Label
-            ctx.fillStyle = "rgba(147, 197, 253, 0.7)";
+            ctx.fillStyle = "rgba(147, 197, 253, 0.75)";
             ctx.font = "10px Inter, sans-serif";
             ctx.fillText(`${radiusM / 1000} км`, userPoint.x + radiusPx + 4, userPoint.y);
           }
           ctx.restore();
 
-          // User Marker
+          // User Marker with pulse
+          const userPulse = Math.sin(now / 300) * 3 + 7;
           ctx.beginPath();
           ctx.fillStyle = "#22c55e";
-          ctx.arc(userPoint.x, userPoint.y, 7, 0, Math.PI * 2);
+          ctx.arc(userPoint.x, userPoint.y, 6, 0, Math.PI * 2);
           ctx.fill();
-          ctx.strokeStyle = "rgba(34, 197, 94, 0.35)";
-          ctx.lineWidth = 8;
+          ctx.strokeStyle = "rgba(34, 197, 94, 0.3)";
+          ctx.lineWidth = userPulse;
           ctx.stroke();
         }
 
-        // 2. Draw Air Targets
+        // 2. Draw Air Targets with 3D projection and Orbital Shading
         for (const packet of packets) {
           const [id, type, lat, lon, heading, speed, timestamp] = packet;
 
@@ -229,7 +358,7 @@ export const MapView = ({ packets, mapStyleUrl, location, filters, onSelectTarge
             }
           }
 
-          const elapsedSeconds = Math.max(0, (Date.now() - timestamp) / 1000);
+          const elapsedSeconds = Math.max(0, (now - timestamp) / 1000);
           const predicted = destinationPoint({ lat, lon }, heading, speed * elapsedSeconds);
           const projected = map.project([predicted.lon, predicted.lat]);
           const scale = Math.max(22, 12 + zoom * 1.5);
@@ -248,6 +377,21 @@ export const MapView = ({ packets, mapStyleUrl, location, filters, onSelectTarge
           // Draw uncertainty cone along the heading
           if (speed > 5) {
             drawUncertaintyCone(ctx, projected.x, projected.y, heading, velocityLine * 1.8);
+          }
+
+          // Drone Infrared Pulsing Beacon
+          if (type === "uav") {
+            const pulseRadius = (Math.sin(now / 200) * 0.5 + 0.5) * 14 + 10;
+            ctx.beginPath();
+            ctx.arc(projected.x, projected.y, pulseRadius, 0, Math.PI * 2);
+            ctx.strokeStyle = "rgba(239, 68, 68, 0.35)";
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+          }
+
+          // Missile Jet Exhaust Flame
+          if (type === "munition") {
+            drawMissileFlame(ctx, projected.x, projected.y, heading, now);
           }
 
           // Target color
@@ -272,7 +416,7 @@ export const MapView = ({ packets, mapStyleUrl, location, filters, onSelectTarge
           ctx.stroke();
           ctx.restore();
 
-          // Target Tag
+          // Target Tag & Telemetry
           ctx.fillStyle = "#f8fafc";
           ctx.font = "bold 11px Inter, system-ui, sans-serif";
           ctx.fillText(id, projected.x + 14, projected.y - 8);
@@ -280,6 +424,11 @@ export const MapView = ({ packets, mapStyleUrl, location, filters, onSelectTarge
           ctx.fillStyle = "rgba(226, 232, 240, 0.75)";
           ctx.font = "10px Inter, system-ui, sans-serif";
           ctx.fillText(`${Math.round(speed * 3.6)} км/год`, projected.x + 14, projected.y + 6);
+
+          // Selected target Lock Reticle
+          if (selectedTarget && selectedTarget[0] === id) {
+            drawLockReticle(ctx, projected.x, projected.y, (now / 40) % 360);
+          }
         }
       }
 
@@ -293,15 +442,13 @@ export const MapView = ({ packets, mapStyleUrl, location, filters, onSelectTarge
         cancelAnimationFrame(frameRef.current);
       }
     };
-  }, [location, packets]);
+  }, [filters, location, packets, selectedTarget]);
 
   return (
     <div className="map-shell">
       <div ref={mapContainerRef} className="map-root" />
-      <canvas
-        ref={canvasRef}
-        className="map-overlay"
-      />
+      <canvas ref={canvasRef} className="map-overlay" />
+      <div className="space-vignette" />
     </div>
   );
 };
