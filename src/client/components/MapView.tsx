@@ -823,6 +823,12 @@ export const MapView = ({
   onMapReadyRef.current = onMapReady;
 
   const currentStyleRef = useRef<string | object | null>(null);
+  const lastAppliedBrightnessRef = useRef<number>(-1);
+  const lastBrightnessCheckRef = useRef<number>(0);
+  const cachedRingsGeoRef = useRef<Array<{ radiusM: number; pts: Array<[number, number]> }>>([]);
+  const lastLocRingRef = useRef<{ lat: number; lon: number } | null>(null);
+  const cachedSatellitesRef = useRef<SatelliteTrack[]>([]);
+  const lastSatCalcRef = useRef<number>(0);
 
   // Safe canvas resizer: ONLY updates dimensions if they have changed, never clears buffer on subpixel drift
   const resizeCanvasSafe = () => {
@@ -1069,37 +1075,58 @@ export const MapView = ({
           }
           ctx.restore();
 
-          // Physical MapLibre satellite tile brightness synchronization
-          if (map.getLayer("esri-satellite-layer")) {
-            const nightFactor = Math.min(1, Math.max(0, -elev / 15));
-            const targetBrightness = elev < 0 ? Math.max(0.38, 1.0 - nightFactor * 0.58) : 1.0;
-            try {
-              map.setPaintProperty("esri-satellite-layer", "raster-brightness-max", targetBrightness);
-            } catch {}
+          // Physical MapLibre satellite tile brightness synchronization (throttled to 5s to eliminate WebGL recompile overhead)
+          if (now - lastBrightnessCheckRef.current > 5000) {
+            lastBrightnessCheckRef.current = now;
+            if (map.getLayer("esri-satellite-layer")) {
+              const nightFactor = Math.min(1, Math.max(0, -elev / 15));
+              const targetBrightness = elev < 0 ? Math.max(0.38, 1.0 - nightFactor * 0.58) : 1.0;
+              if (Math.abs(targetBrightness - lastAppliedBrightnessRef.current) > 0.03) {
+                lastAppliedBrightnessRef.current = targetBrightness;
+                try {
+                  map.setPaintProperty("esri-satellite-layer", "raster-brightness-max", targetBrightness);
+                } catch {}
+              }
+            }
           }
         }
 
-        // 1. Draw True Geodesic Perspective Range Rings around observer
+        // 1. Draw True Geodesic Perspective Range Rings around observer (Zero-Trigonometry in 60fps render loop)
         if (currentLoc) {
+          const locChanged =
+            !lastLocRingRef.current ||
+            Math.hypot(currentLoc.lat - lastLocRingRef.current.lat, currentLoc.lon - lastLocRingRef.current.lon) > 0.0001;
+
+          if (locChanged || cachedRingsGeoRef.current.length === 0) {
+            lastLocRingRef.current = { lat: currentLoc.lat, lon: currentLoc.lon };
+            const rings = [15_000, 30_000, 50_000];
+            cachedRingsGeoRef.current = rings.map((radiusM) => {
+              const pts: Array<[number, number]> = [];
+              for (let deg = 0; deg <= 360; deg += 10) {
+                const ptGeo = destinationPoint(currentLoc, deg, radiusM);
+                pts.push([ptGeo.lon, ptGeo.lat]);
+              }
+              return { radiusM, pts };
+            });
+          }
+
           const userPoint = map.project([currentLoc.lon, currentLoc.lat]);
-          const rings = [15_000, 30_000, 50_000];
 
           ctx.save();
-          for (const radiusM of rings) {
+          for (const ring of cachedRingsGeoRef.current) {
             let labelPt: { x: number; y: number } | null = null;
             let firstPt: { x: number; y: number } | null = null;
 
             ctx.beginPath();
-            for (let deg = 0; deg <= 360; deg += 10) {
-              const ptGeo = destinationPoint(currentLoc, deg, radiusM);
-              const ptProj = map.project([ptGeo.lon, ptGeo.lat]);
-              if (deg === 0) {
+            for (let i = 0; i < ring.pts.length; i++) {
+              const ptProj = map.project(ring.pts[i]);
+              if (i === 0) {
                 firstPt = ptProj;
                 ctx.moveTo(ptProj.x, ptProj.y);
               } else {
                 ctx.lineTo(ptProj.x, ptProj.y);
               }
-              if (deg === 90) {
+              if (i === 9) {
                 labelPt = ptProj;
               }
             }
@@ -1112,7 +1139,7 @@ export const MapView = ({
             if (labelPt && firstPt && Math.hypot(labelPt.x - firstPt.x, labelPt.y - firstPt.y) >= 42) {
               drawTextWithOutline(
                 ctx,
-                `${radiusM / 1000} км`,
+                `${ring.radiusM / 1000} км`,
                 labelPt.x + 4,
                 labelPt.y + 3,
                 "rgba(147, 197, 253, 0.9)",
@@ -1156,7 +1183,8 @@ export const MapView = ({
           if (currentFilters) {
             if (type === "uav" && !currentFilters.uav) continue;
             if (type === "munition" && !currentFilters.munition) continue;
-            if ((type === "aircraft" || type === "helicopter") && !currentFilters.aircraft) continue;
+            if (type === "aircraft" && !currentFilters.aircraft) continue;
+            if (type === "helicopter" && (currentFilters.helicopter !== undefined ? !currentFilters.helicopter : !currentFilters.aircraft)) continue;
           }
 
           const elapsedSeconds = Math.max(0, (now - timestamp) / 1000);
@@ -1209,21 +1237,20 @@ export const MapView = ({
               ? 450
               : 180;
 
-          // In perspective view with pitch, altitude elevates target visually upwards on the screen
-          const altElevationPx = Math.min(54, (effectiveAltM / 1000) * (zoom * 0.7));
-          const airX = groundPoint.x;
-          const airY = groundPoint.y - altElevationPx;
+          // Subpixel-locked target coordinates directly anchored to geographic ground coordinates
+          // NEVER displaced vertically by arbitrary screen pixels, guaranteeing zero drift on zoom/pitch/pan!
+          const targetX = groundPoint.x;
+          const targetY = groundPoint.y;
 
           // Geographically synchronized forward projection vector
           const futureSec = Math.max(15, Math.min(90, 450 / Math.max(1, zoom)));
           const futLat = predLat + (vyMps * futureSec) / metersPerDegLat;
           const futLon = predLon + (vxMps * futureSec) / metersPerDegLon;
           const futureProj = map.project([futLon, futLat]);
-          const futureAir = { x: futureProj.x, y: futureProj.y - altElevationPx };
 
           // Screen heading strictly matching the projected vector on camera
-          const vDx = futureAir.x - airX;
-          const vDy = futureAir.y - airY;
+          const vDx = futureProj.x - targetX;
+          const vDy = futureProj.y - targetY;
           const vDist = Math.hypot(vDx, vDy);
           const screenHeadingDeg = vDist > 0.5 ? (Math.atan2(vDx, -vDy) * 180) / Math.PI : heading;
 
@@ -1241,7 +1268,7 @@ export const MapView = ({
           if (isLowZoom && !isSelected && !isHighThreat) {
             // Orbital blip: crisp tactical radar dot
             ctx.beginPath();
-            ctx.arc(airX, airY, 3, 0, Math.PI * 2);
+            ctx.arc(targetX, targetY, 3, 0, Math.PI * 2);
             ctx.fillStyle = color;
             ctx.fill();
             continue;
@@ -1251,37 +1278,37 @@ export const MapView = ({
           ctx.save();
           const groundPulse = Math.sin(now / 240) * 0.3 + 0.7;
           ctx.beginPath();
-          ctx.arc(groundPoint.x, groundPoint.y, zoom >= 10 ? 6.5 : 3.5, 0, Math.PI * 2);
+          ctx.arc(targetX, targetY, zoom >= 10 ? 6.5 : 3.5, 0, Math.PI * 2);
           ctx.strokeStyle = isHighThreat ? `rgba(239, 68, 68, ${groundPulse})` : `rgba(56, 189, 248, ${groundPulse})`;
           ctx.lineWidth = 1.3;
           ctx.stroke();
 
           ctx.beginPath();
-          ctx.arc(groundPoint.x, groundPoint.y, 2, 0, Math.PI * 2);
+          ctx.arc(targetX, targetY, 2, 0, Math.PI * 2);
           ctx.fillStyle = isHighThreat ? "#ef4444" : "#38bdf8";
           ctx.fill();
 
           // Ground crosshair cardinal ticks
           const tick = zoom >= 10 ? 5 : 3;
           ctx.beginPath();
-          ctx.moveTo(groundPoint.x - tick - 2, groundPoint.y);
-          ctx.lineTo(groundPoint.x - 2, groundPoint.y);
-          ctx.moveTo(groundPoint.x + 2, groundPoint.y);
-          ctx.lineTo(groundPoint.x + tick + 2, groundPoint.y);
-          ctx.moveTo(groundPoint.x, groundPoint.y - tick - 2);
-          ctx.lineTo(groundPoint.x, groundPoint.y - 2);
-          ctx.moveTo(groundPoint.x, groundPoint.y + 2);
-          ctx.lineTo(groundPoint.x, groundPoint.y + tick + 2);
+          ctx.moveTo(targetX - tick - 2, targetY);
+          ctx.lineTo(targetX - 2, targetY);
+          ctx.moveTo(targetX + 2, targetY);
+          ctx.lineTo(targetX + tick + 2, targetY);
+          ctx.moveTo(targetX, targetY - tick - 2);
+          ctx.lineTo(targetX, targetY - 2);
+          ctx.moveTo(targetX, targetY + 2);
+          ctx.lineTo(targetX, targetY + tick + 2);
           ctx.stroke();
 
-          // Precise landmark name at ground point so the observer instantly sees the location!
+          // Precise landmark name at target point so observer instantly sees exact town/settlement!
           if (zoom >= 6.0 || isSelected) {
             const nearestTown = findNearestLandmark(predLat, predLon);
             drawTextWithOutline(
               ctx,
               `📍 ${nearestTown}`,
-              groundPoint.x + 8,
-              groundPoint.y + 11,
+              targetX + 8,
+              targetY + 11,
               isHighThreat ? "#fca5a5" : "#7dd3fc",
               "rgba(0, 0, 0, 0.95)",
               "10px Inter, monospace"
@@ -1289,59 +1316,37 @@ export const MapView = ({
           }
           ctx.restore();
 
-          // Draw vertical altitude stem connecting terrain to airborne craft
-          if (altElevationPx > 4) {
-            ctx.save();
-            ctx.beginPath();
-            ctx.ellipse(groundPoint.x, groundPoint.y, scale * 0.36, scale * 0.18, 0, 0, Math.PI * 2);
-            ctx.fillStyle = "rgba(0, 0, 0, 0.42)";
-            ctx.fill();
-            ctx.strokeStyle = "rgba(148, 163, 184, 0.35)";
-            ctx.lineWidth = 1;
-            ctx.stroke();
-
-            // Vertical dashed altitude stem
-            ctx.beginPath();
-            ctx.setLineDash([2, 3]);
-            ctx.moveTo(groundPoint.x, groundPoint.y);
-            ctx.lineTo(airX, airY);
-            ctx.strokeStyle = "rgba(226, 232, 240, 0.35)";
-            ctx.lineWidth = 1;
-            ctx.stroke();
-            ctx.restore();
-          }
-
-          // Ultra-precise ground targeting reticle pinned directly to terrain nadir
+          // Ultra-precise ground targeting reticle pinned directly to terrain
           if (zoom >= 10.5) {
-            drawGroundReticle(ctx, groundPoint.x, groundPoint.y, isHighThreat, now);
+            drawGroundReticle(ctx, targetX, targetY, isHighThreat, now);
           }
 
           // Subtle uncertainty cone ONLY on selected targets or high zoom (never blocking whole regions)
           if ((isSelected || zoom >= 11) && speed > 5) {
-            drawUncertaintyCone(ctx, airX, airY, screenHeadingDeg, Math.min(36, vDist * 0.8));
+            drawUncertaintyCone(ctx, targetX, targetY, screenHeadingDeg, Math.min(36, vDist * 0.8));
           }
 
           if (type === "uav") {
             const pulseRadius = (Math.sin(now / 200) * 0.5 + 0.5) * 10 + 6;
             ctx.beginPath();
-            ctx.arc(airX, airY, pulseRadius, 0, Math.PI * 2);
+            ctx.arc(targetX, targetY, pulseRadius, 0, Math.PI * 2);
             ctx.strokeStyle = "rgba(239, 68, 68, 0.45)";
             ctx.lineWidth = 1.3;
             ctx.stroke();
           }
 
           if (type === "munition") {
-            drawMissileFlame(ctx, airX, airY, screenHeadingDeg, now);
+            drawMissileFlame(ctx, targetX, targetY, screenHeadingDeg, now);
           }
 
           if (type === "uav") {
-            drawUavSilhouette(ctx, airX, airY, scale, screenHeadingDeg, color, now);
+            drawUavSilhouette(ctx, targetX, targetY, scale, screenHeadingDeg, color, now);
           } else if (type === "munition") {
-            drawMissileSilhouette(ctx, airX, airY, scale, screenHeadingDeg, color);
+            drawMissileSilhouette(ctx, targetX, targetY, scale, screenHeadingDeg, color);
           } else if (type === "helicopter") {
-            drawHelicopterSilhouette(ctx, airX, airY, scale, screenHeadingDeg, color, now);
+            drawHelicopterSilhouette(ctx, targetX, targetY, scale, screenHeadingDeg, color, now);
           } else {
-            drawAircraftSilhouette(ctx, airX, airY, scale, screenHeadingDeg, color, now);
+            drawAircraftSilhouette(ctx, targetX, targetY, scale, screenHeadingDeg, color, now);
           }
 
           // Geographically synchronized velocity vector with 5-minute waypoint tick
@@ -1351,12 +1356,12 @@ export const MapView = ({
             ctx.lineWidth = zoom >= 10 ? 1.8 : 1.2;
             ctx.setLineDash([3, 3]);
             ctx.beginPath();
-            ctx.moveTo(airX, airY);
-            ctx.lineTo(futureAir.x, futureAir.y);
+            ctx.moveTo(targetX, targetY);
+            ctx.lineTo(futureProj.x, futureProj.y);
             ctx.stroke();
 
             ctx.beginPath();
-            ctx.arc(futureAir.x, futureAir.y, 2, 0, Math.PI * 2);
+            ctx.arc(futureProj.x, futureProj.y, 2, 0, Math.PI * 2);
             ctx.fillStyle = color;
             ctx.fill();
             ctx.restore();
@@ -1372,8 +1377,8 @@ export const MapView = ({
             const landmark = findNearestLandmark(predicted.lat, predicted.lon);
             drawTacticalGlassBadge(
               ctx,
-              airX,
-              airY,
+              targetX,
+              targetY,
               displayId,
               speedKmh,
               speedKnots,
@@ -1387,13 +1392,13 @@ export const MapView = ({
             const displayId = id.startsWith("adsb-") ? `FLIGHT ${id.slice(5).toUpperCase()}` : id.toUpperCase();
             const speedText = `${Math.round(speed * 3.6)} км/год`;
             const altLabel = effectiveAltM >= 1000 ? `${(effectiveAltM / 1000).toFixed(1)} км` : `${Math.round(effectiveAltM)} м`;
-            drawTextWithOutline(ctx, displayId, airX + 14, airY - 8, "#f8fafc");
+            drawTextWithOutline(ctx, displayId, targetX + 14, targetY - 8, "#f8fafc");
             if (zoom >= 7.0 || isSelected) {
               drawTextWithOutline(
                 ctx,
                 `${speedText} • H:${altLabel}`,
-                airX + 14,
-                airY + 6,
+                targetX + 14,
+                targetY + 6,
                 "rgba(226, 232, 240, 0.85)",
                 "rgba(0, 0, 0, 0.85)",
                 "10px monospace"
@@ -1403,7 +1408,7 @@ export const MapView = ({
 
           // Selected target Lock Reticle & 15-minute Intercept Vector
           if (currentSelected && currentSelected[0] === id) {
-            drawLockReticle(ctx, airX, airY, (now / 40) % 360);
+            drawLockReticle(ctx, targetX, targetY, (now / 40) % 360);
 
             if (speed > 5) {
               ctx.save();
@@ -1411,7 +1416,7 @@ export const MapView = ({
               ctx.strokeStyle = "#38bdf8";
               ctx.lineWidth = 2;
               ctx.beginPath();
-              ctx.moveTo(airX, airY);
+              ctx.moveTo(targetX, targetY);
 
               const waypoints = [300, 600, 900];
               const wpCoords: Array<{ x: number; y: number; min: number }> = [];
@@ -1420,8 +1425,8 @@ export const MapView = ({
                 const wpLat = predLat + (vyMps * sec) / metersPerDegLat;
                 const wpLon = predLon + (vxMps * sec) / metersPerDegLon;
                 const wpProj = map.project([wpLon, wpLat]);
-                ctx.lineTo(wpProj.x, wpProj.y - altElevationPx);
-                wpCoords.push({ x: wpProj.x, y: wpProj.y - altElevationPx, min: sec / 60 });
+                ctx.lineTo(wpProj.x, wpProj.y);
+                wpCoords.push({ x: wpProj.x, y: wpProj.y, min: sec / 60 });
               }
               ctx.stroke();
               ctx.restore();
@@ -1445,10 +1450,13 @@ export const MapView = ({
           }
         }
 
-        // 3. Draw Active Reconnaissance Satellites (Persona-3, Bars-M, Lotos-S1, Kondor-FKA)
+        // 3. Draw Active Reconnaissance Satellites (Persona-3, Bars-M, Lotos-S1, Kondor-FKA) - throttled to 1s
         if (showSatellitesRef.current !== false) {
-          const satellites = calculateSatellitePositions(now);
-          drawSatelliteReconLayer(ctx, map, satellites, now, width, height);
+          if (now - lastSatCalcRef.current > 1000 || cachedSatellitesRef.current.length === 0) {
+            lastSatCalcRef.current = now;
+            cachedSatellitesRef.current = calculateSatellitePositions(now);
+          }
+          drawSatelliteReconLayer(ctx, map, cachedSatellitesRef.current, now, width, height);
         }
       }
 

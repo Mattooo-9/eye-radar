@@ -76,6 +76,7 @@ export const App = () => {
     uav: true,
     munition: true,
     aircraft: true,
+    helicopter: true,
     sound: soundEngine.isSoundEnabled()
   });
 
@@ -169,13 +170,62 @@ export const App = () => {
     }
   }, [filteredPackets, location, tacticalFilters, selectedTarget]);
 
-  const handleSelectCity = (lat: number, lon: number, cityName: string) => {
+  const targetCounts = useMemo(() => {
+    let uav = 0;
+    let munition = 0;
+    let aircraft = 0;
+    let helo = 0;
+    for (const p of packets) {
+      const type = p[1];
+      if (type === "uav") uav++;
+      else if (type === "munition") munition++;
+      else if (type === "aircraft") aircraft++;
+      else if (type === "helicopter") helo++;
+    }
+    return { uav, munition, aircraft, helo };
+  }, [packets]);
+
+  const handleFitAllTargets = () => {
+    if (!mapInstance) return;
+    if (filteredPackets.length > 0) {
+      let minLon = Infinity;
+      let minLat = Infinity;
+      let maxLon = -Infinity;
+      let maxLat = -Infinity;
+      for (const [, , lat, lon] of filteredPackets) {
+        if (lat < minLat) minLat = lat;
+        if (lat > maxLat) maxLat = lat;
+        if (lon < minLon) minLon = lon;
+        if (lon > maxLon) maxLon = lon;
+      }
+      mapInstance.fitBounds(
+        [
+          [Math.max(22.0, minLon - 0.5), Math.max(44.0, minLat - 0.4)],
+          [Math.min(40.5, maxLon + 0.5), Math.min(52.5, maxLat + 0.4)]
+        ],
+        { padding: 70, maxZoom: 8.5, duration: 1200 }
+      );
+    } else {
+      mapInstance.flyTo({
+        center: [31.5, 49.0],
+        zoom: 6.0,
+        pitch: 42,
+        duration: 1200
+      });
+    }
+  };
+
+  const handleSelectCity = (lat: number, lon: number, cityName: string, zoomLevel?: number) => {
     setSelectedCityName(cityName);
+    if (cityName.includes("Вся Україна") || (lat === 49.0 && lon === 31.5 && (!zoomLevel || zoomLevel <= 6.5))) {
+      handleFitAllTargets();
+      return;
+    }
     setManualLocation({ lat, lon });
     if (mapInstance) {
       mapInstance.flyTo({
         center: [lon, lat],
-        zoom: 8.5,
+        zoom: zoomLevel ?? 8.5,
         pitch: 54,
         duration: 1200
       });
@@ -255,6 +305,7 @@ export const App = () => {
       <div className="top-controls">
         <CitySelector
           onSelectCity={handleSelectCity}
+          onFitAllTargets={handleFitAllTargets}
           isManual={isManual}
           isPickingLocation={isPickingLocation}
           onTogglePickLocation={() => setIsPickingLocation((prev) => !prev)}
@@ -291,6 +342,11 @@ export const App = () => {
         flags={flags}
         filters={filters}
         onToggleFilter={handleToggleFilter}
+        uavCount={targetCounts.uav}
+        munitionCount={targetCounts.munition}
+        aircraftCount={targetCounts.aircraft}
+        heloCount={targetCounts.helo}
+        onFitAllTargets={handleFitAllTargets}
       />
 
       {inspectedTarget && (
