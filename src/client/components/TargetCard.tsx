@@ -9,7 +9,7 @@ interface TargetCardProps {
 }
 
 export const TargetCard = ({ packet, location, onClose }: TargetCardProps) => {
-  const [id, type, lat, lon, heading, speed, timestamp, confidence, uncertaintyRadius] = packet;
+  const [id, type, lat, lon, heading, speed, timestamp, confidence, uncertaintyRadius, threatLevel, altitude] = packet;
 
   let distanceKm: number | null = null;
   let etaMinutes: number | null = null;
@@ -31,6 +31,7 @@ export const TargetCard = ({ packet, location, onClose }: TargetCardProps) => {
 
   const speedKmh = Math.round(speed * 3.6);
   const timeSecAgo = Math.round((Date.now() - timestamp) / 1000);
+  const displayId = id.startsWith("adsb-") ? id.slice(5) : id;
 
   const getTypeTitle = (t: string) => {
     switch (t) {
@@ -39,7 +40,7 @@ export const TargetCard = ({ packet, location, onClose }: TargetCardProps) => {
       case "munition":
         return "Крилата / Балістична ракета";
       case "aircraft":
-        return "Авіація";
+        return id.startsWith("adsb-") ? `Борт ${displayId}` : "Авіація";
       case "helicopter":
         return "Гелікоптер";
       case "thermal":
@@ -70,6 +71,12 @@ export const TargetCard = ({ packet, location, onClose }: TargetCardProps) => {
             <span className="label">Курс</span>
             <span className="value">{Math.round(heading)}°</span>
           </div>
+          {altitude !== undefined && altitude !== null && (
+            <div className="metric">
+              <span className="label">Висота</span>
+              <span className="value highlight">{Math.round(altitude)} м</span>
+            </div>
+          )}
           <div className="metric">
             <span className="label">Дистанція</span>
             <span className="value highlight">{distanceKm !== null ? `${distanceKm} км` : "—"}</span>
@@ -80,7 +87,7 @@ export const TargetCard = ({ packet, location, onClose }: TargetCardProps) => {
           </div>
           <div className="metric">
             <span className="label">Довіра системи</span>
-            <span className="value">{confidence ? `${Math.round(confidence * 100)}%` : "75%"}</span>
+            <span className="value">{confidence ? `${Math.round(confidence * 100)}%` : "95%"}</span>
           </div>
           <div className="metric">
             <span className="label">Оновлено</span>

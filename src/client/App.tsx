@@ -49,6 +49,7 @@ export const App = () => {
   const [briefingOpen, setBriefingOpen] = useState(false);
   const [paramsOpen, setParamsOpen] = useState(false);
   const [selectedCityName, setSelectedCityName] = useState<string>("");
+  const [activeAlerts, setActiveAlerts] = useState<string[]>([]);
 
   const [tacticalFilters, setTacticalFilters] = useState<TacticalFilters>({
     autoTracking: true,
@@ -73,6 +74,34 @@ export const App = () => {
       window.Telegram?.WebApp?.setHeaderColor?.("#0b1220");
       window.Telegram?.WebApp?.setBackgroundColor?.("#070b14");
     } catch {}
+  }, []);
+
+  // Fetch real-time air raid alerts from alerts.in.ua
+  useEffect(() => {
+    let unmounted = false;
+    const fetchAlerts = async () => {
+      try {
+        const res = await fetch("/api/alerts");
+        if (res.ok) {
+          const data = (await res.json()) as { alerts?: Array<{ active: boolean; name: string }> };
+          if (Array.isArray(data.alerts)) {
+            const active = data.alerts
+              .filter((a) => a.active)
+              .map((a) => a.name);
+            if (!unmounted) {
+              setActiveAlerts(active);
+            }
+          }
+        }
+      } catch {}
+    };
+
+    void fetchAlerts();
+    const interval = setInterval(fetchAlerts, 15_000);
+    return () => {
+      unmounted = true;
+      clearInterval(interval);
+    };
   }, []);
 
   const handleCycleVision = () => {
@@ -194,6 +223,14 @@ export const App = () => {
       <div className="top-controls">
         <CitySelector onSelectCity={handleSelectCity} />
       </div>
+
+      {activeAlerts.length > 0 && (
+        <div className="active-alerts-ticker">
+          <span className="ticker-icon">🚨</span>
+          <span className="ticker-label">ТРИВОГА:</span>
+          <span className="ticker-regions">{activeAlerts.join(", ")}</span>
+        </div>
+      )}
 
       <OrbitalControls
         map={mapInstance}

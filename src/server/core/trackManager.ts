@@ -133,7 +133,8 @@ export class TrackManager {
       track.timestamp,
       track.confidence,
       track.uncertaintyRadius,
-      track.threatLevel
+      track.threatLevel,
+      track.altitude
     ]);
   }
 }

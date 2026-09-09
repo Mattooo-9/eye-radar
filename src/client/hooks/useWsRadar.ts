@@ -11,7 +11,8 @@ export type TrackPacket = [
   timestamp: number,
   confidence?: number,
   uncertaintyRadius?: number,
-  threatLevel?: string
+  threatLevel?: string,
+  altitude?: number
 ];
 
 interface ConfigResponse {
@@ -32,6 +33,7 @@ interface TargetApiResponse {
     confidence: number;
     uncertaintyRadius?: number;
     threatLevel?: string;
+    altitude?: number;
   }>;
 }
 
@@ -88,7 +90,8 @@ export const useWsRadar = (
               t.timestamp,
               t.confidence,
               t.uncertaintyRadius,
-              t.threatLevel
+              t.threatLevel,
+              t.altitude
             ]);
             setPackets(converted);
           }

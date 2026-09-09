@@ -17,7 +17,7 @@ export type SourceKind =
 
 export type ThreatLevel = "low" | "medium" | "high" | "critical";
 
-// Compact packet: [id, type, lat, lon, heading, speed, timestamp, confidence, uncertaintyRadius, threatLevel]
+// Compact packet: [id, type, lat, lon, heading, speed, timestamp, confidence, uncertaintyRadius, threatLevel, altitude]
 export type CompactTrackPacket = [
   id: string,
   type: TrackType,
@@ -28,7 +28,8 @@ export type CompactTrackPacket = [
   timestamp: number,
   confidence?: number,
   uncertaintyRadius?: number,
-  threatLevel?: ThreatLevel
+  threatLevel?: ThreatLevel,
+  altitude?: number
 ];
 
 export interface Observation {
