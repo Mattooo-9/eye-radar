@@ -128,7 +128,14 @@ const serveClient = async (req: IncomingMessage, res: ServerResponse): Promise<v
   }
 
   const contentType = MIME_TYPES[extname(finalPath)] ?? "application/octet-stream";
-  res.writeHead(200, { "Content-Type": contentType, "Cache-Control": "public, max-age=3600" });
+  const cacheControl = finalPath.endsWith("index.html")
+    ? "no-cache, no-store, must-revalidate, max-age=0"
+    : "public, max-age=31536000, immutable";
+  res.writeHead(200, {
+    "Content-Type": contentType,
+    "Cache-Control": cacheControl,
+    ...(finalPath.endsWith("index.html") ? { Pragma: "no-cache", Expires: "0" } : {})
+  });
   if (req.method === "HEAD") {
     res.end();
     return;

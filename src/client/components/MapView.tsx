@@ -8,6 +8,8 @@ import { getSubsolarPoint, getTerminatorCoordinates, getLocalSolarStatus } from 
 import { findNearestLandmark } from "../lib/landmarks";
 import { getLiveWeatherRadarTileUrl } from "../lib/weatherRadar";
 import { calculateSatellitePositions, type SatelliteTrack } from "../lib/satelliteRecon";
+import { getUkraineBordersGeoJSON } from "../lib/ukraineBorders";
+import { drawNightCityLights } from "../lib/nightCityLights";
 import type { FilterState } from "./StatusPanel";
 
 export type VisionMode = "satellite" | "nvg" | "flir" | "tactical";
@@ -748,6 +750,49 @@ const syncWeatherLayer = async (map: maplibregl.Map, visible: boolean) => {
   }
 };
 
+const syncUkraineBorders = (map: maplibregl.Map) => {
+  if (!map || !map.isStyleLoaded()) return;
+  try {
+    if (!map.getSource("ukraine-borders")) {
+      map.addSource("ukraine-borders", {
+        type: "geojson",
+        data: getUkraineBordersGeoJSON() as any
+      });
+    }
+
+    if (!map.getLayer("ukraine-oblast-borders")) {
+      map.addLayer({
+        id: "ukraine-oblast-borders",
+        type: "line",
+        source: "ukraine-borders",
+        filter: ["==", "type", "oblast_border"],
+        paint: {
+          "line-color": "#38bdf8",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 4, 0.7, 8, 1.2, 12, 1.8],
+          "line-opacity": 0.5,
+          "line-dasharray": [3, 2]
+        }
+      });
+    }
+
+    if (!map.getLayer("ukraine-state-border")) {
+      map.addLayer({
+        id: "ukraine-state-border",
+        type: "line",
+        source: "ukraine-borders",
+        filter: ["==", "type", "state_border"],
+        paint: {
+          "line-color": "#38bdf8",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 4, 1.6, 8, 2.4, 12, 3.5],
+          "line-opacity": 0.88
+        }
+      });
+    }
+  } catch {
+    // Graceful fallback if borders already present or WebGL busy
+  }
+};
+
 const drawSatelliteReconLayer = (
   ctx: CanvasRenderingContext2D,
   map: maplibregl.Map,
@@ -1033,8 +1078,12 @@ export const MapView = ({
     map.on("load", () => {
       resizeCanvasSafe();
       syncWeatherLayer(map, showWeatherRef.current !== false);
+      syncUkraineBorders(map);
       const scaleControl = new maplibregl.ScaleControl({ maxWidth: 110, unit: "metric" });
       map.addControl(scaleControl, "bottom-right");
+    });
+    map.on("styledata", () => {
+      syncUkraineBorders(map);
     });
     map.on("resize", () => {
       resizeCanvasSafe();
@@ -1069,6 +1118,10 @@ export const MapView = ({
     if (currentStyleRef.current !== targetStyle) {
       currentStyleRef.current = targetStyle;
       map.setStyle(targetStyle);
+      map.once("styledata", () => {
+        syncUkraineBorders(map);
+        syncWeatherLayer(map, showWeatherRef.current !== false);
+      });
     }
   }, [mapStyleUrl, visionMode]);
 
@@ -1184,6 +1237,12 @@ export const MapView = ({
             ctx.fillRect(0, 0, width, height);
           }
           ctx.restore();
+
+          // C. Living Night City Lights & Highway Arteries Illumination
+          if (elev < 0) {
+            const nightFactor = Math.min(1, Math.max(0, -elev / 15));
+            drawNightCityLights(ctx, map, nightFactor, now, width, height);
+          }
 
           // Physical MapLibre satellite tile brightness synchronization (throttled to 5s to eliminate WebGL recompile overhead)
           if (now - lastBrightnessCheckRef.current > 5000) {
@@ -1432,7 +1491,7 @@ export const MapView = ({
               landmark,
               isHighThreat
             );
-          } else if (zoom >= 4.8 || isHighThreat) {
+          } else if (isHighThreat || zoom >= 6.8 || (zoom >= 4.8 && !id.startsWith("adsb-"))) {
             const shortName =
               type === "uav"
                 ? "Shahed-136"
