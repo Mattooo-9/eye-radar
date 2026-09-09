@@ -9,10 +9,12 @@ import { TrackManager } from "./core/trackManager.js";
 import type { Observation } from "./domain/types.js";
 import { parseOsintText } from "./ingest/osintParser.js";
 import { normalizeSdrPayload, type SdrPayload } from "./ingest/sdrGateway.js";
+import { AirplanesLiveSource } from "./sources/airplanesLive.js";
 import { AlertsInUaSource } from "./sources/alertsInUa.js";
 import { FirmsThermalSource } from "./sources/firmsThermal.js";
 import { OpenMeteoWindSource } from "./sources/openMeteoWind.js";
 import { AirspaceSimulator } from "./sources/simulator.js";
+import { SourceHealthTracker } from "./sources/sourceHealth.js";
 import { RadarHub } from "./ws/hub.js";
 
 const DIST_CLIENT = resolve(process.cwd(), "dist/client");
@@ -30,8 +32,15 @@ const trackManager = new TrackManager();
 const alertsSource = new AlertsInUaSource();
 const firmsSource = new FirmsThermalSource();
 const windSource = new OpenMeteoWindSource();
+const airplanesSource = new AirplanesLiveSource();
 const simulator = new AirspaceSimulator();
+const healthTracker = new SourceHealthTracker();
 let simulationEnabled = true;
+
+healthTracker.registerSource("alerts.in.ua");
+healthTracker.registerSource("airplanes.live");
+healthTracker.registerSource("open-meteo");
+healthTracker.registerSource("simulator");
 
 const readBody = async (req: IncomingMessage): Promise<string> =>
   new Promise((resolveBody, rejectBody) => {
@@ -134,7 +143,19 @@ const server = createServer(async (req, res) => {
       ok: true,
       uptime: process.uptime(),
       tracks: trackManager.snapshot().length,
-      simulator: simulationEnabled
+      simulator: simulationEnabled,
+      sources: healthTracker.getStatuses()
+    });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/status") {
+    json(res, 200, {
+      uptime: process.uptime(),
+      memory: process.memoryUsage(),
+      tracksCount: trackManager.snapshot().length,
+      sources: healthTracker.getStatuses(),
+      simulationEnabled
     });
     return;
   }
@@ -183,7 +204,7 @@ const server = createServer(async (req, res) => {
       const observations = parsed.text ? parseOsintText(parsed.text) : parsed.observations ?? [];
       ingestBatch(observations, hub);
       json(res, 200, { accepted: observations.length });
-    } catch (e) {
+    } catch {
       json(res, 400, { error: "Invalid JSON or payload" });
     }
     return;
@@ -196,7 +217,7 @@ const server = createServer(async (req, res) => {
       const observations = (parsed.observations ?? []).map(normalizeSdrPayload);
       ingestBatch(observations, hub);
       json(res, 200, { accepted: observations.length });
-    } catch (e) {
+    } catch {
       json(res, 400, { error: "Invalid SDR payload" });
     }
     return;
@@ -222,6 +243,7 @@ const server = createServer(async (req, res) => {
 const wss = new WebSocketServer({ noServer: true });
 const hub = new RadarHub(wss);
 const botManager = createTelegramBot();
+botManager.setHealthTracker(healthTracker, () => trackManager.snapshot().length);
 
 server.on("upgrade", (req, socket, head) => {
   const url = new URL(req.url ?? "/", env.publicBaseUrl);
@@ -236,15 +258,44 @@ server.on("upgrade", (req, socket, head) => {
   });
 });
 
+let cycleCounter = 0;
+
 // Periodic main loop: 1 Hz tick for smooth predictive tracking & sensor ingestion
 setInterval(async () => {
   const now = Date.now();
+  cycleCounter += 1;
+
+  // Poll ADS-B open feed every 10 seconds
+  if (cycleCounter % 10 === 0) {
+    const t0 = Date.now();
+    try {
+      const flights = await airplanesSource.fetchBorderFlights();
+      for (const f of flights) {
+        trackManager.ingest(f);
+      }
+      healthTracker.recordSuccess("airplanes.live", Date.now() - t0);
+    } catch (err) {
+      healthTracker.recordError("airplanes.live", err instanceof Error ? err : String(err));
+    }
+  }
+
+  // Poll Alerts every 15 seconds
+  if (cycleCounter % 15 === 0) {
+    const t0 = Date.now();
+    try {
+      await alertsSource.fetchAlerts();
+      healthTracker.recordSuccess("alerts.in.ua", Date.now() - t0);
+    } catch (err) {
+      healthTracker.recordError("alerts.in.ua", err instanceof Error ? err : String(err));
+    }
+  }
 
   if (simulationEnabled) {
     const simObservations = simulator.generateStep(now);
     for (const obs of simObservations) {
       trackManager.ingest(obs);
     }
+    healthTracker.recordSuccess("simulator", 1);
   }
 
   trackManager.tick(now);

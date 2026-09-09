@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { CitySelector } from "./components/CitySelector";
 import { ManualLocationPrompt } from "./components/ManualLocationPrompt";
 import { MapView } from "./components/MapView";
-import { StatusPanel } from "./components/StatusPanel";
+import { type FilterState, StatusPanel } from "./components/StatusPanel";
 import { TargetCard } from "./components/TargetCard";
 import { ThreatBanner } from "./components/ThreatBanner";
 import { type TrackPacket, useWsRadar } from "./hooks/useWsRadar";
+import { soundEngine } from "./lib/sound";
 import { useTrustedLocation } from "./location/useTrustedLocation";
 
 const getUserId = (): string => {
@@ -36,6 +37,12 @@ export const App = () => {
   );
 
   const [selectedTarget, setSelectedTarget] = useState<TrackPacket | null>(null);
+  const [filters, setFilters] = useState<FilterState>({
+    uav: true,
+    munition: true,
+    aircraft: true,
+    sound: soundEngine.isSoundEnabled()
+  });
 
   useEffect(() => {
     window.Telegram?.WebApp?.ready();
@@ -44,6 +51,15 @@ export const App = () => {
 
   const handleSelectCity = (lat: number, lon: number, cityName: string) => {
     setManualLocation({ lat, lon });
+  };
+
+  const handleToggleFilter = (key: keyof FilterState) => {
+    if (key === "sound") {
+      const next = soundEngine.toggleSound();
+      setFilters((prev) => ({ ...prev, sound: next }));
+    } else {
+      setFilters((prev) => ({ ...prev, [key]: !prev[key] }));
+    }
   };
 
   return (
@@ -58,6 +74,7 @@ export const App = () => {
         packets={packets}
         mapStyleUrl={mapStyleUrl}
         location={location}
+        filters={filters}
         onSelectTarget={(target) => setSelectedTarget(target)}
       />
 
@@ -70,6 +87,8 @@ export const App = () => {
         connectionState={connectionState}
         trustScore={trustScore}
         flags={flags}
+        filters={filters}
+        onToggleFilter={handleToggleFilter}
       />
 
       {selectedTarget && (

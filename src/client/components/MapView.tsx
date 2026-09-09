@@ -2,12 +2,15 @@ import { useEffect, useRef } from "react";
 import maplibregl, { type Map } from "maplibre-gl";
 import type { TrackPacket } from "../hooks/useWsRadar";
 import type { TrustedLocation } from "../location/useTrustedLocation";
-import { destinationPoint } from "../lib/geo";
+import { destinationPoint, haversineMeters } from "../lib/geo";
+import { soundEngine } from "../lib/sound";
+import type { FilterState } from "./StatusPanel";
 
 interface MapViewProps {
   packets: TrackPacket[];
   mapStyleUrl: string;
   location: TrustedLocation | null;
+  filters?: FilterState;
   onSelectTarget?: (packet: TrackPacket) => void;
 }
 
@@ -69,7 +72,7 @@ const drawUncertaintyCone = (
   ctx.restore();
 };
 
-export const MapView = ({ packets, mapStyleUrl, location, onSelectTarget }: MapViewProps) => {
+export const MapView = ({ packets, mapStyleUrl, location, filters, onSelectTarget }: MapViewProps) => {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const mapRef = useRef<Map | null>(null);
@@ -210,6 +213,22 @@ export const MapView = ({ packets, mapStyleUrl, location, onSelectTarget }: MapV
         // 2. Draw Air Targets
         for (const packet of packets) {
           const [id, type, lat, lon, heading, speed, timestamp] = packet;
+
+          // Layer filters
+          if (filters) {
+            if (type === "uav" && !filters.uav) continue;
+            if (type === "munition" && !filters.munition) continue;
+            if ((type === "aircraft" || type === "helicopter") && !filters.aircraft) continue;
+          }
+
+          // Tactical audio ping if threat is within 25km
+          if (location && (type === "uav" || type === "munition")) {
+            const dist = haversineMeters({ lat, lon }, { lat: location.lat, lon: location.lon });
+            if (dist <= 25_000 && filters?.sound !== false) {
+              soundEngine.playRadarPing();
+            }
+          }
+
           const elapsedSeconds = Math.max(0, (Date.now() - timestamp) / 1000);
           const predicted = destinationPoint({ lat, lon }, heading, speed * elapsedSeconds);
           const projected = map.project([predicted.lon, predicted.lat]);

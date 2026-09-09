@@ -13,6 +13,10 @@ declare global {
             id?: number;
           };
         };
+        HapticFeedback?: {
+          notificationOccurred: (type: "error" | "success" | "warning") => void;
+          impactOccurred: (style: "light" | "medium" | "heavy" | "rigid" | "soft") => void;
+        };
       };
     };
   }
