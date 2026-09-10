@@ -1440,114 +1440,24 @@ const syncWeatherLayer = async (map: maplibregl.Map, visible: boolean) => {
 const syncUkraineBorders = (map: maplibregl.Map, showFrontline = true) => {
   if (!map || !map.isStyleLoaded()) return;
   try {
-    // All Country Borders — world-borders.geojson includes accurate Ukraine geometry
-    // NO custom Ukraine overlay: only this real-data layer is used
-    if (!map.getSource("world-borders")) {
-      map.addSource("world-borders", {
-        type: "geojson",
-        data: "/world-borders.geojson"
-      });
+    // Completely remove any custom border lines drawn over real borders
+    const customBorderLayers = [
+      "world-borders-glow",
+      "world-borders-line",
+      "ukraine-real-glow",
+      "ukraine-real-border",
+      "ukraine-oblasts-glow",
+      "ukraine-oblasts-line"
+    ];
+    for (const id of customBorderLayers) {
+      if (map.getLayer(id)) {
+        try { map.removeLayer(id); } catch {}
+      }
     }
-
-    if (!map.getLayer("world-borders-glow")) {
-      map.addLayer({
-        id: "world-borders-glow",
-        type: "line",
-        source: "world-borders",
-        paint: {
-          "line-color": "#475569",
-          "line-width": ["interpolate", ["linear"], ["zoom"], 3, 2.0, 6, 3.5, 10, 5.0],
-          "line-blur": ["interpolate", ["linear"], ["zoom"], 3, 1.0, 6, 2.0, 10, 3.0],
-          "line-opacity": 0.45
-        }
-      });
-    }
-
-    if (!map.getLayer("world-borders-line")) {
-      map.addLayer({
-        id: "world-borders-line",
-        type: "line",
-        source: "world-borders",
-        paint: {
-          "line-color": "#94a3b8",
-          "line-width": ["interpolate", ["linear"], ["zoom"], 3, 1.0, 6, 1.6, 10, 2.2],
-          "line-opacity": 0.85
-        }
-      });
-    }
-
-    // Ukraine state border: bright distinct highlight on top of world-borders-line
-    // Uses world-borders source, filter by ISO_A3 = UKR for accurate geometry
-    if (!map.getLayer("ukraine-real-glow")) {
-      map.addLayer({
-        id: "ukraine-real-glow",
-        type: "line",
-        source: "world-borders",
-        filter: ["any",
-          ["==", ["get", "ISO_A3"], "UKR"],
-          ["==", ["get", "ADM0_A3"], "UKR"],
-          ["==", ["get", "SOV_A3"], "UKR"]
-        ],
-        paint: {
-          "line-color": "#0ea5e9",
-          "line-width": ["interpolate", ["linear"], ["zoom"], 3, 3.5, 6, 6.0, 10, 9.0],
-          "line-blur": ["interpolate", ["linear"], ["zoom"], 3, 2.0, 6, 3.5, 10, 5.0],
-          "line-opacity": 0.65
-        }
-      });
-    }
-
-    if (!map.getLayer("ukraine-real-border")) {
-      map.addLayer({
-        id: "ukraine-real-border",
-        type: "line",
-        source: "world-borders",
-        filter: ["any",
-          ["==", ["get", "ISO_A3"], "UKR"],
-          ["==", ["get", "ADM0_A3"], "UKR"],
-          ["==", ["get", "SOV_A3"], "UKR"]
-        ],
-        paint: {
-          "line-color": "#38bdf8",
-          "line-width": ["interpolate", ["linear"], ["zoom"], 3, 1.5, 6, 2.2, 10, 3.0],
-          "line-opacity": 0.95
-        }
-      });
-    }
-
-    // Ukraine Oblast Administrative Boundaries (24 oblasts + Crimea)
-    if (!map.getSource("ukraine-oblasts")) {
-      map.addSource("ukraine-oblasts", {
-        type: "geojson",
-        data: "/ukraine-oblasts.geojson"
-      });
-    }
-
-    if (!map.getLayer("ukraine-oblasts-glow")) {
-      map.addLayer({
-        id: "ukraine-oblasts-glow",
-        type: "line",
-        source: "ukraine-oblasts",
-        paint: {
-          "line-color": "#0284c7",
-          "line-width": ["interpolate", ["linear"], ["zoom"], 4, 1.8, 8, 3.2, 12, 4.8],
-          "line-blur": ["interpolate", ["linear"], ["zoom"], 4, 1.0, 8, 2.0, 12, 3.0],
-          "line-opacity": 0.35
-        }
-      });
-    }
-
-    if (!map.getLayer("ukraine-oblasts-line")) {
-      map.addLayer({
-        id: "ukraine-oblasts-line",
-        type: "line",
-        source: "ukraine-oblasts",
-        paint: {
-          "line-color": "#38bdf8",
-          "line-width": ["interpolate", ["linear"], ["zoom"], 4, 1.0, 8, 1.6, 12, 2.2],
-          "line-opacity": 0.65
-        }
-      });
+    for (const src of ["world-borders", "ukraine-oblasts"]) {
+      if (map.getSource(src)) {
+        try { map.removeSource(src); } catch {}
+      }
     }
 
     // Tactical Line of Contact / Frontline (ЛБЗ)
