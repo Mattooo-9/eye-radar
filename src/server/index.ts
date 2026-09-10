@@ -249,6 +249,64 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "POST" && url.pathname === "/api/report") {
+    try {
+      const raw = await readBody(req);
+      const parsed = JSON.parse(raw) as {
+        type?: string;
+        lat?: number;
+        lon?: number;
+        direction?: string;
+        comment?: string;
+      };
+
+      const lat = typeof parsed.lat === "number" && !isNaN(parsed.lat) ? parsed.lat : 50.45;
+      const lon = typeof parsed.lon === "number" && !isNaN(parsed.lon) ? parsed.lon : 30.52;
+      const reportType = parsed.type || "uav_sound";
+
+      let headingDeg = 180;
+      switch (parsed.direction) {
+        case "N": headingDeg = 0; break;
+        case "NE": headingDeg = 45; break;
+        case "E": headingDeg = 90; break;
+        case "SE": headingDeg = 135; break;
+        case "S": headingDeg = 180; break;
+        case "SW": headingDeg = 225; break;
+        case "W": headingDeg = 270; break;
+        case "NW": headingDeg = 315; break;
+      }
+
+      const isMunition = reportType === "munition_visual";
+      const observation: Observation = {
+        id: `citizen-${Date.now().toString(36)}`,
+        type: isMunition ? "munition" : "uav",
+        lat,
+        lon,
+        heading: headingDeg,
+        speed: isMunition ? 220 : 52,
+        timestamp: Date.now(),
+        source: "manual",
+        confidence: 0.88,
+        altitude: isMunition ? 120 : 250,
+        meta: {
+          reportType,
+          comment: parsed.comment || "Citizen acoustic report"
+        }
+      };
+
+      ingestBatch([observation], hub);
+
+      json(res, 200, {
+        ok: true,
+        message: "Рапорт успішно прийнято та внесено в ситуаційну сітку.",
+        trackId: observation.id
+      });
+    } catch {
+      json(res, 400, { error: "Invalid report payload" });
+    }
+    return;
+  }
+
   if (req.method === "POST" && url.pathname === "/api/simulator/toggle") {
     simulationEnabled = !simulationEnabled;
     json(res, 200, { simulationEnabled });

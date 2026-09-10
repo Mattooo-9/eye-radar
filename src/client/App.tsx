@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Map } from "maplibre-gl";
 import { AiBriefingModal } from "./components/AiBriefingModal";
+import { CitizenReportModal } from "./components/CitizenReportModal";
 import { CitySelector, LOCATIONS } from "./components/CitySelector";
 import { ManualLocationPrompt } from "./components/ManualLocationPrompt";
 import { MapView, type VisionMode } from "./components/MapView";
@@ -64,6 +65,7 @@ export const App = () => {
   const [showSatellites, setShowSatellites] = useState(true);
   const [followedTargetId, setFollowedTargetId] = useState<string | null>(null);
   const [alertsModalOpen, setAlertsModalOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
 
   const handleSelectOblastFromAlert = (oblastName: string) => {
     const clean = oblastName.toLowerCase().replace("область", "").replace("обл.", "").trim();
@@ -286,6 +288,7 @@ export const App = () => {
         map={mapInstance}
         trackCount={filteredPackets.length}
         onOpenBriefing={() => setBriefingOpen(true)}
+        onOpenReport={() => setReportOpen(true)}
       />
 
       <ThreatBanner
@@ -471,6 +474,13 @@ export const App = () => {
         filters={tacticalFilters}
         onChangeFilters={setTacticalFilters}
         location={location}
+      />
+
+      <CitizenReportModal
+        isOpen={reportOpen}
+        location={location}
+        trustScore={trustScore}
+        onClose={() => setReportOpen(false)}
       />
     </main>
   );

@@ -5,9 +5,15 @@ interface OrbitalHudProps {
   map: Map | null;
   trackCount: number;
   onOpenBriefing?: () => void;
+  onOpenReport?: () => void;
 }
 
-export const OrbitalHud = ({ map, trackCount, onOpenBriefing }: OrbitalHudProps) => {
+export const OrbitalHud = ({
+  map,
+  trackCount,
+  onOpenBriefing,
+  onOpenReport
+}: OrbitalHudProps) => {
   const [coords, setCoords] = useState({ lat: 49.0, lon: 31.5 });
   const [bearing, setBearing] = useState(0);
   const [nowDate, setNowDate] = useState(new Date());
@@ -90,6 +96,19 @@ export const OrbitalHud = ({ map, trackCount, onOpenBriefing }: OrbitalHudProps)
       </div>
 
       <div className="orbital-hud-right">
+        {onOpenReport && (
+          <button
+            type="button"
+            className="hud-action-btn hud-report-btn"
+            onClick={() => {
+              window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.("medium");
+              onOpenReport();
+            }}
+            title="Повідомити про звук або спостереження БПЛА чи ракети"
+          >
+            📢 РАПОРТ
+          </button>
+        )}
         <button
           className="hud-status-badge"
           onClick={() => {
@@ -97,7 +116,6 @@ export const OrbitalHud = ({ map, trackCount, onOpenBriefing }: OrbitalHudProps)
             onOpenBriefing?.();
           }}
           title="Натисніть для тактичного AI-зведення"
-          style={{ cursor: "pointer", border: "1px solid rgba(56,189,248,0.5)" }}
         >
           {trackCount > 0 ? `🚨 ${trackCount} ЦІЛЕЙ (AI) ▼` : "🟢 СЕКТОР ЧИСТИЙ (AI) ▼"}
         </button>
@@ -154,6 +172,18 @@ export const OrbitalHud = ({ map, trackCount, onOpenBriefing }: OrbitalHudProps)
             >
               📋 Відкрити аналітичний AI-брифінг
             </button>
+            {onOpenReport && (
+              <button
+                type="button"
+                className="popover-action-btn secondary"
+                onClick={() => {
+                  setIsOpenTelemetry(false);
+                  onOpenReport();
+                }}
+              >
+                📢 Повідомити про звук або спостереження БПЛА
+              </button>
+            )}
             {map && (
               <button
                 type="button"

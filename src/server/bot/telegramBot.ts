@@ -59,8 +59,12 @@ export class EyeRadarBotManager {
     ]).catch(() => {});
 
     const isHttps = webAppUrl.startsWith("https://");
-    const getRadarButton = (text = "🗺️ Відкрити Радар") =>
-      isHttps ? { text: `${text} (Mini App)`, web_app: { url: webAppUrl } } : { text: `${text} (Web)`, url: webAppUrl };
+    const getRadarButton = (text = "🛰️ Відкрити Eye Radar") => {
+      const clean = text.replace(/\s*\((Mini App|Web)\)/gi, "").trim();
+      return isHttps
+        ? { text: `${clean} (Mini App)`, web_app: { url: webAppUrl } }
+        : { text: `${clean} (Web)`, url: webAppUrl };
+    };
 
     if (isHttps) {
       bot.telegram.setChatMenuButton({
@@ -72,57 +76,32 @@ export class EyeRadarBotManager {
       }).catch(() => {});
     }
 
-    const getPersistentKeyboard = () => ({
-      keyboard: [
-        [
-          isHttps
-            ? { text: "🛰️ ВІДКРИТИ 3D РАДАР", web_app: { url: webAppUrl } }
-            : { text: "🛰️ ВІДКРИТИ 3D РАДАР" }
-        ],
-        [
-          { text: "📊 AI-Зведення" },
-          { text: "🔔 Тривоги" }
-        ],
-        [
-          { text: "⚙️ Статус" },
-          { text: "📍 Надіслати координати", request_location: true }
-        ]
-      ],
-      resize_keyboard: true,
-      is_persistent: true
-    });
-
     const sendLaunchMessage = async (chatId: number) => {
-      const userPref = this.storage.getPreference(chatId);
-      const locText = userPref ? `\n📍 Поточна локація: *${userPref.lat.toFixed(4)}, ${userPref.lon.toFixed(4)}* (радіус *${userPref.radiusKm} км*)` : "\n📍 Локація ще не встановлена (натисніть «📍 Надіслати координати» або /setlocation)";
-
       try {
+        // Clear any old bulky custom reply keyboard if present from previous sessions
+        try {
+          const rm = await bot.telegram.sendMessage(chatId, "🛰️", {
+            reply_markup: { remove_keyboard: true }
+          });
+          await bot.telegram.deleteMessage(chatId, rm.message_id);
+        } catch {}
+
+        const primaryBtn = isHttps
+          ? { text: "🛰️ ВІДКРИТИ EYE RADAR", web_app: { url: webAppUrl } }
+          : { text: "🛰️ ВІДКРИТИ EYE RADAR", url: webAppUrl };
+
         await bot.telegram.sendMessage(
           chatId,
-          "🛰️ *Eye Radar — Ситуаційна обізнаність цивільної безпеки*\n\n" +
-            "Система безперервно аналізує відкриті джерела, ADS-B, супутникові дані та моніторинг повітряного простору України." +
-            locText +
-            "\n\n🔘 Кнопку швидкого доступу закріплено над полем чату для миттєвого відкриття 3D-мапи.",
+          "🛰️ *EYE RADAR // ТАКТИЧНА СИСТЕМА МОНІТОРИНГУ*\n\n" +
+            "• Живі повітряні цілі: Шахеди, ракети, бойова авіація\n" +
+            "• Зони тривог, супутникові термоточки та метеодані\n" +
+            "• Оперативне AI-зведення, анти-спуфінг та акустичний моніторинг\n\n" +
+            "_Усі модулі, статус та налаштування перенесені в інтерактивне мінідодаток._",
           {
             parse_mode: "Markdown",
-            reply_markup: getPersistentKeyboard()
-          }
-        );
-
-        await bot.telegram.sendMessage(
-          chatId,
-          "Оберіть дію або відкрийте інтерактивну карту:",
-          {
             reply_markup: {
               inline_keyboard: [
-                [getRadarButton("🛰️ Відкрити 3D Радар (Mini App)")],
-                [
-                  { text: "📊 AI-Зведення", callback_data: "cmd_briefing" },
-                  { text: "🔔 Тривоги", callback_data: "cmd_alerts" }
-                ],
-                [
-                  { text: "⚙️ Статус системи", callback_data: "cmd_status" }
-                ]
+                [primaryBtn]
               ]
             }
           }
