@@ -1,4 +1,4 @@
-import { bearingDegrees, haversineMeters } from "../domain/geo.js";
+import { bearingDegrees, destinationPoint, haversineMeters } from "../domain/geo.js";
 import type { CompactTrackPacket, Observation, ThreatLevel, TrackState } from "../domain/types.js";
 import { KalmanFilter2D } from "./kalman.js";
 import { TrackCorrelator } from "./trackCorrelator.js";
@@ -108,16 +108,13 @@ export class TrackManager {
         continue;
       }
 
-      // Smooth extrapolation between observations
-      const extrapolated = entry.filter.predict(now);
-      if (extrapolated) {
+      if (entry.state.speed > 2 && entry.state.heading !== undefined) {
+        const dist = entry.state.speed * dt;
+        const nextPos = destinationPoint(entry.state.lat, entry.state.lon, entry.state.heading, dist);
         entry.state = {
           ...entry.state,
-          lat: Number(extrapolated.lat.toFixed(6)),
-          lon: Number(extrapolated.lon.toFixed(6)),
-          uncertaintyRadius: Math.round(extrapolated.uncertaintyRadiusMeters),
-          covLat: extrapolated.covLat,
-          covLon: extrapolated.covLon,
+          lat: Number(nextPos.lat.toFixed(6)),
+          lon: Number(nextPos.lon.toFixed(6)),
           timestamp: now
         };
       }

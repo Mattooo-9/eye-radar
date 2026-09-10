@@ -51,8 +51,8 @@ export class KalmanFilter2D {
   private state?: KalmanState;
 
   constructor(
-    private readonly processNoise = 0.0001,
-    private readonly measurementNoise = 0.005
+    private readonly processNoise = 0.00001,
+    private readonly measurementNoise = 0.00002
   ) {}
 
   reset(): void {

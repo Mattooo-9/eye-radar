@@ -35,15 +35,44 @@ export const bearingDegrees = (a: GeoPoint, b: GeoPoint): number => {
   return (deg + 360) % 360;
 };
 
-export const destinationPoint = (
+export function destinationPoint(
   point: GeoPoint,
   heading: number,
   distanceMeters: number
-): GeoPoint => {
+): GeoPoint;
+export function destinationPoint(
+  lat: number,
+  lon: number,
+  heading: number,
+  distanceMeters: number
+): GeoPoint;
+export function destinationPoint(
+  pointOrLat: GeoPoint | number,
+  headingOrLon: number,
+  distanceMetersOrHeading: number,
+  maybeDistanceMeters?: number
+): GeoPoint {
+  let lat: number;
+  let lon: number;
+  let heading: number;
+  let distanceMeters: number;
+
+  if (typeof pointOrLat === "number") {
+    lat = pointOrLat;
+    lon = headingOrLon;
+    heading = distanceMetersOrHeading;
+    distanceMeters = maybeDistanceMeters ?? 0;
+  } else {
+    lat = pointOrLat.lat;
+    lon = pointOrLat.lon;
+    heading = headingOrLon;
+    distanceMeters = distanceMetersOrHeading;
+  }
+
   const angularDistance = distanceMeters / EARTH_RADIUS_M;
   const headingRad = toRadians(heading);
-  const latRad = toRadians(point.lat);
-  const lonRad = toRadians(point.lon);
+  const latRad = toRadians(lat);
+  const lonRad = toRadians(lon);
 
   const nextLat = Math.asin(
     Math.sin(latRad) * Math.cos(angularDistance) +
@@ -61,4 +90,4 @@ export const destinationPoint = (
     lat: toDegrees(nextLat),
     lon: toDegrees(nextLon)
   };
-};
+}
