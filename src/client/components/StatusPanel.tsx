@@ -8,6 +8,8 @@ export interface FilterState {
   munition: boolean;
   aircraft: boolean;
   helicopter?: boolean;
+  bomb?: boolean;
+  fpv?: boolean;
   sound: boolean;
 }
 
@@ -20,6 +22,8 @@ interface StatusPanelProps {
   onToggleFilter: (key: keyof FilterState) => void;
   uavCount?: number;
   munitionCount?: number;
+  bombCount?: number;
+  fpvCount?: number;
   aircraftCount?: number;
   heloCount?: number;
   onFitAllTargets?: () => void;
@@ -38,6 +42,8 @@ export const StatusPanel = ({
   onToggleFilter,
   uavCount = 0,
   munitionCount = 0,
+  bombCount = 0,
+  fpvCount = 0,
   aircraftCount = 0,
   heloCount = 0,
   onFitAllTargets,
@@ -166,6 +172,14 @@ export const StatusPanel = ({
               <div className="breakdown-card munition">
                 <span className="breakdown-name">🟠 Ракети</span>
                 <strong className="breakdown-count">{munitionCount}</strong>
+              </div>
+              <div className="breakdown-card bomb">
+                <span className="breakdown-name">💣 КАБ (УМПК)</span>
+                <strong className="breakdown-count">{bombCount}</strong>
+              </div>
+              <div className="breakdown-card fpv">
+                <span className="breakdown-name">🟣 FPV-дрони</span>
+                <strong className="breakdown-count">{fpvCount}</strong>
               </div>
               <div className="breakdown-card aircraft">
                 <span className="breakdown-name">🔵 Авіація</span>

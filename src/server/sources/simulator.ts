@@ -23,7 +23,7 @@ interface DynamicTrack {
 
 interface RegionCorridor {
   regionKeyword: string;
-  type: "uav" | "munition";
+  type: TrackType;
   minLat: number;
   maxLat: number;
   minLon: number;
@@ -141,6 +141,21 @@ const REGION_CORRIDORS: RegionCorridor[] = [
     model: "Shahed-136"
   },
   {
+    regionKeyword: "сум",
+    type: "bomb",
+    minLat: 51.0,
+    maxLat: 51.4,
+    minLon: 34.6,
+    maxLon: 35.2,
+    headingMin: 225,
+    headingMax: 250,
+    speedKmhMin: 810,
+    speedKmhMax: 870,
+    altitudeMin: 2200,
+    altitudeMax: 3500,
+    model: "КАБ-500 (УМПК)"
+  },
+  {
     regionKeyword: "харків",
     type: "uav",
     minLat: 49.8,
@@ -154,6 +169,36 @@ const REGION_CORRIDORS: RegionCorridor[] = [
     altitudeMin: 160,
     altitudeMax: 250,
     model: "Shahed-136"
+  },
+  {
+    regionKeyword: "харків",
+    type: "bomb",
+    minLat: 50.15,
+    maxLat: 50.45,
+    minLon: 36.4,
+    maxLon: 37.1,
+    headingMin: 210,
+    headingMax: 235,
+    speedKmhMin: 810,
+    speedKmhMax: 870,
+    altitudeMin: 2200,
+    altitudeMax: 3500,
+    model: "КАБ-500 (УМПК)"
+  },
+  {
+    regionKeyword: "харків",
+    type: "fpv",
+    minLat: 49.7,
+    maxLat: 50.0,
+    minLon: 37.4,
+    maxLon: 37.9,
+    headingMin: 250,
+    headingMax: 280,
+    speedKmhMin: 90,
+    speedKmhMax: 115,
+    altitudeMin: 35,
+    altitudeMax: 80,
+    model: "FPV-дрон (Ударний)"
   },
   {
     regionKeyword: "харків",
@@ -199,6 +244,66 @@ const REGION_CORRIDORS: RegionCorridor[] = [
     altitudeMin: 1500,
     altitudeMax: 2400,
     model: "Orlan-10 Recon"
+  },
+  {
+    regionKeyword: "запоріж",
+    type: "bomb",
+    minLat: 47.45,
+    maxLat: 47.85,
+    minLon: 35.6,
+    maxLon: 36.3,
+    headingMin: 320,
+    headingMax: 345,
+    speedKmhMin: 820,
+    speedKmhMax: 880,
+    altitudeMin: 2200,
+    altitudeMax: 3500,
+    model: "КАБ-500 (УМПК)"
+  },
+  {
+    regionKeyword: "запоріж",
+    type: "fpv",
+    minLat: 47.4,
+    maxLat: 47.6,
+    minLon: 35.7,
+    maxLon: 36.1,
+    headingMin: 315,
+    headingMax: 340,
+    speedKmhMin: 95,
+    speedKmhMax: 120,
+    altitudeMin: 25,
+    altitudeMax: 65,
+    model: "FPV-дрон (Оптоволокно)"
+  },
+  {
+    regionKeyword: "донець",
+    type: "bomb",
+    minLat: 48.3,
+    maxLat: 48.8,
+    minLon: 37.6,
+    maxLon: 38.3,
+    headingMin: 275,
+    headingMax: 300,
+    speedKmhMin: 830,
+    speedKmhMax: 890,
+    altitudeMin: 2200,
+    altitudeMax: 3800,
+    model: "КАБ-1500 (УМПК)"
+  },
+  {
+    regionKeyword: "донець",
+    type: "fpv",
+    minLat: 48.15,
+    maxLat: 48.45,
+    minLon: 37.4,
+    maxLon: 37.8,
+    headingMin: 280,
+    headingMax: 310,
+    speedKmhMin: 90,
+    speedKmhMax: 115,
+    altitudeMin: 30,
+    altitudeMax: 70,
+    model: "FPV-дрон (Ударний)"
   },
   {
     regionKeyword: "донець",
@@ -304,6 +409,36 @@ const REGION_CORRIDORS: RegionCorridor[] = [
     altitudeMin: 110,
     altitudeMax: 190,
     model: "Shahed-136"
+  },
+  {
+    regionKeyword: "херсон",
+    type: "bomb",
+    minLat: 46.7,
+    maxLat: 47.1,
+    minLon: 33.2,
+    maxLon: 33.8,
+    headingMin: 305,
+    headingMax: 335,
+    speedKmhMin: 810,
+    speedKmhMax: 870,
+    altitudeMin: 2100,
+    altitudeMax: 3400,
+    model: "КАБ-500 (УМПК)"
+  },
+  {
+    regionKeyword: "херсон",
+    type: "fpv",
+    minLat: 46.6,
+    maxLat: 46.8,
+    minLon: 32.7,
+    maxLon: 33.1,
+    headingMin: 310,
+    headingMax: 340,
+    speedKmhMin: 90,
+    speedKmhMax: 115,
+    altitudeMin: 25,
+    altitudeMax: 65,
+    model: "FPV-дрон (Ударний)"
   },
   {
     regionKeyword: "вінниць",
@@ -482,7 +617,14 @@ export class AirspaceSimulator {
           const speedKmh = corridor.speedKmhMin + Math.random() * (corridor.speedKmhMax - corridor.speedKmhMin);
           const altitudeM = corridor.altitudeMin + Math.random() * (corridor.altitudeMax - corridor.altitudeMin);
 
-          const prefix = corridor.type === "uav" ? "shd" : "kr";
+          const prefix =
+            corridor.type === "uav"
+              ? "shd"
+              : corridor.type === "bomb"
+              ? "kab"
+              : corridor.type === "fpv"
+              ? "fpv"
+              : "kr";
           const id = this.nextId(prefix);
 
           this.tracks.set(id, {
@@ -497,9 +639,23 @@ export class AirspaceSimulator {
             targetHeading: heading,
             nextManeuverTime: now + 20_000 + Math.random() * 30_000,
             spawnTime: now,
-            maxLifetimeSec: corridor.type === "uav" ? 180 + Math.random() * 120 : 120 + Math.random() * 90,
+            maxLifetimeSec:
+              corridor.type === "bomb"
+                ? 100 + Math.random() * 60
+                : corridor.type === "fpv"
+                ? 140 + Math.random() * 60
+                : corridor.type === "uav"
+                ? 180 + Math.random() * 120
+                : 120 + Math.random() * 90,
             model: corridor.model,
-            callsign: corridor.type === "uav" ? `SHD-${Math.floor(100 + Math.random() * 899)}` : `MSL-${Math.floor(10 + Math.random() * 89)}`,
+            callsign:
+              corridor.type === "uav"
+                ? `SHD-${Math.floor(100 + Math.random() * 899)}`
+                : corridor.type === "bomb"
+                ? `KAB-${Math.floor(10 + Math.random() * 89)}`
+                : corridor.type === "fpv"
+                ? `FPV-${Math.floor(100 + Math.random() * 899)}`
+                : `MSL-${Math.floor(10 + Math.random() * 89)}`,
             assignedRegion: corridor.regionKeyword
           });
         }

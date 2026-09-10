@@ -27,13 +27,25 @@ describe("OSINT Parser", () => {
     expect(obs.lat).toBeLessThan(51.0);
   });
 
-  it("correctly identifies missile threat from text", () => {
-    const raw = "Швидкісна ціль (імовірно крилата ракета) в напрямку Одеса!";
+  it("correctly identifies КАБ / УМПК glide bomb threat from text", () => {
+    const raw = "⚠️ Пуски КАБ тактичною авіацією на Харків!";
     const observations = parseOsintText(raw, 1700000000000);
 
     expect(observations.length).toBeGreaterThan(0);
     const obs = observations[0];
-    expect(obs.type).toBe("munition");
-    expect(obs.speed).toBeGreaterThan(150); // High speed for cruise missile
+    expect(obs.type).toBe("bomb");
+    expect(obs.speed).toBeGreaterThan(200);
+    expect(obs.meta?.model).toContain("КАБ");
+  });
+
+  it("correctly identifies FPV strike drone from text", () => {
+    const raw = "Ударний FPV-дрон помічено біля Куп'янська!";
+    const observations = parseOsintText(raw, 1700000000000);
+
+    expect(observations.length).toBeGreaterThan(0);
+    const obs = observations[0];
+    expect(obs.type).toBe("fpv");
+    expect(obs.speed).toBeLessThan(50);
+    expect(obs.meta?.model).toContain("FPV");
   });
 });

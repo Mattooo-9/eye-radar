@@ -613,6 +613,16 @@ body {
   color: #fdba74;
 }
 
+.breakdown-card.bomb {
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+}
+
+.breakdown-card.fpv {
+  border-color: rgba(217, 70, 239, 0.4);
+  color: #f5d0fe;
+}
+
 .breakdown-card.aircraft {
   border-color: rgba(56, 189, 248, 0.3);
   color: #7dd3fc;
@@ -3116,6 +3126,18 @@ body {
   border-color: rgba(245, 158, 11, 0.6);
   background: rgba(180, 83, 9, 0.25);
   color: #fde047;
+}
+
+.tactical-filter-btn.active-bomb {
+  border-color: rgba(239, 68, 68, 0.7);
+  background: rgba(185, 28, 28, 0.3);
+  color: #fecaca;
+}
+
+.tactical-filter-btn.active-fpv {
+  border-color: rgba(217, 70, 239, 0.7);
+  background: rgba(162, 28, 175, 0.3);
+  color: #f5d0fe;
 }
 
 .tactical-filter-btn.active-aircraft {

@@ -4,6 +4,8 @@ export type TrackType =
   | "helicopter"
   | "uav"
   | "munition"
+  | "bomb"
+  | "fpv"
   | "thermal";
 
 export type SourceKind =

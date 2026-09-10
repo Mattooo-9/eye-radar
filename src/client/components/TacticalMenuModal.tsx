@@ -1,4 +1,4 @@
-﻿import React, { useState } from "react";
+import React, { useState } from "react";
 import type { Map } from "maplibre-gl";
 import type { VisionMode } from "./MapView";
 import type { FilterState } from "./StatusPanel";
@@ -17,6 +17,8 @@ interface TacticalMenuModalProps {
   onToggleWeather: () => void;
   showSatellites: boolean;
   onToggleSatellites: () => void;
+  showWaterShorelines?: boolean;
+  onToggleWaterShorelines?: () => void;
   soundEnabled: boolean;
   onToggleSound: () => void;
   // Filters & Counts
@@ -26,6 +28,8 @@ interface TacticalMenuModalProps {
   onToggleThreatOnly: () => void;
   uavCount: number;
   munitionCount: number;
+  bombCount?: number;
+  fpvCount?: number;
   aircraftCount: number;
   heloCount: number;
   totalTrackCount: number;
@@ -56,6 +60,8 @@ export const TacticalMenuModal: React.FC<TacticalMenuModalProps> = ({
   onToggleWeather,
   showSatellites,
   onToggleSatellites,
+  showWaterShorelines = true,
+  onToggleWaterShorelines,
   soundEnabled,
   onToggleSound,
   filters,
@@ -64,6 +70,8 @@ export const TacticalMenuModal: React.FC<TacticalMenuModalProps> = ({
   onToggleThreatOnly,
   uavCount,
   munitionCount,
+  bombCount = 0,
+  fpvCount = 0,
   aircraftCount,
   heloCount,
   totalTrackCount,
@@ -179,6 +187,26 @@ export const TacticalMenuModal: React.FC<TacticalMenuModalProps> = ({
                   <span className="filter-sym">🟠</span>
                   <span className="filter-name">Крилаті / Балістичні ракети</span>
                   <span className="filter-count">{munitionCount}</span>
+                </button>
+
+                <button
+                  type="button"
+                  className={`tactical-filter-btn ${filters.bomb ? "active-bomb" : "inactive"}`}
+                  onClick={() => onToggleFilter("bomb")}
+                >
+                  <span className="filter-sym">💣</span>
+                  <span className="filter-name">КАБ (УМПК / Авіабомби)</span>
+                  <span className="filter-count">{bombCount}</span>
+                </button>
+
+                <button
+                  type="button"
+                  className={`tactical-filter-btn ${filters.fpv ? "active-fpv" : "inactive"}`}
+                  onClick={() => onToggleFilter("fpv")}
+                >
+                  <span className="filter-sym">🟣</span>
+                  <span className="filter-name">FPV-дрони (Ударні)</span>
+                  <span className="filter-count">{fpvCount}</span>
                 </button>
 
                 <button
@@ -306,6 +334,20 @@ export const TacticalMenuModal: React.FC<TacticalMenuModalProps> = ({
                   type="button"
                   className={`toggle-switch ${showWeather ? "on" : "off"}`}
                   onClick={onToggleWeather}
+                >
+                  <span className="switch-knob" />
+                </button>
+              </div>
+
+              <div className="tactical-toggle-row">
+                <div>
+                  <div className="toggle-label-main">🌊 Межа землі і води (Береги та водосховища)</div>
+                  <div className="toggle-label-sub">Контурні тактичні межі акваторій, водосховищ Дніпра та морських узбереж</div>
+                </div>
+                <button
+                  type="button"
+                  className={`toggle-switch ${showWaterShorelines ? "on" : "off"}`}
+                  onClick={onToggleWaterShorelines}
                 >
                   <span className="switch-knob" />
                 </button>

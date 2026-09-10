@@ -26,6 +26,7 @@ interface MapViewProps {
   showDayNight?: boolean;
   showWeather?: boolean;
   showSatellites?: boolean;
+  showWaterShorelines?: boolean;
   followingTargetId?: string | null;
   onStopFollow?: () => void;
   onMapReady?: (map: Map) => void;
@@ -370,6 +371,214 @@ const drawMissileSilhouette = (
   ctx.beginPath();
   ctx.arc(0, -size * 0.95, 1.5, 0, Math.PI * 2);
   ctx.fill();
+
+  ctx.restore();
+};
+
+const drawKabSilhouette = (
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  size: number,
+  rotation: number,
+  color: string,
+  _timeMs: number
+) => {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate((rotation * Math.PI) / 180);
+
+  // Soft warning tactical shadow
+  ctx.shadowColor = "rgba(0, 0, 0, 0.85)";
+  ctx.shadowBlur = 5;
+  ctx.shadowOffsetY = 1;
+
+  // 1. Deployed Folding Swept-Back Planar Wings (UMPK Pop-Out Wings)
+  ctx.fillStyle = "#334155";
+  ctx.beginPath();
+  // Left wing
+  ctx.moveTo(0, -size * 0.15);
+  ctx.lineTo(-size * 1.15, size * 0.15);
+  ctx.lineTo(-size * 1.15, size * 0.28);
+  ctx.lineTo(-size * 0.18, size * 0.12);
+  // Right wing
+  ctx.lineTo(size * 0.18, size * 0.12);
+  ctx.lineTo(size * 1.15, size * 0.28);
+  ctx.lineTo(size * 1.15, size * 0.15);
+  ctx.lineTo(0, -size * 0.15);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.9)";
+  ctx.lineWidth = 1.0;
+  ctx.stroke();
+
+  // Wing leading edge high-visibility tactical chevrons
+  ctx.fillStyle = "#ef4444";
+  ctx.fillRect(-size * 1.15, size * 0.15, size * 0.2, size * 0.1);
+  ctx.fillRect(size * 0.95, size * 0.15, size * 0.2, size * 0.1);
+
+  // 2. Heavy FAB-500 Bomb Casing (Aerodynamic Ogive Torpedo Body)
+  ctx.fillStyle = "#1e293b"; // Heavy steel casing
+  ctx.beginPath();
+  ctx.moveTo(0, -size * 0.98); // Bomb nose fuze tip
+  ctx.lineTo(size * 0.18, -size * 0.65);
+  ctx.lineTo(size * 0.22, 0);
+  ctx.lineTo(size * 0.22, size * 0.45);
+  ctx.lineTo(size * 0.12, size * 0.72); // Tapered boat tail
+  ctx.lineTo(-size * 0.12, size * 0.72);
+  ctx.lineTo(-size * 0.22, size * 0.45);
+  ctx.lineTo(-size * 0.22, 0);
+  ctx.lineTo(-size * 0.18, -size * 0.65);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
+
+  // 3. Dorsal UMPK module spine beam (балка кріплення модуля корекції)
+  ctx.fillStyle = "#475569";
+  ctx.fillRect(-size * 0.08, -size * 0.45, size * 0.16, size * 0.9);
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.6)";
+  ctx.lineWidth = 0.8;
+  ctx.strokeRect(-size * 0.08, -size * 0.45, size * 0.16, size * 0.9);
+
+  // 4. Cruciform Tail Stabilizer Fins & Rudders
+  ctx.beginPath();
+  // Left fin
+  ctx.moveTo(-size * 0.12, size * 0.62);
+  ctx.lineTo(-size * 0.45, size * 0.82);
+  ctx.lineTo(-size * 0.45, size * 0.90);
+  ctx.lineTo(-size * 0.08, size * 0.78);
+  // Right fin
+  ctx.moveTo(size * 0.12, size * 0.62);
+  ctx.lineTo(size * 0.45, size * 0.82);
+  ctx.lineTo(size * 0.45, size * 0.90);
+  ctx.lineTo(size * 0.08, size * 0.78);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.3;
+  ctx.stroke();
+
+  // 5. Hardened Nose Fuze Pin (with bright targeting glint)
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.arc(0, -size * 0.95, 2.2, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+};
+
+const drawFpvSilhouette = (
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  size: number,
+  rotation: number,
+  color: string,
+  timeMs: number
+) => {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate((rotation * Math.PI) / 180);
+
+  ctx.shadowColor = "rgba(0, 0, 0, 0.8)";
+  ctx.shadowBlur = 4;
+
+  // 1. Carbon Fiber X-Frame Diagonal Arms
+  const armSpan = size * 0.72;
+  ctx.strokeStyle = "#334155";
+  ctx.lineWidth = 2.4;
+  ctx.beginPath();
+  // Front-left to rear-right
+  ctx.moveTo(-armSpan, -armSpan);
+  ctx.lineTo(armSpan, armSpan);
+  // Front-right to rear-left
+  ctx.moveTo(armSpan, -armSpan);
+  ctx.lineTo(-armSpan, armSpan);
+  ctx.stroke();
+
+  // 2. Under-slung Munition (PG-7V rocket / HE charge)
+  ctx.fillStyle = "#475569";
+  ctx.beginPath();
+  ctx.ellipse(0, size * 0.05, size * 0.15, size * 0.42, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#f43f5e";
+  ctx.lineWidth = 1.0;
+  ctx.stroke();
+
+  // 3. Central Electronics Body & LiPo Battery
+  ctx.fillStyle = "#0f172a";
+  ctx.fillRect(-size * 0.22, -size * 0.28, size * 0.44, size * 0.56);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.2;
+  ctx.strokeRect(-size * 0.22, -size * 0.28, size * 0.44, size * 0.56);
+
+  // LiPo battery straps
+  ctx.fillStyle = "#f59e0b";
+  ctx.fillRect(-size * 0.18, -size * 0.12, size * 0.36, size * 0.08);
+
+  // 4. Four High-Speed Spinning Propellers (Animated discs)
+  const propRadius = size * 0.32;
+  const propAngle = (timeMs / 8) % 360;
+  const motorPositions = [
+    [-armSpan, -armSpan], // Front-Left
+    [armSpan, -armSpan],  // Front-Right
+    [-armSpan, armSpan],  // Rear-Left
+    [armSpan, armSpan]    // Rear-Right
+  ];
+
+  for (let i = 0; i < motorPositions.length; i++) {
+    const [mx, my] = motorPositions[i];
+
+    // Motor bell
+    ctx.fillStyle = "#64748b";
+    ctx.beginPath();
+    ctx.arc(mx, my, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Blurred rotor disk
+    ctx.beginPath();
+    ctx.arc(mx, my, propRadius, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(217, 70, 239, 0.18)";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(217, 70, 239, 0.45)";
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+
+    // Spinning 3-blade prop lines
+    ctx.save();
+    ctx.translate(mx, my);
+    ctx.rotate(((propAngle * (i % 2 === 0 ? 1 : -1) + i * 45) * Math.PI) / 180);
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.85)";
+    ctx.lineWidth = 1.2;
+    for (let b = 0; b < 3; b++) {
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(0, -propRadius);
+      ctx.stroke();
+      ctx.rotate((120 * Math.PI) / 180);
+    }
+    ctx.restore();
+  }
+
+  // 5. Front-Facing FPV Optical Camera Lens (pointing forward!)
+  ctx.fillStyle = "#0284c7";
+  ctx.beginPath();
+  ctx.arc(0, -size * 0.34, 2.8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#38bdf8";
+  ctx.beginPath();
+  ctx.arc(0, -size * 0.34, 1.4, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 6. Rear ELRS/VTX Antenna Stub
+  ctx.strokeStyle = "#e2e8f0";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(0, size * 0.28);
+  ctx.lineTo(0, size * 0.48);
+  ctx.stroke();
 
   ctx.restore();
 };
@@ -1052,6 +1261,54 @@ const syncUkraineBorders = (map: maplibregl.Map) => {
         }
       });
     }
+
+    // 5. Water Shorelines & Reservoirs: Distinct tactical boundary on water/land border
+    if (!map.getSource("ukraine-water-shorelines")) {
+      map.addSource("ukraine-water-shorelines", {
+        type: "geojson",
+        data: "/ukraine-water-shorelines.geojson"
+      });
+    }
+
+    if (!map.getLayer("ukraine-water-shorelines-glow")) {
+      map.addLayer({
+        id: "ukraine-water-shorelines-glow",
+        type: "line",
+        source: "ukraine-water-shorelines",
+        paint: {
+          "line-color": "#0ea5e9",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 4, 3.5, 8, 6.0, 12, 9.0],
+          "line-blur": ["interpolate", ["linear"], ["zoom"], 4, 2.0, 8, 3.5, 12, 5.0],
+          "line-opacity": 0.55
+        }
+      });
+    }
+
+    if (!map.getLayer("ukraine-water-shorelines-line")) {
+      map.addLayer({
+        id: "ukraine-water-shorelines-line",
+        type: "line",
+        source: "ukraine-water-shorelines",
+        paint: {
+          "line-color": "#38bdf8",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 4, 1.2, 8, 2.0, 12, 2.8],
+          "line-opacity": 0.85
+        }
+      });
+    }
+
+    if (!map.getLayer("ukraine-water-shorelines-core")) {
+      map.addLayer({
+        id: "ukraine-water-shorelines-core",
+        type: "line",
+        source: "ukraine-water-shorelines",
+        paint: {
+          "line-color": "#e0f2fe",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 4, 0.6, 8, 1.0, 12, 1.4],
+          "line-opacity": 0.95
+        }
+      });
+    }
   } catch {
     // Graceful fallback if borders already present or WebGL busy
   }
@@ -1164,6 +1421,7 @@ export const MapView = ({
   showDayNight = true,
   showWeather = true,
   showSatellites = true,
+  showWaterShorelines = true,
   followingTargetId,
   onStopFollow,
   onMapReady,
@@ -1221,6 +1479,9 @@ export const MapView = ({
 
   const showSatellitesRef = useRef(showSatellites);
   showSatellitesRef.current = showSatellites;
+
+  const showWaterShorelinesRef = useRef(showWaterShorelines);
+  showWaterShorelinesRef.current = showWaterShorelines;
 
   const onSelectTargetRef = useRef(onSelectTarget);
   onSelectTargetRef.current = onSelectTarget;
@@ -1399,6 +1660,28 @@ export const MapView = ({
       map.once("styledata", () => syncWeatherLayer(map, showWeather !== false));
     }
   }, [showWeather, visionMode]);
+
+  // 4. Water Shorelines layer visibility synchronization
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const visibility = showWaterShorelines !== false ? "visible" : "none";
+    const layerIds = ["ukraine-water-shorelines-glow", "ukraine-water-shorelines-line", "ukraine-water-shorelines-core"];
+    const applyVisibility = () => {
+      for (const id of layerIds) {
+        try {
+          if (map.getLayer(id)) {
+            map.setLayoutProperty(id, "visibility", visibility);
+          }
+        } catch {}
+      }
+    };
+    if (map.isStyleLoaded()) {
+      applyVisibility();
+    } else {
+      map.once("styledata", applyVisibility);
+    }
+  }, [showWaterShorelines, visionMode]);
 
   // 3. Smooth flyTo user location on first GPS acquisition
   useEffect(() => {
@@ -1617,12 +1900,14 @@ export const MapView = ({
 
           // Scale Level-of-Detail (LOD)
           const isSelected = Boolean(currentSelected && currentSelected[0] === id);
-          const isHighThreat = type === "uav" || type === "munition";
+          const isHighThreat = type === "uav" || type === "munition" || type === "bomb" || type === "fpv";
           const isLowZoom = zoom < 4.8;
 
           let color = "#7dd3fc";
           if (type === "uav") color = "#ef4444";
           if (type === "munition") color = "#f97316";
+          if (type === "bomb") color = "#ef4444";
+          if (type === "fpv") color = "#d946ef";
           if (type === "helicopter") color = "#10b981";
           if (type === "thermal") color = "#eab308";
 
@@ -1672,6 +1957,10 @@ export const MapView = ({
           // Draw Military Silhouette strictly pointing in flight direction
           if (type === "uav") {
             drawUavSilhouette(ctx, targetX, targetY, scale, screenHeadingDeg, color, now, packetModel);
+          } else if (type === "bomb") {
+            drawKabSilhouette(ctx, targetX, targetY, scale, screenHeadingDeg, color, now);
+          } else if (type === "fpv") {
+            drawFpvSilhouette(ctx, targetX, targetY, scale, screenHeadingDeg, color, now);
           } else if (type === "munition") {
             drawMissileSilhouette(ctx, targetX, targetY, scale, screenHeadingDeg, color);
           } else if (type === "helicopter") {
@@ -1690,6 +1979,10 @@ export const MapView = ({
               ? 750
               : type === "munition"
               ? 450
+              : type === "bomb"
+              ? 2200
+              : type === "fpv"
+              ? 65
               : 180;
           const speedKmh = Math.round(speed * 3.6);
           const altMsl = effectiveAltM >= 1000 ? `${(effectiveAltM / 1000).toFixed(1)} км` : `${Math.round(effectiveAltM)} м`;
@@ -1698,6 +1991,10 @@ export const MapView = ({
             ? packetModel.replace(" Cruise Missile", "").replace(" Fighting Falcon", "").replace(" Fulcrum", "").replace(" (Jet)", "-Jet")
             : type === "uav"
             ? "Shahed-136"
+            : type === "bomb"
+            ? "КАБ-500"
+            : type === "fpv"
+            ? "FPV-дрон"
             : type === "munition"
             ? "Х-101"
             : type === "helicopter"

@@ -90,10 +90,14 @@ export const App = () => {
   const [filters, setFilters] = useState<FilterState>({
     uav: true,
     munition: true,
+    bomb: true,
+    fpv: true,
     aircraft: true,
     helicopter: true,
     sound: soundEngine.isSoundEnabled()
   });
+
+  const [showWaterShorelines, setShowWaterShorelines] = useState(true);
 
   useEffect(() => {
     try {
@@ -150,13 +154,26 @@ export const App = () => {
         return false;
       }
 
-      if ((tacticalFilters.threatOnly || threatOnly) && type !== "uav" && type !== "munition") {
+      if (
+        (tacticalFilters.threatOnly || threatOnly) &&
+        type !== "uav" &&
+        type !== "munition" &&
+        type !== "bomb" &&
+        type !== "fpv"
+      ) {
         return false;
       }
 
+      if (type === "uav" && !filters.uav) return false;
+      if (type === "munition" && !filters.munition) return false;
+      if (type === "bomb" && filters.bomb === false) return false;
+      if (type === "fpv" && filters.fpv === false) return false;
+      if (type === "aircraft" && !filters.aircraft) return false;
+      if (type === "helicopter" && filters.helicopter === false) return false;
+
       return true;
     });
-  }, [packets, tacticalFilters, threatOnly]);
+  }, [packets, tacticalFilters, threatOnly, filters]);
 
   // Auto-Sentinel: Locks tracking reticle onto closest threat WITHOUT opening popup modal
   useEffect(() => {
@@ -188,16 +205,20 @@ export const App = () => {
   const targetCounts = useMemo(() => {
     let uav = 0;
     let munition = 0;
+    let bomb = 0;
+    let fpv = 0;
     let aircraft = 0;
     let helo = 0;
     for (const p of packets) {
       const type = p[1];
       if (type === "uav") uav++;
       else if (type === "munition") munition++;
+      else if (type === "bomb") bomb++;
+      else if (type === "fpv") fpv++;
       else if (type === "aircraft") aircraft++;
       else if (type === "helicopter") helo++;
     }
-    return { uav, munition, aircraft, helo };
+    return { uav, munition, bomb, fpv, aircraft, helo };
   }, [packets]);
 
   const handleFitAllTargets = () => {
@@ -309,6 +330,7 @@ export const App = () => {
         showDayNight={true}
         showWeather={showWeather}
         showSatellites={showSatellites}
+        showWaterShorelines={showWaterShorelines}
         followingTargetId={followedTargetId}
         onStopFollow={() => setFollowedTargetId(null)}
         onMapReady={(m) => setMapInstance(m)}
@@ -342,6 +364,8 @@ export const App = () => {
         onToggleWeather={() => setShowWeather((prev) => !prev)}
         showSatellites={showSatellites}
         onToggleSatellites={() => setShowSatellites((prev) => !prev)}
+        showWaterShorelines={showWaterShorelines}
+        onToggleWaterShorelines={() => setShowWaterShorelines((prev) => !prev)}
         soundEnabled={filters.sound !== false}
         onToggleSound={() => handleToggleFilter("sound")}
         filters={filters}
@@ -350,6 +374,8 @@ export const App = () => {
         onToggleThreatOnly={() => setThreatOnly((prev) => !prev)}
         uavCount={targetCounts.uav}
         munitionCount={targetCounts.munition}
+        bombCount={targetCounts.bomb}
+        fpvCount={targetCounts.fpv}
         aircraftCount={targetCounts.aircraft}
         heloCount={targetCounts.helo}
         totalTrackCount={filteredPackets.length}

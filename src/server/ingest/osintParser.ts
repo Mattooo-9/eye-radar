@@ -4,6 +4,14 @@ import { findCityInText, findDirectionInText, normalizeUkText } from "../sources
 
 const typeByKeyword: Array<{ keywords: string[]; type: TrackType }> = [
   {
+    keywords: ["каб", "умпк", "умпб", "авіабомб", "авіаційна бомба", "керована авіабомба", "плануюча бомба", "glide bomb", "фаб-500", "фаб-1500"],
+    type: "bomb"
+  },
+  {
+    keywords: ["fpv", "фпв", "квадрокоптер", "ударний фпв", "фпв-дрон", "fpv-дрон"],
+    type: "fpv"
+  },
+  {
     keywords: ["шахед", "shahed", "герань", "дрон", "мопед", "бпла", "uav", "крило", "розвідник"],
     type: "uav"
   },
@@ -23,8 +31,7 @@ const typeByKeyword: Array<{ keywords: string[]; type: TrackType }> = [
       "искандер",
       "циркон",
       "munition",
-      "missile",
-      "каб"
+      "missile"
     ],
     type: "munition"
   },
@@ -39,7 +46,7 @@ const typeByKeyword: Array<{ keywords: string[]; type: TrackType }> = [
 ];
 
 const coordinatePattern =
-  /(?:(?<id>[A-Za-z0-9_-]{3,24})\s+)?(?:(?<typeKeyword>aircraft|helicopter|uav|drone|munition|missile|шахед|ракета)\s+)?(?<lat>\b[4-5]\d\.\d{2,7}\b)[,\s]+(?<lon>\b[2-4]\d\.\d{2,7}\b)(?:.*?(?<heading>\b\d{1,3}(?:\.\d+)?\b))?(?:.*?(?<speed>\b\d{1,4}(?:\.\d+)?\b))?/gi;
+  /(?:(?<id>[A-Za-z0-9_-]{3,24})\s+)?(?:(?<typeKeyword>aircraft|helicopter|uav|drone|munition|missile|шахед|ракета|каб|умпк|fpv|фпв|бомба)\s+)?(?<lat>\b[4-5]\d\.\d{2,7}\b)[,\s]+(?<lon>\b[2-4]\d\.\d{2,7}\b)(?:.*?(?<heading>\b\d{1,3}(?:\.\d+)?\b))?(?:.*?(?<speed>\b\d{1,4}(?:\.\d+)?\b))?/gi;
 
 const detectType = (text: string): TrackType => {
   const lower = text.toLowerCase();
@@ -88,19 +95,61 @@ export const parseOsintText = (text: string, now = Date.now()): Observation[] =>
       const heading = findDirectionInText(text) ?? undefined;
       const id = `osint-${city.name.toLowerCase()}-${createHash("sha1").update(text).digest("hex").slice(0, 6)}`;
 
+      const effectiveType = type !== "unknown" ? type : "uav";
+      const speed =
+        effectiveType === "bomb"
+          ? 235 // ~850 km/h (glide speed)
+          : effectiveType === "munition"
+          ? 230 // ~830 km/h
+          : effectiveType === "fpv"
+          ? 28 // ~100 km/h
+          : effectiveType === "aircraft"
+          ? 260
+          : effectiveType === "helicopter"
+          ? 65
+          : 50; // ~180 km/h UAV
+
+      const altitude =
+        effectiveType === "bomb"
+          ? 2800
+          : effectiveType === "munition"
+          ? 90
+          : effectiveType === "fpv"
+          ? 55
+          : effectiveType === "aircraft"
+          ? 9500
+          : effectiveType === "helicopter"
+          ? 180
+          : 180;
+
+      const model =
+        effectiveType === "bomb"
+          ? text.includes("1500")
+            ? "КАБ-1500 (УМПК)"
+            : text.includes("умпб")
+            ? "УМПБ Д-30СН"
+            : "КАБ-500 (УМПК)"
+          : effectiveType === "fpv"
+          ? text.includes("опто")
+            ? "FPV-дрон (Оптоволокно)"
+            : "FPV-дрон (Ударний)"
+          : undefined;
+
       observations.push({
         id,
-        type: type !== "unknown" ? type : "uav",
+        type: effectiveType,
         lat: city.lat,
         lon: city.lon,
         heading,
-        speed: type === "munition" ? 220 : 45, // m/s (~800 km/h missile, ~160 km/h UAV)
+        speed,
+        altitude,
         timestamp: now,
         source: "osint",
-        confidence: 0.65,
+        confidence: 0.75,
         meta: {
           cityName: city.nameUk,
-          rawSnippet: text.slice(0, 100)
+          rawSnippet: text.slice(0, 100),
+          ...(model ? { model } : {})
         }
       });
     }
