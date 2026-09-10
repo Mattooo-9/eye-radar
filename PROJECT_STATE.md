@@ -1,9 +1,9 @@
 # Eye Radar — Project State & Architectural Baseline
 
 **Last Updated:** 2026-09-10  
-**Baseline Git Commit:** `644fb87`  
+**Baseline Git Commit:** `5f64e3f`  
 **Deployment Status:**
-- **Backend (Render):** `https://eye-radar.onrender.com/health` (Service ID: `srv-dagk9pgu01pc7388u35g`, Live, Healthy)
+- **Backend (Render):** `https://eye-radar.onrender.com/health` (Service ID: `srv-dagk9pgu01pc7388u35g`, Live, Healthy, 7 Sources Online, 240+ Active Tracks)
 - **Frontend (Vercel):** `https://eye-radar.vercel.app` (Production, Live)
 - **Telegram Bot:** `@EyeRadarUA_Bot` (Mini App embedded with cache-busting `?v=3.5.0&t=...`)
 
@@ -12,7 +12,7 @@
 ## 1. Verified Working Components
 
 ### 1.1 Client (Frontend / Telegram Mini App)
-- **Stack:** Vite 6, React 19, TypeScript, Tailwind CSS, Lucide React, MapLibre GL 5.15.
+- **Stack:** Vite 7, React 19, TypeScript, Tailwind CSS, Lucide React, MapLibre GL 5.15.
 - **Rendering Engine:** Hybrid WebGL (MapLibre vector/satellite layers + GPU symbol sprites) + 60fps Canvas HUD overlay.
 - **Tactical Silhouettes & TTX:**
   - Strict physics separation:
@@ -27,60 +27,47 @@
   - Real internationally recognized borders of Ukraine.
   - No duplicated borders, no synthetic river borders, no country text labels.
   - Clean Google Satellite tiles with automatic overscaling (no "Zoom level not supported" watermarks).
+- **Event Visualization & TTLs:**
+  - **💥 Impacts (Прильоти):** TTL = 60 min with progressive alpha decay from 1.0 to 0.3.
+  - **🛡️ Interceptions (Збиття):** TTL = 10 min with progressive alpha decay.
 - **Mobile Telegram Mini App Adaptation:**
   - Safe-area insets (`safeAreaInset`, `contentSafeAreaInset`, `viewportStableHeight`).
   - Strict no-overflow layout (320px–430px responsive mobile screens, no button clipping).
 
 ### 1.2 Server & Real-Time Pipeline
-- **Stack:** Node.js, Express, `ws` WebSocket server, TypeScript.
-- **Track Management (`src/server/core/trackManager.ts`):**
-  - High-frequency spatial extrapolator using geodesic `destinationPoint()`.
+- **Unified Observation Schema (`src/server/domain/unifiedObservation.ts`):**
+  - Standard 20-field schema: source ID, source family, event ID, timestamps (observed/published/received/processed), coordinates, speed, heading, vertical rate, measurement accuracy ($\sigma$), source quality, confidence, covariance, evidence, provenance.
+- **Interacting Multiple Model (IMM) Filter (`src/server/core/immFilter.ts`):**
+  - Blends Constant Velocity (CV) and Coordinated Turn (CT) kinematic models with dynamic mode probabilities $\mu_{CV}, \mu_{CT}$.
+- **Evidence-based Target Classification Engine (`src/server/core/classificationEngine.ts`):**
+  - Physics-based separation of Shahed-238 (turbojet) vs Shahed-136 (piston), recon UAVs, cruise missiles, KABs, FPVs.
+  - Distinguishes measured speed/altitude vs model-derived estimates.
+- **Source Health Engine (`src/server/sources/sourceHealth.ts`):**
+  - Real-time $p_{50}, p_{95}, p_{99}$ latency tracking across all feeds (ADSB.lol, OpenSky, Airplanes.live, Alerts.in.ua, Open-Meteo, NASA FIRMS, Local SDR).
+  - Dynamic reliability weighting multiplier.
+- **Track Lifecycle Management (`src/server/core/trackManager.ts`):**
+  - States: `TENTATIVE` → `CONFIRMED` → `COASTING` → `STALE` → `EXPIRED`.
   - Zero object spread during tick mutation for maximum V8 throughput.
-  - Compact packet serialization `[id, type, lat, lon, heading, speed, timestamp, confidence, uncertaintyRadius, threatLevel, altitude, model, callsign]`.
-- **Filtering & Kinematics (`src/server/core/kalman.ts`):**
-  - 1D/2D Kalman filters for position, heading, and velocity smoothing with minimal lag.
-- **Threat Engine (`src/server/core/threatEngine.ts`):**
-  - Automated civilian threat classification (CRITICAL, HIGH, MEDIUM, LOW) based on proximity, speed, heading towards population centers, and weapon class.
 - **Telegram Bot (`src/server/bot/telegramBot.ts`):**
-  - Mini App launcher button, `/start`, `/status`, `/subscribe` for alerts.
+  - Mini App launcher button, `/start`, `/status`, `/subscribe` for alerts with user coordinates and customizable danger radius.
 
 ---
 
 ## 2. Test & Quality Metrics
 
 - **TypeScript Check:** `npm run check` — 0 errors.
-- **Vitest Unit Test Suite:** `npm test` — 15 tests passing across 6 test suites:
+- **Vitest Unit & Benchmark Test Suite:** `npm test` — 20 tests passing across 8 test suites:
   - `threatEngine.test.ts` (Threat scoring & zone proximity)
   - `locationIntel.test.ts` (Oblast/raion geocoding & danger zones)
   - `osintParser.test.ts` (Cascade OSINT regex & message parsing)
   - `kalman.test.ts` (Kalman state estimation & convergence)
+  - `correlator.test.ts` (Track correlation & Mahalanobis distance gating)
   - `pipeline.test.ts` (End-to-end ingestion and track output)
-  - `trackCorrelator.test.ts` (Track association and spatial gating)
+  - `replay.test.ts` (Replay robustness: delayed packets, crossing tracks, 60m/10m event TTLs)
+  - `syntheticBenchmark.test.ts` (IMM position error $\le 350$m, 100% classification accuracy)
 
 ---
 
-## 3. Autonomous Upgrade Roadmap (Zero Regression)
-
-1. **Layer 1 — Unified Observation Schema & Multi-Source Ingestion:**
-   - Standard 20-field evidence-based observation schema.
-   - Live adapters: OpenSky Network API, ADSB.lol, local receiver JSON stream (`readsb`/`dump1090`), Alerts.in.ua, Open-Meteo wind verification, OSINT cascade deduplication.
-2. **Layer 2 — Multi-Target Data Fusion & IMM Filter:**
-   - Interacting Multiple Model (IMM) filter (Constant Velocity + Coordinated Turn models).
-   - Track Lifecycle: `TENTATIVE` → `CONFIRMED` → `COASTING` → `STALE` → `EXPIRED`.
-   - Mahalanobis distance gating to prevent false track merging.
-3. **Layer 3 — Target Classification & Measured vs. Estimated Telemetry:**
-   - Explicit separation of measured telemetry vs. model-derived estimates.
-   - Dynamic uncertainty radius ($\sigma$) based on sensor coverage.
-4. **Layer 4 — Source Health Engine:**
-   - Latency percentiles ($p_{50}, p_{95}, p_{99}$), packet drop rates, dynamic weight adjustment.
-5. **Layer 5 — Events & Decay TTL:**
-   - Impacts TTL = 60 min (with decaying visual opacity/intensity).
-   - Interceptions TTL = 10 min (with success confirmation badge).
-6. **Layer 6 — Telegram Mini App User Location & Mobile Performance:**
-   - Geolocation auto-request with permission fallback, settlement search, return-to-location.
-   - Throttled Canvas rendering (30/60 FPS adaptive) for low-end mobile devices.
-7. **Layer 7 — Automated Replay & Synthetic Benchmark Test Suite:**
-   - Replay test suite (`replay.test.ts`) covering delayed packets, splits, false merges.
-   - Synthetic benchmark (`syntheticBenchmark.test.ts`) validating position error $\le 350$ m and classification accuracy $\ge 98\%$.
-8. **Layer 8 — Production Deployment:**
-   - Git push to `main`, auto-deploy to Render and Vercel, production health check.
+## 3. Production Verification
+- Render Backend: Live at `https://eye-radar.onrender.com/health` (240+ live tracks, 7 sources online with $p_{50}/p_{95}/p_{99}$ metrics).
+- Vercel Frontend: Live at `https://eye-radar.vercel.app`.
