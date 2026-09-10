@@ -56,6 +56,17 @@ const SATELLITE_STYLE = {
       ],
       tileSize: 256,
       maxzoom: 18
+    },
+    "road-tiles": {
+      type: "raster" as const,
+      tiles: [
+        "https://mt0.google.com/vt/lyrs=h&x={x}&y={y}&z={z}",
+        "https://mt1.google.com/vt/lyrs=h&x={x}&y={y}&z={z}",
+        "https://mt2.google.com/vt/lyrs=h&x={x}&y={y}&z={z}",
+        "https://mt3.google.com/vt/lyrs=h&x={x}&y={y}&z={z}"
+      ],
+      tileSize: 256,
+      maxzoom: 18
     }
   },
   layers: [
@@ -65,6 +76,15 @@ const SATELLITE_STYLE = {
       source: "satellite-tiles",
       paint: {
         "raster-opacity": 1.0,
+        "raster-fade-duration": 0
+      }
+    },
+    {
+      id: "road-tiles-layer",
+      type: "raster" as const,
+      source: "road-tiles",
+      paint: {
+        "raster-opacity": 0.82,
         "raster-fade-duration": 0
       }
     }
@@ -2005,8 +2025,28 @@ export const MapView = ({
       }
     };
 
+    const applyImmediateSolarLighting = (m: Map) => {
+      const center = m.getCenter();
+      const localSun = getLocalSolarStatus(center.lat, center.lng);
+      const elev = localSun.elevationDeg;
+      const satLayer = m.getLayer("satellite-tiles-layer") ? "satellite-tiles-layer" : m.getLayer("esri-satellite-layer") ? "esri-satellite-layer" : null;
+      if (satLayer) {
+        const nightFactor = Math.min(1, Math.max(0, -elev / 10));
+        const targetBrightness = elev < 0 ? Math.max(0.35, 1.0 - nightFactor * 0.65) : 1.0;
+        const targetSaturation = elev < 0 ? -0.45 * nightFactor : 0.0;
+        const targetContrast = elev < 0 ? 0.25 * nightFactor : 0.0;
+        lastAppliedBrightnessRef.current = targetBrightness;
+        try {
+          m.setPaintProperty(satLayer, "raster-brightness-max", targetBrightness);
+          m.setPaintProperty(satLayer, "raster-saturation", targetSaturation);
+          m.setPaintProperty(satLayer, "raster-contrast", targetContrast);
+        } catch {}
+      }
+    };
+
     map.on("load", () => {
       resizeCanvasSafe();
+      applyImmediateSolarLighting(map);
       syncWeatherLayer(map, showWeatherRef.current !== false);
       syncUkraineBorders(map, showFrontlineRef.current !== false);
       const scaleControl = new maplibregl.ScaleControl({ maxWidth: 110, unit: "metric" });
@@ -2014,6 +2054,7 @@ export const MapView = ({
       triggerInstantRedraw();
     });
     map.on("styledata", () => {
+      applyImmediateSolarLighting(map);
       syncUkraineBorders(map, showFrontlineRef.current !== false);
       triggerInstantRedraw();
     });
@@ -2167,17 +2208,15 @@ export const MapView = ({
 
           ctx.save();
           if (elev < 0) {
-            // Sun is below horizon: astronomical night / dusk transition
-            // Keep subtle atmospheric tint without blacking out satellite map
-            const nightFactor = Math.min(1, Math.max(0, -elev / 15));
-            const zoomDamping = Math.max(0.2, 1 - (zoom - 5.5) * 0.2);
-            const baseAlpha = (0.06 + nightFactor * 0.08) * zoomDamping; // Max 0.14 at night, subtle tactical atmosphere
+            // Sun is below horizon: astronomical night
+            const nightFactor = Math.min(1, Math.max(0, -elev / 10));
+            const baseAlpha = 0.36 * nightFactor;
 
-            // Atmosphere midnight gradient (translucent, never pitch black)
+            // Deep nocturnal atmosphere wash across the Earth (realistic satellite night view)
             const nightGrad = ctx.createLinearGradient(0, 0, 0, height);
-            nightGrad.addColorStop(0, `rgba(2, 6, 23, ${Math.min(0.20, baseAlpha + 0.04)})`);
-            nightGrad.addColorStop(0.4, `rgba(3, 8, 26, ${baseAlpha})`);
-            nightGrad.addColorStop(1, `rgba(4, 10, 30, ${Math.max(0.03, baseAlpha - 0.02)})`);
+            nightGrad.addColorStop(0, `rgba(4, 9, 24, ${Math.min(0.55, baseAlpha + 0.10)})`);
+            nightGrad.addColorStop(0.5, `rgba(3, 8, 22, ${baseAlpha})`);
+            nightGrad.addColorStop(1, `rgba(2, 6, 20, ${Math.min(0.55, baseAlpha + 0.08)})`);
             ctx.fillStyle = nightGrad;
             ctx.fillRect(0, 0, width, height);
 
@@ -2186,7 +2225,7 @@ export const MapView = ({
               const twilightFactor = 1 - (-elev / 12);
               const twiGrad = ctx.createLinearGradient(0, height * 0.65, 0, height);
               twiGrad.addColorStop(0, "rgba(217, 119, 6, 0)");
-              twiGrad.addColorStop(1, `rgba(217, 119, 6, ${0.12 * twilightFactor})`);
+              twiGrad.addColorStop(1, `rgba(217, 119, 6, ${0.18 * twilightFactor})`);
               ctx.fillStyle = twiGrad;
               ctx.fillRect(0, height * 0.65, width, height * 0.35);
             }
@@ -2198,23 +2237,28 @@ export const MapView = ({
           }
           ctx.restore();
 
-          // C. Living Night City Lights & Highway Arteries Illumination
+          // C. Living Night City Lights Illumination (Authentic soft NASA Black Marble glow)
           if (elev < 0) {
-            const nightFactor = Math.min(1, Math.max(0, -elev / 15));
+            const nightFactor = Math.min(1, Math.max(0, -elev / 10));
             drawNightCityLights(ctx, map, nightFactor, now, width, height);
           }
 
-          // Physical MapLibre satellite tile brightness synchronization (throttled to 5s to eliminate WebGL recompile overhead)
-          if (now - lastBrightnessCheckRef.current > 5000) {
+          // Physical MapLibre satellite tile brightness synchronization (throttled to 2.5s)
+          if (now - lastBrightnessCheckRef.current > 2500) {
             lastBrightnessCheckRef.current = now;
             const satLayer = map.getLayer("satellite-tiles-layer") ? "satellite-tiles-layer" : map.getLayer("esri-satellite-layer") ? "esri-satellite-layer" : null;
             if (satLayer) {
-              const nightFactor = Math.min(1, Math.max(0, -elev / 15));
-              const targetBrightness = elev < 0 ? Math.max(0.92, 1.0 - nightFactor * 0.06) : 1.0;
-              if (Math.abs(targetBrightness - lastAppliedBrightnessRef.current) > 0.03) {
+              const nightFactor = Math.min(1, Math.max(0, -elev / 10));
+              const targetBrightness = elev < 0 ? Math.max(0.35, 1.0 - nightFactor * 0.65) : 1.0;
+              const targetSaturation = elev < 0 ? -0.45 * nightFactor : 0.0;
+              const targetContrast = elev < 0 ? 0.25 * nightFactor : 0.0;
+
+              if (Math.abs(targetBrightness - lastAppliedBrightnessRef.current) > 0.02) {
                 lastAppliedBrightnessRef.current = targetBrightness;
                 try {
                   map.setPaintProperty(satLayer, "raster-brightness-max", targetBrightness);
+                  map.setPaintProperty(satLayer, "raster-saturation", targetSaturation);
+                  map.setPaintProperty(satLayer, "raster-contrast", targetContrast);
                 } catch {}
               }
             }

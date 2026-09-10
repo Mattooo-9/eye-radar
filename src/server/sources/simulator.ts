@@ -20,6 +20,7 @@ interface DynamicTrack {
   callsign: string;
   assignedRegion?: string;
   isBaseline?: boolean;
+  corridorId?: string;
 }
 
 interface RegionCorridor {
@@ -1484,7 +1485,7 @@ export class AirspaceSimulator {
     return `tr-${prefix}-${this.sequence}`;
   }
 
-  private spawnTrackFromCorridor(corridor: RegionCorridor, now: number, isBaseline: boolean): void {
+  private spawnTrackFromCorridor(corridor: RegionCorridor, now: number, isBaseline: boolean, corridorId?: string): void {
     const lat = corridor.minLat + Math.random() * (corridor.maxLat - corridor.minLat);
     const lon = corridor.minLon + Math.random() * (corridor.maxLon - corridor.minLon);
     const heading = corridor.headingMin + Math.random() * (corridor.headingMax - corridor.headingMin);
@@ -1558,7 +1559,8 @@ export class AirspaceSimulator {
       model: corridor.model,
       callsign,
       assignedRegion: corridor.regionKeyword,
-      isBaseline
+      isBaseline,
+      corridorId
     });
   }
 
@@ -1569,14 +1571,17 @@ export class AirspaceSimulator {
     // Get real active alarms from alerts.in.ua
     const activeOblasts = this.alertsSource ? this.alertsSource.getActiveAlertOblastNames() : [];
 
-    // 1. Remove expired tracks (with impact/interception event)
+    // 1. Remove expired tracks (with impact/interception event ONLY for actual alert strike waves)
     for (const [id, track] of this.tracks.entries()) {
       if (track.maxLifetimeSec < 900000) {
         const ageSec = (now - track.spawnTime) / 1000;
 
-        // If target reached terminal destination: record impact or interception & DELETE
+        // If target reached terminal destination:
         if (ageSec >= track.maxLifetimeSec) {
-          if (track.type === "uav" || track.type === "munition" || track.type === "bomb" || track.type === "fpv") {
+          if (
+            !track.isBaseline &&
+            (track.type === "uav" || track.type === "munition" || track.type === "bomb" || track.type === "fpv")
+          ) {
             const isIntercept = Math.random() < 0.78;
             const regionName = formatOblastTitle(track.assignedRegion);
             impactManager.createAndRecord(
@@ -1628,14 +1633,15 @@ export class AirspaceSimulator {
         }
       }
 
-      // B. Baseline Tactical Corridors (continuous border/frontline situational awareness)
-      for (const corridor of BASELINE_TACTICAL_CORRIDORS) {
+      // B. Baseline Tactical Corridors (continuous nationwide situational awareness across all 25 regions)
+      for (const [index, corridor] of BASELINE_TACTICAL_CORRIDORS.entries()) {
+        const corridorId = `baseline-${index}`;
         const activeInCorridor = [...this.tracks.values()].filter(
-          (t) => t.isBaseline && t.assignedRegion === corridor.regionKeyword
+          (t) => t.isBaseline && t.corridorId === corridorId
         ).length;
 
         if (activeInCorridor < 1) {
-          this.spawnTrackFromCorridor(corridor, now, true);
+          this.spawnTrackFromCorridor(corridor, now, true, corridorId);
         }
       }
     }
