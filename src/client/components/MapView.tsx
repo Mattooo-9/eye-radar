@@ -37,6 +37,8 @@ interface MapViewProps {
   impacts?: ImpactEvent[];
   selectedImpact?: ImpactEvent | null;
   onSelectImpact?: (event: ImpactEvent) => void;
+  timelineOffsetSec?: number;
+  performanceTier?: "LOW" | "NORMAL" | "HIGH";
 }
 
 const SATELLITE_STYLE = {
@@ -1733,7 +1735,9 @@ export const MapView = ({
   onPickLocation,
   impacts = [],
   selectedImpact,
-  onSelectImpact
+  onSelectImpact,
+  timelineOffsetSec = 0,
+  performanceTier = "NORMAL"
 }: MapViewProps) => {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -1743,6 +1747,14 @@ export const MapView = ({
   // Stable references to eliminate component re-render teardowns
   const packetsRef = useRef(packets);
   packetsRef.current = packets;
+
+  const timelineOffsetRef = useRef(timelineOffsetSec);
+  timelineOffsetRef.current = timelineOffsetSec;
+
+  const performanceTierRef = useRef(performanceTier);
+  performanceTierRef.current = performanceTier;
+
+  const lastFrameTimeRef = useRef(0);
 
   const impactsRef = useRef(impacts);
   impactsRef.current = impacts;
@@ -2263,8 +2275,12 @@ export const MapView = ({
         // 2.2 Draw Air Targets (Shahed, Missile, Recon, KAB, FPV, Jet, Helicopter) & Trajectory Vectors
         const placedPillBoxes: PillRect[] = [];
         const mapBearing = map.getBearing() || 0; // Hoisted: calculated once per animation frame
+        const offsetSec = timelineOffsetRef.current;
+        const isLowTier = performanceTierRef.current === "LOW";
+        const cullingThreshold = isLowTier ? 30 : 80;
+
         for (const packet of currentPackets) {
-          const [id, type, lat, lon, heading, speed, timestamp, , , , altitude, packetModel] = packet;
+          const [id, type, lat, lon, heading, speed, timestamp, confidence, uncertaintyRadius, , altitude, packetModel] = packet;
 
           if (currentFilters) {
             if (type === "uav" && !currentFilters.uav) continue;
@@ -2275,16 +2291,19 @@ export const MapView = ({
             if (type === "helicopter" && (currentFilters.helicopter !== undefined ? !currentFilters.helicopter : !currentFilters.aircraft)) continue;
           }
 
-          // Predictive Dead-Reckoning: smooth sub-second 60fps position interpolation
+          // Predictive Dead-Reckoning vs Historical Timeline Playback
           const elapsedSec = Math.max(0, Math.min(2.5, (now - (timestamp || now)) / 1000));
-          const curPos = speed > 2 && elapsedSec > 0.04 ? destinationPoint(lat, lon, heading, speed * elapsedSec) : { lat, lon };
+          const curPos =
+            offsetSec > 0
+              ? (speed > 2 ? destinationPoint(lat, lon, (heading + 180) % 360, speed * offsetSec) : { lat, lon })
+              : (speed > 2 && elapsedSec > 0.04 ? destinationPoint(lat, lon, heading, speed * elapsedSec) : { lat, lon });
           const groundPoint = map.project([curPos.lon, curPos.lat]);
 
           if (
-            groundPoint.x < -80 ||
-            groundPoint.x > width + 80 ||
-            groundPoint.y < -80 ||
-            groundPoint.y > height + 80
+            groundPoint.x < -cullingThreshold ||
+            groundPoint.x > width + cullingThreshold ||
+            groundPoint.y < -cullingThreshold ||
+            groundPoint.y > height + cullingThreshold
           ) {
             continue;
           }
@@ -2302,7 +2321,31 @@ export const MapView = ({
           const isHighThreat = type === "uav" || type === "munition" || type === "bomb" || type === "fpv";
           const color = TARGET_COLORS[type] ?? "#7dd3fc";
 
-          // Forward flight trajectory vector (strictly leading forward out of silhouette nose)
+          // UNCERTAINTY: Semi-transparent covariance / 1-sigma uncertainty area
+          if (zoom >= 7.5 && uncertaintyRadius && uncertaintyRadius > 80 && !isLowTier) {
+            const sigmaPx = Math.max(6, Math.min(50, (uncertaintyRadius / metersPerPixel(lat, zoom))));
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(targetX, targetY, sigmaPx, 0, Math.PI * 2);
+            ctx.fillStyle = isHighThreat ? "rgba(239, 68, 68, 0.07)" : "rgba(56, 189, 248, 0.07)";
+            ctx.strokeStyle = isHighThreat ? "rgba(239, 68, 68, 0.28)" : "rgba(56, 189, 248, 0.28)";
+            ctx.lineWidth = 1;
+            ctx.setLineDash([2, 3]);
+            ctx.fill();
+            ctx.stroke();
+            ctx.restore();
+          }
+
+          // MEASURED sensor position waypoint
+          if (zoom >= 8.5 && offsetSec === 0) {
+            const measuredPt = map.project([lon, lat]);
+            ctx.beginPath();
+            ctx.arc(measuredPt.x, measuredPt.y, 2, 0, Math.PI * 2);
+            ctx.fillStyle = color;
+            ctx.fill();
+          }
+
+          // PREDICTED Forward flight trajectory vector (strictly leading forward out of silhouette nose)
           if (speed > 5) {
             const noseDist = scale * 0.95;
             const vectorLen = Math.max(16, Math.min(38, 12 + zoom * 2.0));

@@ -83,8 +83,11 @@ describe("E2E Pipeline Integration Test", () => {
 
     // 7. Source health validation
     const statuses = healthTracker.getStatuses();
-    expect(statuses.length).toBe(2);
-    expect(statuses[0].status).toBe("online");
-    expect(statuses[1].status).toBe("online");
+    const osintStatus = statuses.find((s) => s.name === "osint");
+    const sdrStatus = statuses.find((s) => s.name === "sdr");
+    expect(osintStatus).toBeDefined();
+    expect(sdrStatus).toBeDefined();
+    expect(osintStatus?.status).toBe("online");
+    expect(sdrStatus?.status).toBe("online");
   });
 });

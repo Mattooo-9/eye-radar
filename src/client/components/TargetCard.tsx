@@ -4,6 +4,7 @@ import type { TrustedLocation } from "../location/useTrustedLocation";
 import { bearingDegrees, haversineMeters } from "../lib/geo";
 import { findNearestLandmark, predictDestinationLandmark } from "../lib/landmarks";
 import { getAltitudeAnalysis, getHeadingVectorDescription, getTargetSpecification } from "../lib/targetSpecs";
+import { TrackInspectorModal } from "./TrackInspectorModal";
 
 interface TargetCardProps {
   packet: TrackPacket;
@@ -20,6 +21,7 @@ export const TargetCard = ({
   onFollowTarget,
   onZoomTarget
 }: TargetCardProps) => {
+  const [showInspector, setShowInspector] = useState(false);
   const [
     id,
     type,
@@ -303,6 +305,15 @@ export const TargetCard = ({
           >
             {copied ? "✓ Скопійовано!" : "📋 Копіювати координати"}
           </button>
+          <button
+            type="button"
+            className="action-btn-zoom"
+            style={{ borderColor: "#38bdf8", color: "#38bdf8", background: "rgba(2, 132, 199, 0.2)" }}
+            onClick={() => setShowInspector(true)}
+            title="Переглянути повну історію вимірювань, provenance та стан IMM-фільтра"
+          >
+            🔬 Діагностика (Provenance)
+          </button>
         </div>
 
         {/* Urgent Civil Defense Notice */}
@@ -310,6 +321,10 @@ export const TargetCard = ({
           <div className="safety-alert">
             🚨 <strong>Увага оперативного чергового:</strong> Ціль рухається у вашому напрямку (підліт ~{etaMinutes} хв). Негайно перейдіть в укриття або скористайтеся правилом двох стін!
           </div>
+        )}
+
+        {showInspector && (
+          <TrackInspectorModal targetId={id} onClose={() => setShowInspector(false)} />
         )}
       </div>
     </div>

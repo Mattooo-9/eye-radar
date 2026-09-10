@@ -85,8 +85,85 @@ export interface TrackState {
   lifecycle?: TrackLifecycle;
   measuredSpeed?: number;
   measuredAltitude?: number;
+  measuredLat?: number;
+  measuredLon?: number;
+  measuredHeading?: number;
+  measuredHistory?: Array<[lat: number, lon: number, timestamp: number]>;
   evidence?: string[];
+  evidenceFamilies?: string[];
   propulsion?: string;
+  isSynthetic?: boolean;
+  provenanceChain?: Array<{
+    source: string;
+    sourceFamily: string;
+    observedAt: number;
+    receivedAt: number;
+    processedAt: number;
+    latencyMs: number;
+    confidence: number;
+    evidence: string[];
+    provenanceStr?: string;
+    isSynthetic?: boolean;
+  }>;
+  syntheticScenario?: string;
+}
+
+export interface TrackDiagnosticReport {
+  id: string;
+  lifecycle: TrackLifecycle;
+  hitsCount: number;
+  firstSeen: number;
+  lastMeasurementTime: number;
+  ageSec: number;
+  isSynthetic: boolean;
+  classification: {
+    type: TrackType;
+    model?: string;
+    propulsion?: string;
+    confidence: number;
+    evidence: string[];
+    evidenceFamilies: string[];
+  };
+  kinematics: {
+    estimated: {
+      lat: number;
+      lon: number;
+      speedKmh: number;
+      speedMs: number;
+      heading: number;
+      altitudeM?: number;
+    };
+    measured: {
+      lat?: number;
+      lon?: number;
+      speedKmh: number | null;
+      altitudeM?: number;
+      heading?: number;
+      deltaFromEstimatedMeters: number;
+    };
+    uncertaintyRadiusMeters?: number;
+  };
+  filter: {
+    immActiveModel: string;
+    cvProbability: number;
+    ctProbability: number;
+    covLat?: number;
+    covLon?: number;
+    lastMahalanobisDistance?: number;
+  };
+  measuredHistory: Array<[lat: number, lon: number, timestamp: number]>;
+  provenanceChain: Array<{
+    source: string;
+    sourceFamily: string;
+    observedAt: number;
+    receivedAt: number;
+    processedAt: number;
+    latencyMs: number;
+    confidence: number;
+    evidence: string[];
+    provenanceStr?: string;
+    isSynthetic?: boolean;
+  }>;
 }
 
 export interface UserLocation {

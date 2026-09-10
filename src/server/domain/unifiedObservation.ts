@@ -11,6 +11,19 @@ export type SourceFamily =
   | "manual"
   | "simulation";
 
+export interface ProvenanceRecord {
+  source: string;
+  sourceFamily: SourceFamily;
+  observedAt: number;
+  receivedAt: number;
+  processedAt: number;
+  latencyMs: number;
+  confidence: number;
+  evidence: string[];
+  provenanceStr?: string;
+  isSynthetic?: boolean;
+}
+
 export interface UnifiedObservation {
   source_id: string;
   source_family: SourceFamily;
@@ -35,6 +48,7 @@ export interface UnifiedObservation {
   provenance?: string;
   model?: string;
   callsign?: string;
+  isSynthetic?: boolean;
 }
 
 /**
@@ -76,7 +90,8 @@ export function createUnifiedObservation(partial: Partial<UnifiedObservation> & 
     evidence: partial.evidence ?? [],
     provenance: partial.provenance,
     model: partial.model,
-    callsign: partial.callsign
+    callsign: partial.callsign,
+    isSynthetic: partial.isSynthetic ?? (partial.source_family === "simulation")
   };
 }
 
@@ -113,11 +128,12 @@ export function toObservation(u: UnifiedObservation): Observation {
       measurement_accuracy: u.measurement_accuracy,
       source_quality: u.source_quality,
       evidence: (u.evidence ?? []).join("; "),
-      provenance: u.provenance ?? "",
+      provenance: u.provenance ?? `${u.source_id} -> observed:${u.observed_at}`,
       model: u.model ?? "",
       callsign: u.callsign ?? "",
       received_at: u.received_at,
-      latency_ms: Math.max(0, u.received_at - u.observed_at)
+      latency_ms: Math.max(0, u.received_at - u.observed_at),
+      isSynthetic: u.isSynthetic ?? false
     }
   };
 }

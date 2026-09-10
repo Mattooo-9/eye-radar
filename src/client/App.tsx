@@ -3,6 +3,7 @@ import type { Map } from "maplibre-gl";
 import { AiBriefingModal } from "./components/AiBriefingModal";
 import { CitizenReportModal } from "./components/CitizenReportModal";
 import { LOCATIONS } from "./components/CitySelector";
+import { LiveTimelineBar, type PerformanceTier } from "./components/LiveTimelineBar";
 import { MapView, type VisionMode } from "./components/MapView";
 import { type FilterState } from "./components/StatusPanel";
 import { TacticalParamsModal, type TacticalFilters } from "./components/TacticalParamsModal";
@@ -67,6 +68,19 @@ export const App = () => {
   const [followedTargetId, setFollowedTargetId] = useState<string | null>(null);
   const [alertsModalOpen, setAlertsModalOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
+  const [timelineOffsetSec, setTimelineOffsetSec] = useState<number>(0);
+  const [performanceTier, setPerformanceTier] = useState<PerformanceTier>("NORMAL");
+
+  // Auto-detect lower-end hardware (phones with <= 4 logical cores) for 30 FPS throttle
+  useEffect(() => {
+    try {
+      if (typeof navigator !== "undefined" && typeof navigator.hardwareConcurrency === "number") {
+        if (navigator.hardwareConcurrency < 4) {
+          setPerformanceTier("LOW");
+        }
+      }
+    } catch {}
+  }, []);
 
   const handleSelectOblastFromAlert = (oblastName: string) => {
     const clean = oblastName.toLowerCase().replace("область", "").replace("обл.", "").trim();
@@ -315,7 +329,15 @@ export const App = () => {
         onOpenAlerts={() => setAlertsModalOpen(true)}
       />
 
-      {/* 2. Full-screen map (edge to edge, clean, zero watermarks) */}
+      {/* 2. Live Tactical Timeline & Performance Optimizer Bar */}
+      <LiveTimelineBar
+        selectedOffsetSec={timelineOffsetSec}
+        onSelectOffset={setTimelineOffsetSec}
+        performanceTier={performanceTier}
+        onSelectTier={setPerformanceTier}
+      />
+
+      {/* 3. Full-screen map (edge to edge, clean, zero watermarks) */}
       <MapView
         packets={filteredPackets}
         impacts={impacts}
@@ -332,6 +354,8 @@ export const App = () => {
         showSatellites={showSatellites}
         showFrontline={showFrontline}
         followingTargetId={followedTargetId}
+        timelineOffsetSec={timelineOffsetSec}
+        performanceTier={performanceTier}
         onStopFollow={() => setFollowedTargetId(null)}
         onMapReady={(m) => setMapInstance(m)}
         onPickLocation={handlePickLocation}

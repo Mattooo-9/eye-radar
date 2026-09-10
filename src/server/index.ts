@@ -13,6 +13,7 @@ import { normalizeSdrPayload, type SdrPayload } from "./ingest/sdrGateway.js";
 import { AirplanesLiveSource } from "./sources/airplanesLive.js";
 import { OpenskyAdsbLolSource } from "./sources/openskyAdsbLol.js";
 import { LocalReceiverSource } from "./sources/localReceiver.js";
+import { PublicOsintFeedSource } from "./sources/publicOsintFeed.js";
 import { toObservation } from "./domain/unifiedObservation.js";
 import { AlertsInUaSource } from "./sources/alertsInUa.js";
 import { FirmsThermalSource } from "./sources/firmsThermal.js";
@@ -41,18 +42,20 @@ const windSource = new OpenMeteoWindSource();
 const airplanesSource = new AirplanesLiveSource();
 const openskyLolSource = new OpenskyAdsbLolSource();
 const localReceiverSource = new LocalReceiverSource();
+const publicOsintSource = new PublicOsintFeedSource();
 const simulator = new AirspaceSimulator();
 simulator.setAlertsSource(alertsSource);
 const healthTracker = new SourceHealthTracker();
-let simulationEnabled = true;
+// In production, simulator is OFF by default; production feed is purely real working sources!
+let simulationEnabled = false;
 
 healthTracker.registerSource("alerts.in.ua");
 healthTracker.registerSource("airplanes.live");
 healthTracker.registerSource("adsb.lol");
 healthTracker.registerSource("local.sdr");
+healthTracker.registerSource("public.osint");
 healthTracker.registerSource("open-meteo");
 healthTracker.registerSource("nasa-firms");
-healthTracker.registerSource("simulator");
 
 const readBody = async (req: IncomingMessage): Promise<string> =>
   new Promise((resolveBody, rejectBody) => {
@@ -158,22 +161,45 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", env.publicBaseUrl);
 
   if (req.method === "GET" && url.pathname === "/health") {
+    const audit = healthTracker.getAuditReport(trackManager.snapshot(simulationEnabled));
     json(res, 200, {
       ok: true,
       uptime: process.uptime(),
-      tracks: trackManager.snapshot().length,
+      tracks: trackManager.snapshot(simulationEnabled).length,
       simulator: simulationEnabled,
-      sources: healthTracker.getStatuses()
+      wsClients: hub.getClientCount(),
+      summary: audit.summary,
+      sources: audit.sources
     });
     return;
   }
 
+  if (req.method === "GET" && url.pathname === "/api/audit") {
+    const audit = healthTracker.getAuditReport(trackManager.snapshot(simulationEnabled));
+    json(res, 200, audit);
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname.startsWith("/api/tracks/") && url.pathname.endsWith("/diagnostic")) {
+    const id = url.pathname.replace("/api/tracks/", "").replace("/diagnostic", "");
+    const diag = trackManager.getTrackDiagnostic(decodeURIComponent(id));
+    if (diag) {
+      json(res, 200, diag);
+    } else {
+      notFound(res);
+    }
+    return;
+  }
+
   if (req.method === "GET" && url.pathname === "/api/status") {
+    const audit = healthTracker.getAuditReport(trackManager.snapshot(simulationEnabled));
     json(res, 200, {
       uptime: process.uptime(),
       memory: process.memoryUsage(),
-      tracksCount: trackManager.snapshot().length,
-      sources: healthTracker.getStatuses(),
+      tracksCount: trackManager.snapshot(simulationEnabled).length,
+      wsClients: hub.getClientCount(),
+      sources: audit.sources,
+      summary: audit.summary,
       simulationEnabled
     });
     return;
@@ -550,6 +576,22 @@ setInterval(async () => {
     }
   }
 
+  // Poll Public OSINT Feed every 15 seconds
+  if (cycleCounter === 1 || cycleCounter % 15 === 0) {
+    const tOsint = Date.now();
+    try {
+      const osintObs = await publicOsintSource.fetchPublicOsintObservations();
+      for (const o of osintObs) {
+        trackManager.ingest(toObservation(o));
+      }
+      if (osintObs.length > 0) {
+        healthTracker.recordSuccess("public.osint", Date.now() - tOsint, osintObs.length);
+      }
+    } catch (err) {
+      healthTracker.recordError("public.osint", err instanceof Error ? err : String(err));
+    }
+  }
+
   // Poll NASA FIRMS Thermal Satellite Observations every 60 seconds
   if (cycleCounter === 1 || cycleCounter % 60 === 0) {
     const t0 = Date.now();
@@ -558,32 +600,34 @@ setInterval(async () => {
       for (const t of thermals) {
         trackManager.ingest(t);
       }
-      healthTracker.recordSuccess("nasa-firms", Date.now() - t0);
+      healthTracker.recordSuccess("nasa-firms", Date.now() - t0, thermals.length);
     } catch (err) {
       healthTracker.recordError("nasa-firms", err instanceof Error ? err : String(err));
     }
   }
 
+  // Synthetic simulator runs strictly in test mode / simulationEnabled
   if (simulationEnabled) {
     const simObservations = simulator.generateStep(now);
     for (const obs of simObservations) {
+      obs.meta = { ...obs.meta, isSynthetic: true };
       trackManager.ingest(obs);
     }
-    healthTracker.recordSuccess("simulator", 1);
+    healthTracker.recordSuccess("simulator", 1, simObservations.length);
   }
 
   trackManager.tick(now);
   trackManager.prune(now);
 
-  const packets = trackManager.toPackets();
-  hub.broadcastTracks(packets);
+  const delta = trackManager.getDeltaPacket(simulationEnabled);
+  hub.broadcastTracks(delta.tracks, delta.seq);
 
   if (cycleCounter % 3 === 0) {
     hub.broadcastImpacts(impactManager.getRecentEvents());
   }
 
   // Broadcast personal threat alerts to bot subscribers
-  void botManager.broadcastThreatAlerts(trackManager.snapshot());
+  void botManager.broadcastThreatAlerts(trackManager.snapshot(simulationEnabled));
 }, 1_000).unref();
 
 const main = async (): Promise<void> => {
