@@ -45,26 +45,42 @@ export const OrbitalHud = ({ map, trackCount, onOpenBriefing }: OrbitalHudProps)
     return "NW";
   };
 
+  const [isOpenTelemetry, setIsOpenTelemetry] = useState(false);
   const utcTimeStr = nowDate.toISOString().slice(11, 19) + " UTC";
 
   return (
     <div className="orbital-hud">
-      <div className="orbital-hud-left">
+      <div
+        className="orbital-hud-left"
+        onClick={() => {
+          window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.("light");
+          setIsOpenTelemetry((prev) => !prev);
+        }}
+        style={{ cursor: "pointer" }}
+        title="Натисніть для орбітальної телеметрії та діагностики"
+      >
         <img
           src="/avatar.jpg"
           alt="Eye Radar Logo"
           className="hud-emblem"
-          onClick={onOpenBriefing}
-          title="Eye Radar Space Defense Reconnaissance"
         />
         <div>
-          <span className="hud-label">EYE RADAR // ORBITAL DEFENSE</span>
+          <span className="hud-label">EYE RADAR // ORBITAL DEFENSE ▼</span>
           <span className="hud-sub">
             {utcTimeStr} • 5 ДЖЕРЕЛ (РАДАРИ + СУПУТНИКИ + ADS-B)
           </span>
         </div>
       </div>
-      <div className="orbital-hud-center">
+
+      <div
+        className="orbital-hud-center"
+        onClick={() => {
+          window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.("light");
+          setIsOpenTelemetry((prev) => !prev);
+        }}
+        style={{ cursor: "pointer" }}
+        title="Координати та курс спостереження"
+      >
         <span className="hud-coords">
           {coords.lat.toFixed(2)}°N / {coords.lon.toFixed(2)}°E
         </span>
@@ -72,16 +88,87 @@ export const OrbitalHud = ({ map, trackCount, onOpenBriefing }: OrbitalHudProps)
           🧭 {normBearing}° {getCompassDir(normBearing)}
         </span>
       </div>
+
       <div className="orbital-hud-right">
         <button
           className="hud-status-badge"
-          onClick={onOpenBriefing}
+          onClick={() => {
+            window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.("medium");
+            onOpenBriefing?.();
+          }}
           title="Натисніть для тактичного AI-зведення"
           style={{ cursor: "pointer", border: "1px solid rgba(56,189,248,0.5)" }}
         >
-          {trackCount > 0 ? `🚨 ${trackCount} ЦІЛЕЙ (AI)` : "🟢 СЕКТОР ЧИСТИЙ (AI)"}
+          {trackCount > 0 ? `🚨 ${trackCount} ЦІЛЕЙ (AI) ▼` : "🟢 СЕКТОР ЧИСТИЙ (AI) ▼"}
         </button>
       </div>
+
+      {isOpenTelemetry && (
+        <div className="orbital-telemetry-popover">
+          <div className="popover-header">
+            <div className="popover-title">
+              <span className="popover-icon">🛰️</span>
+              <strong>ОРБІТАЛЬНИЙ КОМПЛЕКС СПОСТЕРЕЖЕННЯ</strong>
+            </div>
+            <button
+              type="button"
+              className="popover-close-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsOpenTelemetry(false);
+              }}
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="popover-body">
+            <div className="source-row">
+              <span className="source-label">Орбітальна висота / Спостереження</span>
+              <span className="source-badge online">ALT: 480 KM • INC: 51.6°</span>
+            </div>
+            <div className="source-row">
+              <span className="source-label">Сенсорне слияння (Fusion)</span>
+              <span className="source-badge online">5 Джерел (Радари + NASA + ADS-B)</span>
+            </div>
+            <div className="source-row">
+              <span className="source-label">Центр огляду камери</span>
+              <code className="coords-code">
+                {coords.lat.toFixed(4)}°N, {coords.lon.toFixed(4)}°E • CRS: {normBearing}°
+              </code>
+            </div>
+            <div className="source-row">
+              <span className="source-label">Точний час театру дій</span>
+              <span className="source-badge online">{utcTimeStr} (Київ: UTC+3)</span>
+            </div>
+          </div>
+
+          <div className="popover-footer">
+            <button
+              type="button"
+              className="popover-action-btn"
+              onClick={() => {
+                setIsOpenTelemetry(false);
+                onOpenBriefing?.();
+              }}
+            >
+              📋 Відкрити аналітичний AI-брифінг
+            </button>
+            {map && (
+              <button
+                type="button"
+                className="popover-action-btn secondary"
+                onClick={() => {
+                  setIsOpenTelemetry(false);
+                  map.flyTo({ center: [31.5, 49.0], zoom: 6.2, duration: 1200 });
+                }}
+              >
+                🇺🇦 Скинути фокус на всю Україну
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -568,6 +568,16 @@ const drawSelectedLocationReticle = (
   ctx.restore();
 };
 
+interface PillRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+const doesPillOverlap = (r1: PillRect, r2: PillRect): boolean =>
+  !(r1.x + r1.w < r2.x - 4 || r2.x + r2.w < r1.x - 4 || r1.y + r1.h < r2.y - 4 || r2.y + r2.h < r1.y - 4);
+
 const drawMilitaryCalloutPill = (
   ctx: CanvasRenderingContext2D,
   targetX: number,
@@ -577,11 +587,13 @@ const drawMilitaryCalloutPill = (
   altStr: string,
   color: string,
   isThreat: boolean,
-  showAlt: boolean
+  showAlt: boolean,
+  placedBoxes: PillRect[]
 ) => {
   ctx.save();
   const ratio = window.devicePixelRatio || 1;
   const screenW = ctx.canvas.width / ratio;
+  const screenH = ctx.canvas.height / ratio;
 
   const text = showAlt
     ? `${modelName} • ${speedKmh} км/г • ${altStr}`
@@ -592,29 +604,68 @@ const drawMilitaryCalloutPill = (
   const pillW = Math.max(85, Math.ceil(metrics.width) + 18);
   const pillH = 18;
 
-  // Prefer right side, flip to left if near screen edge
-  const px = targetX + 14 + pillW > screenW - 8 ? targetX - pillW - 14 : targetX + 14;
-  const py = Math.round(targetY - pillH / 2);
+  // Anti-collision candidate slots around target center
+  const candidates: Array<{ x: number; y: number }> = [
+    { x: targetX + 14, y: Math.round(targetY - pillH / 2) }, // Right
+    { x: targetX + 14, y: Math.round(targetY - pillH / 2 - 20) }, // Right-Up
+    { x: targetX + 14, y: Math.round(targetY - pillH / 2 + 20) }, // Right-Down
+    { x: targetX - pillW - 14, y: Math.round(targetY - pillH / 2) }, // Left
+    { x: targetX - pillW - 14, y: Math.round(targetY - pillH / 2 - 20) }, // Left-Up
+    { x: targetX - pillW - 14, y: Math.round(targetY - pillH / 2 + 20) }, // Left-Down
+    { x: Math.round(targetX - pillW / 2), y: targetY - pillH - 12 }, // Top
+    { x: Math.round(targetX - pillW / 2), y: targetY + 14 } // Bottom
+  ];
+
+  let chosenX = candidates[0].x;
+  let chosenY = candidates[0].y;
+  let foundNonColliding = false;
+
+  for (const cand of candidates) {
+    const clampedX = Math.max(6, Math.min(screenW - pillW - 6, cand.x));
+    const clampedY = Math.max(6, Math.min(screenH - pillH - 6, cand.y));
+    const testRect: PillRect = { x: clampedX, y: clampedY, w: pillW, h: pillH };
+
+    const collides = placedBoxes.some((b) => doesPillOverlap(testRect, b));
+    if (!collides) {
+      chosenX = clampedX;
+      chosenY = clampedY;
+      foundNonColliding = true;
+      break;
+    }
+  }
+
+  if (!foundNonColliding) {
+    chosenX = Math.max(6, Math.min(screenW - pillW - 6, candidates[0].x));
+    chosenY = Math.max(6, Math.min(screenH - pillH - 6, candidates[0].y));
+  }
+
+  placedBoxes.push({ x: chosenX, y: chosenY, w: pillW, h: pillH });
+
+  const px = chosenX;
+  const py = chosenY;
 
   // Background glass pill
-  ctx.fillStyle = "rgba(7, 12, 22, 0.92)";
-  ctx.strokeStyle = isThreat ? "rgba(239, 68, 68, 0.85)" : "rgba(56, 189, 248, 0.75)";
+  ctx.fillStyle = "rgba(7, 12, 22, 0.94)";
+  ctx.strokeStyle = isThreat ? "rgba(239, 68, 68, 0.88)" : "rgba(56, 189, 248, 0.78)";
   ctx.lineWidth = 1.1;
   ctx.beginPath();
   ctx.roundRect(px, py, pillW, pillH, 9);
   ctx.fill();
   ctx.stroke();
 
-  // Subtle lead connector line from target nadir to pill
+  // Subtle lead connector line from target to pill
   ctx.strokeStyle = isThreat ? "rgba(239, 68, 68, 0.5)" : "rgba(56, 189, 248, 0.4)";
   ctx.lineWidth = 0.9;
   ctx.beginPath();
   if (px > targetX) {
-    ctx.moveTo(targetX + 5, targetY - 2);
+    ctx.moveTo(targetX + 4, targetY);
     ctx.lineTo(px, py + 9);
-  } else {
-    ctx.moveTo(targetX - 5, targetY - 2);
+  } else if (px + pillW < targetX) {
+    ctx.moveTo(targetX - 4, targetY);
     ctx.lineTo(px + pillW, py + 9);
+  } else {
+    ctx.moveTo(targetX, targetY > py ? targetY - 4 : targetY + 4);
+    ctx.lineTo(px + pillW / 2, py + (targetY > py ? pillH : 0));
   }
   ctx.stroke();
 
@@ -760,6 +811,23 @@ const syncUkraineBorders = (map: maplibregl.Map) => {
       });
     }
 
+    // 1. Soft Outer Tactical Glow for recognized state border
+    if (!map.getLayer("ukraine-border-glow")) {
+      map.addLayer({
+        id: "ukraine-border-glow",
+        type: "line",
+        source: "ukraine-borders",
+        filter: ["==", "type", "state_border"],
+        paint: {
+          "line-color": "#0284c7",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 4, 4.5, 8, 7.5, 12, 11],
+          "line-blur": ["interpolate", ["linear"], ["zoom"], 4, 2.5, 8, 4.5, 12, 6.5],
+          "line-opacity": 0.7
+        }
+      });
+    }
+
+    // 2. High-Contrast Tactical Oblast Divisions (All 24 Oblasts + Crimea)
     if (!map.getLayer("ukraine-oblast-borders")) {
       map.addLayer({
         id: "ukraine-oblast-borders",
@@ -768,13 +836,14 @@ const syncUkraineBorders = (map: maplibregl.Map) => {
         filter: ["==", "type", "oblast_border"],
         paint: {
           "line-color": "#38bdf8",
-          "line-width": ["interpolate", ["linear"], ["zoom"], 4, 0.7, 8, 1.2, 12, 1.8],
-          "line-opacity": 0.5,
-          "line-dasharray": [3, 2]
+          "line-width": ["interpolate", ["linear"], ["zoom"], 4, 1.0, 8, 1.6, 12, 2.2],
+          "line-opacity": 0.65,
+          "line-dasharray": [5, 4]
         }
       });
     }
 
+    // 3. Sharp Luminous State Boundary Line
     if (!map.getLayer("ukraine-state-border")) {
       map.addLayer({
         id: "ukraine-state-border",
@@ -782,8 +851,23 @@ const syncUkraineBorders = (map: maplibregl.Map) => {
         source: "ukraine-borders",
         filter: ["==", "type", "state_border"],
         paint: {
-          "line-color": "#38bdf8",
-          "line-width": ["interpolate", ["linear"], ["zoom"], 4, 1.6, 8, 2.4, 12, 3.5],
+          "line-color": "#00f0ff",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 4, 2.0, 8, 3.2, 12, 4.2],
+          "line-opacity": 0.95
+        }
+      });
+    }
+
+    // 4. Ultra-Crisp White Centerline Core for state border
+    if (!map.getLayer("ukraine-state-border-core")) {
+      map.addLayer({
+        id: "ukraine-state-border-core",
+        type: "line",
+        source: "ukraine-borders",
+        filter: ["==", "type", "state_border"],
+        paint: {
+          "line-color": "#f0fdfa",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 4, 0.8, 8, 1.3, 12, 1.8],
           "line-opacity": 0.88
         }
       });
@@ -1284,6 +1368,7 @@ export const MapView = ({
         }
 
         // 2. Draw Air Targets with exact military silhouettes & forward trajectories
+        const placedPillBoxes: PillRect[] = [];
         for (const packet of currentPackets) {
           const [id, type, lat, lon, heading, speed, timestamp, , , , altitude] = packet;
 
@@ -1511,7 +1596,8 @@ export const MapView = ({
               altMsl,
               color,
               isHighThreat,
-              zoom >= 7.5
+              zoom >= 7.5,
+              placedPillBoxes
             );
           }
 

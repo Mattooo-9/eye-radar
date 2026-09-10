@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Map } from "maplibre-gl";
 import { AiBriefingModal } from "./components/AiBriefingModal";
-import { CitySelector } from "./components/CitySelector";
+import { CitySelector, LOCATIONS } from "./components/CitySelector";
 import { ManualLocationPrompt } from "./components/ManualLocationPrompt";
 import { MapView, type VisionMode } from "./components/MapView";
 import { OrbitalControls } from "./components/OrbitalControls";
@@ -63,6 +63,17 @@ export const App = () => {
   const [showWeather, setShowWeather] = useState(true);
   const [showSatellites, setShowSatellites] = useState(true);
   const [followedTargetId, setFollowedTargetId] = useState<string | null>(null);
+  const [alertsModalOpen, setAlertsModalOpen] = useState(false);
+
+  const handleSelectOblastFromAlert = (oblastName: string) => {
+    const clean = oblastName.toLowerCase().replace("область", "").replace("обл.", "").trim();
+    const match = LOCATIONS.find(
+      (l) => l.name.toLowerCase().includes(clean) || l.region.toLowerCase().includes(clean)
+    );
+    if (match) {
+      handleSelectCity(match.lat, match.lon, match.name, 8.5);
+    }
+  };
 
   const [tacticalFilters, setTacticalFilters] = useState<TacticalFilters>({
     autoTracking: true,
@@ -325,10 +336,58 @@ export const App = () => {
       </div>
 
       {activeAlerts.length > 0 && (
-        <div className="active-alerts-ticker">
+        <div
+          className="active-alerts-ticker"
+          onClick={() => {
+            window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.("light");
+            setAlertsModalOpen((prev) => !prev);
+          }}
+          title="Натисніть для перегляду списку областей з тривогою"
+          style={{ cursor: "pointer" }}
+        >
           <span className="ticker-icon">🚨</span>
-          <span className="ticker-label">ТРИВОГА:</span>
+          <span className="ticker-label">ТРИВОГА ({activeAlerts.length} рег.) ▼:</span>
           <span className="ticker-regions">{activeAlerts.join(", ")}</span>
+        </div>
+      )}
+
+      {alertsModalOpen && (
+        <div className="alerts-modal-overlay" onClick={() => setAlertsModalOpen(false)}>
+          <div className="alerts-modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="alerts-modal-header">
+              <div className="alerts-modal-title">
+                <span className="ticker-icon">🚨</span>
+                <strong>ПОВІТРЯНІ ТРИВОГИ В УКРАЇНІ ({activeAlerts.length})</strong>
+              </div>
+              <button
+                type="button"
+                className="alerts-modal-close"
+                onClick={() => setAlertsModalOpen(false)}
+              >
+                ✕
+              </button>
+            </div>
+            <div className="alerts-modal-sub">
+              Натисніть на область для миттєвого переходу камери:
+            </div>
+            <div className="alerts-regions-grid">
+              {activeAlerts.map((regionName) => (
+                <button
+                  key={regionName}
+                  type="button"
+                  className="alert-region-chip"
+                  onClick={() => {
+                    window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.("light");
+                    handleSelectOblastFromAlert(regionName);
+                    setAlertsModalOpen(false);
+                  }}
+                >
+                  <span className="alert-beacon-dot" />
+                  <span className="alert-region-text">{regionName}</span>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 
@@ -356,6 +415,10 @@ export const App = () => {
         aircraftCount={targetCounts.aircraft}
         heloCount={targetCounts.helo}
         onFitAllTargets={handleFitAllTargets}
+        packets={filteredPackets}
+        location={location}
+        onSelectTarget={(p) => setInspectedTarget(p)}
+        onResetGps={resetToGps}
       />
 
       {inspectedTarget && (

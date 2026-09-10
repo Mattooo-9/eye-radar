@@ -17,7 +17,7 @@ interface UkrainianLocation {
   zoom?: number;
 }
 
-const LOCATIONS: UkrainianLocation[] = [
+export const LOCATIONS: UkrainianLocation[] = [
   { name: "Київ", region: "Столиця", lat: 50.4501, lon: 30.5234, zoom: 10.5 },
   { name: "Харків", region: "Харківська обл.", lat: 49.9935, lon: 36.2304, zoom: 10.0 },
   { name: "Дніпро", region: "Дніпропетровська обл.", lat: 48.4647, lon: 35.0462, zoom: 10.0 },
