@@ -24,7 +24,20 @@ export const TargetCard = ({
   const [copied, setCopied] = useState(false);
 
   const speedKmh = Math.round(speed * 3.6);
-  const effectiveAltM = altitude !== undefined && altitude !== null ? Math.round(altitude) : (type === "aircraft" ? 9800 : type === "helicopter" ? 650 : type === "munition" ? 95 : 190);
+  const effectiveAltM =
+    altitude !== undefined && altitude !== null
+      ? Math.round(altitude)
+      : type === "aircraft"
+      ? 9800
+      : type === "helicopter"
+      ? 650
+      : type === "munition"
+      ? 95
+      : type === "bomb"
+      ? 2200
+      : type === "fpv"
+      ? 65
+      : 190;
 
   const spec = getTargetSpecification(type, id, speedKmh, effectiveAltM);
   const altAnalysis = getAltitudeAnalysis(effectiveAltM);

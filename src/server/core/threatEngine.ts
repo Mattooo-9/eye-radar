@@ -118,6 +118,10 @@ export class ThreatEngine {
         return "БПЛА / Дрон";
       case "munition":
         return "Крилата / балістична ракета";
+      case "bomb":
+        return "Керована авіабомба (КАБ)";
+      case "fpv":
+        return "Ударний FPV-дрон";
       case "aircraft":
         return "Літак";
       case "helicopter":

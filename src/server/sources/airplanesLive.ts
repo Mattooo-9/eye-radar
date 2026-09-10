@@ -208,7 +208,9 @@ export class AirplanesLiveSource {
       return this.cache;
     }
 
+    // If fetch returned no airborne contacts or failed, flush cache so ended flights prune immediately
+    this.cache = [];
     this.lastFetch = now;
-    return this.cache;
+    return [];
   }
 }

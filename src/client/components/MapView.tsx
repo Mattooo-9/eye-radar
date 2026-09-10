@@ -1856,6 +1856,8 @@ export const MapView = ({
           if (currentFilters) {
             if (type === "uav" && !currentFilters.uav) continue;
             if (type === "munition" && !currentFilters.munition) continue;
+            if (type === "bomb" && currentFilters.bomb === false) continue;
+            if (type === "fpv" && currentFilters.fpv === false) continue;
             if (type === "aircraft" && !currentFilters.aircraft) continue;
             if (type === "helicopter" && (currentFilters.helicopter !== undefined ? !currentFilters.helicopter : !currentFilters.aircraft)) continue;
           }
