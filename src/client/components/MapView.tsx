@@ -26,7 +26,7 @@ interface MapViewProps {
   showDayNight?: boolean;
   showWeather?: boolean;
   showSatellites?: boolean;
-  showWaterShorelines?: boolean;
+  showFrontline?: boolean;
   followingTargetId?: string | null;
   onStopFollow?: () => void;
   onMapReady?: (map: Map) => void;
@@ -1149,14 +1149,28 @@ const syncWeatherLayer = async (map: maplibregl.Map, visible: boolean) => {
   }
 };
 
-const syncUkraineBorders = (map: maplibregl.Map) => {
+const syncUkraineBorders = (map: maplibregl.Map, showFrontline = true) => {
   if (!map || !map.isStyleLoaded()) return;
   try {
-    // 0. All World Countries Borders & Labels
+    // 0. All World Countries Borders & Clear Ukrainian Labels
     if (!map.getSource("world-borders")) {
       map.addSource("world-borders", {
         type: "geojson",
         data: "/world-borders.geojson"
+      });
+    }
+
+    if (!map.getLayer("world-borders-glow")) {
+      map.addLayer({
+        id: "world-borders-glow",
+        type: "line",
+        source: "world-borders",
+        paint: {
+          "line-color": "#475569",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 3, 2.0, 6, 3.5, 10, 5.0],
+          "line-blur": ["interpolate", ["linear"], ["zoom"], 3, 1.0, 6, 2.0, 10, 3.0],
+          "line-opacity": 0.45
+        }
       });
     }
 
@@ -1166,9 +1180,9 @@ const syncUkraineBorders = (map: maplibregl.Map) => {
         type: "line",
         source: "world-borders",
         paint: {
-          "line-color": "#64748b",
-          "line-width": ["interpolate", ["linear"], ["zoom"], 3, 0.9, 6, 1.4, 10, 1.9],
-          "line-opacity": 0.65
+          "line-color": "#94a3b8",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 3, 1.0, 6, 1.6, 10, 2.2],
+          "line-opacity": 0.85
         }
       });
     }
@@ -1179,20 +1193,21 @@ const syncUkraineBorders = (map: maplibregl.Map) => {
         type: "symbol",
         source: "world-borders",
         layout: {
-          "text-field": ["get", "NAME"],
-          "text-size": ["interpolate", ["linear"], ["zoom"], 3, 9, 6, 12, 10, 14],
+          "text-field": ["coalesce", ["get", "NAME_UK"], ["get", "NAME"]],
+          "text-size": ["interpolate", ["linear"], ["zoom"], 3, 10, 6, 13, 10, 16],
           "text-transform": "uppercase",
-          "text-letter-spacing": 0.1,
+          "text-letter-spacing": 0.12,
           "text-max-width": 8
         },
         paint: {
-          "text-color": "#94a3b8",
+          "text-color": "#f1f5f9",
           "text-halo-color": "#020617",
-          "text-halo-width": 1.5
+          "text-halo-width": 2.0
         }
       });
     }
 
+    // 1. Ukraine's Recognized 1991 State Borders (All 24 Oblasts, Crimea & Sevastopol)
     if (!map.getSource("ukraine-borders")) {
       map.addSource("ukraine-borders", {
         type: "geojson",
@@ -1200,7 +1215,7 @@ const syncUkraineBorders = (map: maplibregl.Map) => {
       });
     }
 
-    // 1. Soft Outer Tactical Glow for recognized state border
+    // Soft Outer Tactical Glow for recognized state border
     if (!map.getLayer("ukraine-border-glow")) {
       map.addLayer({
         id: "ukraine-border-glow",
@@ -1216,7 +1231,7 @@ const syncUkraineBorders = (map: maplibregl.Map) => {
       });
     }
 
-    // 2. High-Contrast Tactical Oblast Divisions (All 24 Oblasts + Crimea)
+    // High-Contrast Tactical Oblast Divisions
     if (!map.getLayer("ukraine-oblast-borders")) {
       map.addLayer({
         id: "ukraine-oblast-borders",
@@ -1225,14 +1240,14 @@ const syncUkraineBorders = (map: maplibregl.Map) => {
         filter: ["==", "type", "oblast_border"],
         paint: {
           "line-color": "#38bdf8",
-          "line-width": ["interpolate", ["linear"], ["zoom"], 4, 1.0, 8, 1.6, 12, 2.2],
-          "line-opacity": 0.65,
-          "line-dasharray": [5, 4]
+          "line-width": ["interpolate", ["linear"], ["zoom"], 4, 1.0, 8, 1.5, 12, 2.0],
+          "line-opacity": 0.5,
+          "line-dasharray": [4, 4]
         }
       });
     }
 
-    // 3. Sharp Luminous State Boundary Line
+    // Sharp Luminous State Boundary Line
     if (!map.getLayer("ukraine-state-border")) {
       map.addLayer({
         id: "ukraine-state-border",
@@ -1247,7 +1262,7 @@ const syncUkraineBorders = (map: maplibregl.Map) => {
       });
     }
 
-    // 4. Ultra-Crisp White Centerline Core for state border
+    // Ultra-Crisp White Centerline Core for state border
     if (!map.getLayer("ukraine-state-border-core")) {
       map.addLayer({
         id: "ukraine-state-border-core",
@@ -1262,52 +1277,61 @@ const syncUkraineBorders = (map: maplibregl.Map) => {
       });
     }
 
-    // 5. Water Shorelines & Reservoirs: Distinct tactical boundary on water/land border
-    if (!map.getSource("ukraine-water-shorelines")) {
-      map.addSource("ukraine-water-shorelines", {
+    // 2. Tactical Line of Contact / Frontline (ЛБЗ // Лінія фронту)
+    if (!map.getSource("ukraine-frontline")) {
+      map.addSource("ukraine-frontline", {
         type: "geojson",
-        data: "/ukraine-water-shorelines.geojson"
+        data: "/ukraine-frontline.geojson"
       });
     }
 
-    if (!map.getLayer("ukraine-water-shorelines-glow")) {
+    if (!map.getLayer("frontline-glow")) {
       map.addLayer({
-        id: "ukraine-water-shorelines-glow",
+        id: "frontline-glow",
         type: "line",
-        source: "ukraine-water-shorelines",
+        source: "ukraine-frontline",
         paint: {
-          "line-color": "#0ea5e9",
-          "line-width": ["interpolate", ["linear"], ["zoom"], 4, 3.5, 8, 6.0, 12, 9.0],
-          "line-blur": ["interpolate", ["linear"], ["zoom"], 4, 2.0, 8, 3.5, 12, 5.0],
-          "line-opacity": 0.55
-        }
-      });
-    }
-
-    if (!map.getLayer("ukraine-water-shorelines-line")) {
-      map.addLayer({
-        id: "ukraine-water-shorelines-line",
-        type: "line",
-        source: "ukraine-water-shorelines",
-        paint: {
-          "line-color": "#38bdf8",
-          "line-width": ["interpolate", ["linear"], ["zoom"], 4, 1.2, 8, 2.0, 12, 2.8],
+          "line-color": "#ef4444",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 4, 6.0, 8, 10.0, 12, 14.0],
+          "line-blur": ["interpolate", ["linear"], ["zoom"], 4, 3.0, 8, 5.0, 12, 7.0],
           "line-opacity": 0.85
         }
       });
     }
 
-    if (!map.getLayer("ukraine-water-shorelines-core")) {
+    if (!map.getLayer("frontline-dash")) {
       map.addLayer({
-        id: "ukraine-water-shorelines-core",
+        id: "frontline-dash",
         type: "line",
-        source: "ukraine-water-shorelines",
+        source: "ukraine-frontline",
         paint: {
-          "line-color": "#e0f2fe",
-          "line-width": ["interpolate", ["linear"], ["zoom"], 4, 0.6, 8, 1.0, 12, 1.4],
-          "line-opacity": 0.95
+          "line-color": "#dc2626",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 4, 2.6, 8, 3.8, 12, 4.8],
+          "line-dasharray": [6, 4],
+          "line-opacity": 0.98
         }
       });
+    }
+
+    if (!map.getLayer("frontline-core")) {
+      map.addLayer({
+        id: "frontline-core",
+        type: "line",
+        source: "ukraine-frontline",
+        paint: {
+          "line-color": "#fef2f2",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 4, 1.0, 8, 1.8, 12, 2.4],
+          "line-opacity": 0.98
+        }
+      });
+    }
+
+    // Synchronize frontline visibility
+    const frontlineVis = showFrontline ? "visible" : "none";
+    for (const id of ["frontline-glow", "frontline-dash", "frontline-core"]) {
+      if (map.getLayer(id)) {
+        map.setLayoutProperty(id, "visibility", frontlineVis);
+      }
     }
   } catch {
     // Graceful fallback if borders already present or WebGL busy
@@ -1421,7 +1445,7 @@ export const MapView = ({
   showDayNight = true,
   showWeather = true,
   showSatellites = true,
-  showWaterShorelines = true,
+  showFrontline = true,
   followingTargetId,
   onStopFollow,
   onMapReady,
@@ -1480,8 +1504,8 @@ export const MapView = ({
   const showSatellitesRef = useRef(showSatellites);
   showSatellitesRef.current = showSatellites;
 
-  const showWaterShorelinesRef = useRef(showWaterShorelines);
-  showWaterShorelinesRef.current = showWaterShorelines;
+  const showFrontlineRef = useRef(showFrontline);
+  showFrontlineRef.current = showFrontline;
 
   const onSelectTargetRef = useRef(onSelectTarget);
   onSelectTargetRef.current = onSelectTarget;
@@ -1607,19 +1631,31 @@ export const MapView = ({
     window.addEventListener("resize", handleWindowResize);
     window.Telegram?.WebApp?.onEvent?.("viewportChanged", handleWindowResize);
 
+    const triggerInstantRedraw = () => {
+      if (renderRef.current) {
+        renderRef.current();
+      }
+    };
+
     map.on("load", () => {
       resizeCanvasSafe();
       syncWeatherLayer(map, showWeatherRef.current !== false);
-      syncUkraineBorders(map);
+      syncUkraineBorders(map, showFrontlineRef.current !== false);
       const scaleControl = new maplibregl.ScaleControl({ maxWidth: 110, unit: "metric" });
       map.addControl(scaleControl, "bottom-right");
     });
     map.on("styledata", () => {
-      syncUkraineBorders(map);
+      syncUkraineBorders(map, showFrontlineRef.current !== false);
     });
     map.on("resize", () => {
       resizeCanvasSafe();
+      triggerInstantRedraw();
     });
+    map.on("render", triggerInstantRedraw);
+    map.on("move", triggerInstantRedraw);
+    map.on("zoom", triggerInstantRedraw);
+    map.on("rotate", triggerInstantRedraw);
+    map.on("pitch", triggerInstantRedraw);
     map.on("click", handleMapClick);
 
     // Initial resize right away
@@ -1629,6 +1665,11 @@ export const MapView = ({
       window.removeEventListener("resize", handleWindowResize);
       window.Telegram?.WebApp?.offEvent?.("viewportChanged", handleWindowResize);
       map.off("click", handleMapClick);
+      map.off("render", triggerInstantRedraw);
+      map.off("move", triggerInstantRedraw);
+      map.off("zoom", triggerInstantRedraw);
+      map.off("rotate", triggerInstantRedraw);
+      map.off("pitch", triggerInstantRedraw);
       map.remove();
       mapRef.current = null;
     };
@@ -1644,7 +1685,7 @@ export const MapView = ({
       currentStyleRef.current = targetStyle;
       map.setStyle(targetStyle);
       map.once("styledata", () => {
-        syncUkraineBorders(map);
+        syncUkraineBorders(map, showFrontlineRef.current !== false);
         syncWeatherLayer(map, showWeatherRef.current !== false);
       });
     }
@@ -1661,12 +1702,12 @@ export const MapView = ({
     }
   }, [showWeather, visionMode]);
 
-  // 4. Water Shorelines layer visibility synchronization
+  // 4. Tactical Frontline layer visibility synchronization
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    const visibility = showWaterShorelines !== false ? "visible" : "none";
-    const layerIds = ["ukraine-water-shorelines-glow", "ukraine-water-shorelines-line", "ukraine-water-shorelines-core"];
+    const visibility = showFrontline !== false ? "visible" : "none";
+    const layerIds = ["frontline-glow", "frontline-dash", "frontline-core"];
     const applyVisibility = () => {
       for (const id of layerIds) {
         try {
@@ -1681,9 +1722,9 @@ export const MapView = ({
     } else {
       map.once("styledata", applyVisibility);
     }
-  }, [showWaterShorelines, visionMode]);
+  }, [showFrontline, visionMode]);
 
-  // 3. Smooth flyTo user location on first GPS acquisition
+  // 5. Smooth flyTo user location on first GPS acquisition
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !location || centeredRef.current) return;
@@ -1697,7 +1738,7 @@ export const MapView = ({
     centeredRef.current = true;
   }, [location]);
 
-  // 4. Smooth 30 FPS Canvas overlay render loop (optimized for low-end mobile & Telegram WebApp)
+  // 6. Synchronized Canvas overlay render loop (locked 1:1 with MapLibre WebGL camera)
   useEffect(() => {
     let animId: number;
     let lastAudioCheck = 0;
@@ -1705,24 +1746,35 @@ export const MapView = ({
     const TARGET_FPS = 30;
     const FRAME_INTERVAL = 1000 / TARGET_FPS;
 
-    const render = (time = performance.now()) => {
-      animId = requestAnimationFrame(render);
-      if (time - lastFrameTime < FRAME_INTERVAL) {
-        return;
+    const render = (time = performance.now(), force = false) => {
+      if (!force) {
+        animId = requestAnimationFrame((t) => render(t, false));
+        if (time - lastFrameTime < FRAME_INTERVAL) {
+          return;
+        }
+        lastFrameTime = time;
       }
-      lastFrameTime = time;
 
-      renderRef.current = () => render(performance.now());
+      renderRef.current = () => render(performance.now(), true);
       const map = mapRef.current;
       const canvas = canvasRef.current;
+      const container = mapContainerRef.current;
       const ctx = canvas?.getContext("2d");
 
-      if (map && canvas && ctx && canvas.width > 0 && canvas.height > 0) {
+      if (map && canvas && ctx && container) {
         const ratio = Math.min(window.devicePixelRatio || 1, 2);
-        const width = canvas.width / ratio;
-        const height = canvas.height / ratio;
+        const width = container.clientWidth;
+        const height = container.clientHeight;
+        if (width <= 0 || height <= 0) return;
 
-        // Clean frame clear without tearing
+        const targetW = Math.round(width * ratio);
+        const targetH = Math.round(height * ratio);
+        if (canvas.width !== targetW || canvas.height !== targetH) {
+          canvas.width = targetW;
+          canvas.height = targetH;
+        }
+
+        ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
         ctx.clearRect(0, 0, width, height);
 
         const now = Date.now();
@@ -1879,15 +1931,8 @@ export const MapView = ({
             continue;
           }
 
-          // Geometrical scale strictly calibrated: 13px at regional view, max 19px at close tactical view
-          const scale =
-            zoom < 6.0
-              ? 13.0
-              : zoom < 8.5
-              ? 15.0
-              : zoom < 11.5
-              ? 17.0
-              : 19.0;
+          // Continuous, smooth geometric scale without abrupt threshold popping
+          const scale = Math.max(12, Math.min(21, 10.5 + zoom * 0.75));
 
           // Subpixel-locked target coordinates directly anchored to geographic ground coordinates
           const targetX = groundPoint.x;
@@ -1933,7 +1978,7 @@ export const MapView = ({
           // Forward flight trajectory vector (strictly leading forward out of silhouette nose)
           if (speed > 5) {
             const noseDist = scale * 0.95;
-            const vectorLen = zoom < 6.5 ? 18 : zoom < 9 ? 24 : 32;
+            const vectorLen = Math.max(16, Math.min(34, 12 + zoom * 1.8));
             const startX = targetX + fwdX * noseDist;
             const startY = targetY + fwdY * noseDist;
             const tipX = targetX + fwdX * (noseDist + vectorLen);

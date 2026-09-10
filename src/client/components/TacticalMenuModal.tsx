@@ -17,8 +17,8 @@ interface TacticalMenuModalProps {
   onToggleWeather: () => void;
   showSatellites: boolean;
   onToggleSatellites: () => void;
-  showWaterShorelines?: boolean;
-  onToggleWaterShorelines?: () => void;
+  showFrontline?: boolean;
+  onToggleFrontline?: () => void;
   soundEnabled: boolean;
   onToggleSound: () => void;
   // Filters & Counts
@@ -60,8 +60,8 @@ export const TacticalMenuModal: React.FC<TacticalMenuModalProps> = ({
   onToggleWeather,
   showSatellites,
   onToggleSatellites,
-  showWaterShorelines = true,
-  onToggleWaterShorelines,
+  showFrontline = true,
+  onToggleFrontline,
   soundEnabled,
   onToggleSound,
   filters,
@@ -341,13 +341,13 @@ export const TacticalMenuModal: React.FC<TacticalMenuModalProps> = ({
 
               <div className="tactical-toggle-row">
                 <div>
-                  <div className="toggle-label-main">🌊 Межа землі і води (Береги та водосховища)</div>
-                  <div className="toggle-label-sub">Контурні тактичні межі акваторій, водосховищ Дніпра та морських узбереж</div>
+                  <div className="toggle-label-main">⚔️ Лінія бойового зіткнення (Фронт / ЛБЗ)</div>
+                  <div className="toggle-label-sub">Оперативна лінія бойових дій та активні рубежі оборони</div>
                 </div>
                 <button
                   type="button"
-                  className={`toggle-switch ${showWaterShorelines ? "on" : "off"}`}
-                  onClick={onToggleWaterShorelines}
+                  className={`toggle-switch ${showFrontline ? "on" : "off"}`}
+                  onClick={onToggleFrontline}
                 >
                   <span className="switch-knob" />
                 </button>

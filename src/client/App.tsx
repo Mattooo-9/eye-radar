@@ -97,7 +97,7 @@ export const App = () => {
     sound: soundEngine.isSoundEnabled()
   });
 
-  const [showWaterShorelines, setShowWaterShorelines] = useState(true);
+  const [showFrontline, setShowFrontline] = useState(true);
 
   useEffect(() => {
     try {
@@ -330,7 +330,7 @@ export const App = () => {
         showDayNight={true}
         showWeather={showWeather}
         showSatellites={showSatellites}
-        showWaterShorelines={showWaterShorelines}
+        showFrontline={showFrontline}
         followingTargetId={followedTargetId}
         onStopFollow={() => setFollowedTargetId(null)}
         onMapReady={(m) => setMapInstance(m)}
@@ -364,8 +364,8 @@ export const App = () => {
         onToggleWeather={() => setShowWeather((prev) => !prev)}
         showSatellites={showSatellites}
         onToggleSatellites={() => setShowSatellites((prev) => !prev)}
-        showWaterShorelines={showWaterShorelines}
-        onToggleWaterShorelines={() => setShowWaterShorelines((prev) => !prev)}
+        showFrontline={showFrontline}
+        onToggleFrontline={() => setShowFrontline((prev) => !prev)}
         soundEnabled={filters.sound !== false}
         onToggleSound={() => handleToggleFilter("sound")}
         filters={filters}
