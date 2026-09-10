@@ -191,10 +191,8 @@ export const App = () => {
         if (!filters.aircraft) return false;
         const modelUpper = (p[11] || "").toUpperCase();
         const callsignUpper = (p[12] || "").toUpperCase();
-        const lon = p[3];
-        // Eliminate civilian passenger airliners & foreign commercial flights outside Ukrainian theater
+        // Eliminate civilian passenger airliners & foreign commercial flights
         if (
-          lon < 22.2 ||
           modelUpper.includes("BOEING") ||
           modelUpper.includes("AIRBUS") ||
           modelUpper.includes("CIVIL") ||
