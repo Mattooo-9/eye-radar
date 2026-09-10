@@ -1,7 +1,7 @@
 # Eye Radar — Project State & Architectural Baseline
 
 **Last Updated:** 2026-09-10  
-**Baseline Git Commit:** `b064869`  
+**Baseline Git Commit:** `6d46cba`  
 **Deployment Status:**
 - **Backend (Render):** `https://eye-radar.onrender.com/health` (Service ID: `srv-dagk9pgu01pc7388u35g`, Live, Healthy, Real Airborne Feeds Online, 145+ Active Tracks)
 - **Frontend (Vercel):** `https://eye-radar.vercel.app` (Production, Live)
@@ -78,9 +78,10 @@
 ## 2. Test & Quality Metrics
 
 - **TypeScript Check:** `npm run check` — 0 errors.
-- **Vitest Unit & Benchmark Test Suite:** `npm test` — 27 tests passing across 10 test suites:
+- **Vitest Unit & Benchmark Test Suite:** `npm test` — 30 tests passing across 11 test suites:
   - `sourceAudit.test.ts` (Automated source audit, lifecycle transitions, p50/p95/p99 latency, tracks helped)
   - `provenance.test.ts` (Provenance chain tracking, measured vs estimated telemetry, track diagnostics, synthetic isolation)
+  - `websocketDelta.test.ts` (Sequence number monotonicity, removed ID pruning, 13-element compact packet schema)
   - `threatEngine.test.ts` (Threat scoring & zone proximity)
   - `locationIntel.test.ts` (Oblast/raion geocoding & danger zones)
   - `osintParser.test.ts` (Cascade OSINT regex & message parsing)
