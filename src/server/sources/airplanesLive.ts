@@ -71,6 +71,19 @@ export class AirplanesLiveSource {
     );
   }
 
+  private isCivilAirliner(callsign?: string, desc?: string, model?: string): boolean {
+    const text = `${callsign ?? ""} ${desc ?? ""} ${model ?? ""}`.toUpperCase();
+    const civilPrefixes = [
+      "RYR", "WZZ", "WUK", "LOT", "DLH", "KLM", "AFR", "BAW", "THY", "AUA",
+      "SXS", "PGT", "EZY", "EZS", "SAS", "FIN", "BTI", "ENT", "TOM", "FDB",
+      "ETH", "ROT", "CAI", "ISR", "PIA", "FDX", "UPS", "BOX", "CGF", "MNB",
+      "UTN", "LBT", "NMA", "GJT", "ASL", "EXS", "CCA", "SIA", "RYS", "NSZ",
+      "BOEING", "AIRBUS", "EMBRAER", "CRJ", "ATR", "B73", "B74", "B75", "B76", "B77", "B78",
+      "A31", "A32", "A33", "A35", "A38", "A20N", "A21N", "B38M", "B39M", "CIVIL"
+    ];
+    return civilPrefixes.some((p) => text.includes(p));
+  }
+
   async fetchBorderFlights(): Promise<Observation[]> {
     const now = Date.now();
     // Cache for 8 seconds to stay fresh while respecting public API rate limits
@@ -80,14 +93,9 @@ export class AirplanesLiveSource {
 
     const obsMap = new Map<string, Observation>();
 
-    // 1. Fetch from adsb.fi across Ukrainian border corridors and military air activity
+    // 1. Fetch strictly from military feeds to exclude foreign civil passenger airways
     const adsbFiEndpoints = [
-      "https://opendata.adsb.fi/api/v2/mil",                          // Regional Military & Reconnaissance Aircraft
-      "https://opendata.adsb.fi/api/v2/lat/50.0/lon/24.5/dist/250", // West Corridor (Poland / Slovakia / Hungary / West UA)
-      "https://opendata.adsb.fi/api/v2/lat/46.5/lon/28.5/dist/250", // South Corridor (Romania / Moldova / Black Sea)
-      "https://opendata.adsb.fi/api/v2/lat/53.5/lon/24.0/dist/250", // North Corridor (Baltics / Poland-Belarus border)
-      "https://opendata.adsb.fi/api/v2/lat/44.5/lon/29.5/dist/250", // Black Sea Maritime Transit (Constanta / Varna approach)
-      "https://opendata.adsb.fi/api/v2/lat/48.2/lon/21.0/dist/250"  // Central Europe / Carpathian Corridor
+      "https://opendata.adsb.fi/api/v2/mil" // Regional Military & Reconnaissance Aircraft
     ];
 
     await Promise.allSettled(
@@ -107,17 +115,21 @@ export class AirplanesLiveSource {
                 a.gs !== undefined &&
                 a.gs > 25
               ) {
-                // If fetching military feed, bound to Eastern European / Ukrainian theater
-                if (url.includes("/mil")) {
-                  if (a.lat < 38 || a.lat > 64 || a.lon < 14 || a.lon > 48) {
-                    continue;
-                  }
+                // Bound to Eastern European / Ukrainian defense theater
+                if (a.lat < 43 || a.lat > 54 || a.lon < 22 || a.lon > 42) {
+                  continue;
                 }
 
                 const flightCode = (a.flight ?? "").trim().replace(/\s+/g, "");
                 const callsign = flightCode || a.t || a.hex;
+
+                // Eliminate civilian passenger airliners
+                if (this.isCivilAirliner(callsign, a.desc, a.t)) {
+                  continue;
+                }
+
                 const id = flightCode ? `adsb-${flightCode}` : `adsb-${a.hex}`;
-                const model = a.desc ?? a.t ?? (url.includes("/mil") ? "MIL_AIRCRAFT" : "CIVIL_AIRCRAFT");
+                const model = a.desc ?? a.t ?? "MIL_AIRCRAFT";
                 const speedMs = a.gs * 0.514444; // knots to m/s
                 const altM = a.alt_baro ? Math.round(a.alt_baro * 0.3048) : undefined;
                 const type: TrackType = this.isHelicopter(a.desc, a.t) ? "helicopter" : "aircraft";
@@ -148,11 +160,11 @@ export class AirplanesLiveSource {
       })
     );
 
-    // 2. Augment / fallback with OpenSky Network bounding box
-    if (obsMap.size < 30) {
+    // 2. OpenSky fallback only for verified air activity inside Ukrainian airspace
+    if (obsMap.size < 5) {
       try {
         const openSkyUrl =
-          "https://opensky-network.org/api/states/all?lamin=44.0&lomin=22.0&lamax=52.5&lomax=32.0";
+          "https://opensky-network.org/api/states/all?lamin=45.0&lomin=24.0&lamax=52.0&lomax=38.0";
         const res = await fetch(openSkyUrl, {
           headers: { "User-Agent": "EyeRadar/2.0 (Civil Air Safety; contact@eye-radar.ua)" },
           signal: AbortSignal.timeout(5000)
@@ -176,7 +188,8 @@ export class AirplanesLiveSource {
               lon !== null &&
               !onGround &&
               velocity !== null &&
-              velocity > 25
+              velocity > 25 &&
+              !this.isCivilAirliner(callsign)
             ) {
               obsMap.set(hex, {
                 id: `adsb-${hex}`,

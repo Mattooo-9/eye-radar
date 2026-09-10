@@ -74,6 +74,19 @@ export class OpenskyAdsbLolSource {
     );
   }
 
+  private isCivilAirliner(callsign?: string, desc?: string, model?: string): boolean {
+    const text = `${callsign ?? ""} ${desc ?? ""} ${model ?? ""}`.toUpperCase();
+    const civilPrefixes = [
+      "RYR", "WZZ", "WUK", "LOT", "DLH", "KLM", "AFR", "BAW", "THY", "AUA",
+      "SXS", "PGT", "EZY", "EZS", "SAS", "FIN", "BTI", "ENT", "TOM", "FDB",
+      "ETH", "ROT", "CAI", "ISR", "PIA", "FDX", "UPS", "BOX", "CGF", "MNB",
+      "UTN", "LBT", "NMA", "GJT", "ASL", "EXS", "CCA", "SIA", "RYS", "NSZ",
+      "BOEING", "AIRBUS", "EMBRAER", "CRJ", "ATR", "B73", "B74", "B75", "B76", "B77", "B78",
+      "A31", "A32", "A33", "A35", "A38", "A20N", "A21N", "B38M", "B39M", "CIVIL"
+    ];
+    return civilPrefixes.some((p) => text.includes(p));
+  }
+
   async fetchFlightObservations(): Promise<UnifiedObservation[]> {
     const now = Date.now();
     // Cache for 6 seconds to respect rate limits
@@ -83,11 +96,9 @@ export class OpenskyAdsbLolSource {
 
     const obsMap = new Map<string, UnifiedObservation>();
 
-    // 1. Fetch from ADSB.lol public feeds
+    // 1. Fetch strictly from military feeds to exclude foreign civil passenger airways
     const adsbEndpoints = [
       "https://api.adsb.lol/v2/mil",
-      "https://api.adsb.lol/v2/point/50.0/24.5/250", // West UA border / Poland
-      "https://api.adsb.lol/v2/point/46.5/28.5/250", // South UA / Romania / Black Sea
       "https://opendata.adsb.fi/api/v2/mil"
     ];
 
@@ -109,13 +120,19 @@ export class OpenskyAdsbLolSource {
                 a.gs > 20
               ) {
                 // Geo-boundary filter: Eastern European / Black Sea theater
-                if (a.lat < 42 || a.lat > 56 || a.lon < 20 || a.lon > 42) {
+                if (a.lat < 43 || a.lat > 54 || a.lon < 22 || a.lon > 42) {
                   continue;
                 }
 
                 const hex = a.hex.toLowerCase();
                 const flight = (a.flight ?? "").trim().replace(/\s+/g, "");
                 const callsign = flight || a.t || a.hex.toUpperCase();
+
+                // Eliminate civilian passenger airliners
+                if (this.isCivilAirliner(callsign, a.desc, a.t)) {
+                  continue;
+                }
+
                 const speedMs = a.gs * 0.514444; // knots to m/s
                 const isHeli = this.isHelicopter(a.desc, a.t);
                 const objType: TrackType = isHeli ? "helicopter" : "aircraft";
@@ -144,8 +161,8 @@ export class OpenskyAdsbLolSource {
                   source_quality: 0.95,
                   confidence: 0.96,
                   evidence,
-                  provenance: url.includes("/mil") ? "Military transponder feed" : "Border corridor ADS-B",
-                  model: a.desc ?? a.t ?? (url.includes("/mil") ? "MIL_AIRCRAFT" : "CIVIL_AIRCRAFT"),
+                  provenance: "Military transponder feed",
+                  model: a.desc ?? a.t ?? "MIL_AIRCRAFT",
                   callsign
                 }));
               }
@@ -157,10 +174,10 @@ export class OpenskyAdsbLolSource {
       })
     );
 
-    // 2. OpenSky fallback if ADSB coverage is low
-    if (obsMap.size < 15) {
+    // 2. OpenSky fallback strictly for activity inside Ukrainian airspace
+    if (obsMap.size < 5) {
       try {
-        const openSkyUrl = "https://opensky-network.org/api/states/all?lamin=44.0&lomin=22.0&lamax=52.5&lomax=32.0";
+        const openSkyUrl = "https://opensky-network.org/api/states/all?lamin=45.0&lomin=24.0&lamax=52.0&lomax=38.0";
         const res = await fetch(openSkyUrl, {
           headers: { "User-Agent": "EyeRadar/3.5 (Civil Defense Awareness; contact@eye-radar.ua)" },
           signal: AbortSignal.timeout(4500)
@@ -177,7 +194,16 @@ export class OpenskyAdsbLolSource {
             const alt = st[7];
             const callsign = (st[1] ?? "").trim();
 
-            if (hex && !obsMap.has(hex) && lat !== null && lon !== null && !onGround && velocity !== null && velocity > 20) {
+            if (
+              hex &&
+              !obsMap.has(hex) &&
+              lat !== null &&
+              lon !== null &&
+              !onGround &&
+              velocity !== null &&
+              velocity > 20 &&
+              !this.isCivilAirliner(callsign)
+            ) {
               obsMap.set(hex, createUnifiedObservation({
                 source_id: "opensky-network",
                 source_family: "adsb",
@@ -196,7 +222,7 @@ export class OpenskyAdsbLolSource {
                 evidence: [`hex_${hex}`, `opensky_sensor_count_${st[12]?.length ?? 1}`],
                 provenance: `OpenSky (${st[2] || "International"})`,
                 callsign: callsign || hex.toUpperCase(),
-                model: "AIRCRAFT"
+                model: "MIL_AIRCRAFT"
               }));
             }
           }

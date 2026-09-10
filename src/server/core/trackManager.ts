@@ -39,6 +39,24 @@ export class TrackManager {
       return this.tracks.get(observation.id)?.state ?? null;
     }
 
+    // Drop civilian commercial passenger airliners and foreign border corridor clutter
+    if (observation.type === "aircraft") {
+      const callsign = (typeof observation.meta?.callsign === "string" ? observation.meta.callsign : observation.id).toUpperCase();
+      const model = (typeof observation.meta?.model === "string" ? observation.meta.model : "").toUpperCase();
+      if (
+        observation.lon < 22.2 ||
+        model.includes("BOEING") ||
+        model.includes("AIRBUS") ||
+        model.includes("CIVIL") ||
+        model.includes("EMBRAER") ||
+        model.includes("B73") ||
+        model.includes("A32") ||
+        /^(RYR|WZZ|WUK|LOT|DLH|KLM|AFR|BAW|THY|AUA|SXS|PGT|EZY|BTI|ENT|TOM|FDB|ETH|ROT|CAI|ISR|PIA|FDX|UPS|BOX|CGF|MNB|UTN|LBT|NMA|GJT|ASL|EXS|CCA|SIA|RYS|NSZ)/.test(callsign)
+      ) {
+        return null;
+      }
+    }
+
     const activeList = this.snapshot();
     const correlation = this.correlator.findBestMatch(observation, activeList);
 

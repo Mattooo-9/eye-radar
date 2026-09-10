@@ -1523,10 +1523,9 @@ const syncUkraineBorders = (map: maplibregl.Map, showFrontline = true) => {
         type: "line",
         source: "ukraine-oblasts",
         paint: {
-          "line-color": "#7dd3fc",
+          "line-color": "#38bdf8",
           "line-width": ["interpolate", ["linear"], ["zoom"], 4, 1.0, 8, 1.6, 12, 2.2],
-          "line-dasharray": [4, 3],
-          "line-opacity": 0.70
+          "line-opacity": 0.65
         }
       });
     }
@@ -1560,8 +1559,7 @@ const syncUkraineBorders = (map: maplibregl.Map, showFrontline = true) => {
         source: "ukraine-frontline",
         paint: {
           "line-color": "#dc2626",
-          "line-width": ["interpolate", ["linear"], ["zoom"], 4, 2.6, 8, 3.8, 12, 4.8],
-          "line-dasharray": [6, 4],
+          "line-width": ["interpolate", ["linear"], ["zoom"], 4, 2.2, 8, 3.2, 12, 4.2],
           "line-opacity": 0.98
         }
       });
@@ -2122,8 +2120,6 @@ export const MapView = ({
     }
   }, [packets, filters, impacts]);
 
-  const lastStarRenderRef = useRef<number>(0);
-
   // 6. Synchronized Canvas overlay render loop (locked 1:1 with MapLibre camera)
   useEffect(() => {
     let animId: number;
@@ -2163,20 +2159,6 @@ export const MapView = ({
         const currentFilters = filtersRef.current;
         const currentSelected = selectedTargetRef.current;
 
-        // A. Orbital Space Starfield — throttled to 100ms
-        if (zoom <= 4.5 && now - lastStarRenderRef.current > 100) {
-          lastStarRenderRef.current = now;
-          ctx.save();
-          for (let i = 0; i < 65; i++) {
-            const sx = (i * 149.3 + 47) % width;
-            const sy = (i * 211.7 + 83) % height;
-            const twinkle = Math.sin(now / 350 + i) * 0.45 + 0.55;
-            ctx.fillStyle = `rgba(226, 232, 240, ${(twinkle * 0.55).toFixed(2)})`;
-            ctx.fillRect(sx, sy, 1.5, 1.5);
-          }
-          ctx.restore();
-        }
-
         // B. Dynamic Planetary & Local Solar Illumination (Astronomical Real-Time Synchronization)
         if (showDayNightRef.current !== false) {
           const center = map.getCenter();
@@ -2207,17 +2189,6 @@ export const MapView = ({
               twiGrad.addColorStop(1, `rgba(217, 119, 6, ${0.12 * twilightFactor})`);
               ctx.fillStyle = twiGrad;
               ctx.fillRect(0, height * 0.65, width, height * 0.35);
-            }
-
-            // High-altitude stars in space on orbital view
-            if (zoom <= 5.5) {
-              for (let i = 0; i < 50; i++) {
-                const sx = (i * 157.3 + 37) % width;
-                const sy = (i * 223.7 + 61) % (height * 0.6);
-                const twinkle = Math.sin(now / 320 + i) * 0.4 + 0.6;
-                ctx.fillStyle = `rgba(241, 245, 249, ${twinkle * 0.65})`;
-                ctx.fillRect(sx, sy, 1.5, 1.5);
-              }
             }
           } else if (elev < 14) {
             // Golden hour warm tint
@@ -2389,16 +2360,7 @@ export const MapView = ({
             ctx.restore();
           }
 
-          // MEASURED sensor position waypoint
-          if (zoom >= 8.5 && offsetSec === 0) {
-            const measuredPt = map.project([lon, lat]);
-            ctx.beginPath();
-            ctx.arc(measuredPt.x, measuredPt.y, 2, 0, Math.PI * 2);
-            ctx.fillStyle = color;
-            ctx.fill();
-          }
-
-          // PREDICTED Forward flight trajectory vector (strictly leading forward out of silhouette nose)
+          // PREDICTED Forward flight trajectory vector (sleek, solid tactical directional line leading from silhouette nose)
           if (speed > 5) {
             const noseDist = scale * 0.95;
             const vectorLen = Math.max(16, Math.min(38, 12 + zoom * 2.0));
@@ -2409,18 +2371,11 @@ export const MapView = ({
 
             ctx.save();
             ctx.strokeStyle = color;
-            ctx.lineWidth = 1.6;
-            ctx.setLineDash([4, 3]);
+            ctx.lineWidth = 1.4;
             ctx.beginPath();
             ctx.moveTo(startX, startY);
             ctx.lineTo(tipX, tipY);
             ctx.stroke();
-
-            // Small waypoint tick dot at tip
-            ctx.beginPath();
-            ctx.arc(tipX, tipY, 2.2, 0, Math.PI * 2);
-            ctx.fillStyle = color;
-            ctx.fill();
             ctx.restore();
           }
 
