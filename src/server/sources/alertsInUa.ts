@@ -105,4 +105,10 @@ export class AlertsInUaSource {
   getActiveAlerts(): AlertRegion[] {
     return [...this.activeAlerts.values()];
   }
+
+  getActiveAlertOblastNames(): string[] {
+    return [...this.activeAlerts.values()]
+      .filter((a) => a.active)
+      .map((a) => a.name);
+  }
 }

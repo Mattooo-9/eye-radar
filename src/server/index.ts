@@ -35,6 +35,7 @@ const firmsSource = new FirmsThermalSource();
 const windSource = new OpenMeteoWindSource();
 const airplanesSource = new AirplanesLiveSource();
 const simulator = new AirspaceSimulator();
+simulator.setAlertsSource(alertsSource);
 const healthTracker = new SourceHealthTracker();
 let simulationEnabled = true;
 

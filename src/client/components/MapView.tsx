@@ -807,6 +807,47 @@ const syncWeatherLayer = async (map: maplibregl.Map, visible: boolean) => {
 const syncUkraineBorders = (map: maplibregl.Map) => {
   if (!map || !map.isStyleLoaded()) return;
   try {
+    // 0. All World Countries Borders & Labels
+    if (!map.getSource("world-borders")) {
+      map.addSource("world-borders", {
+        type: "geojson",
+        data: "/world-borders.geojson"
+      });
+    }
+
+    if (!map.getLayer("world-borders-line")) {
+      map.addLayer({
+        id: "world-borders-line",
+        type: "line",
+        source: "world-borders",
+        paint: {
+          "line-color": "#64748b",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 3, 0.9, 6, 1.4, 10, 1.9],
+          "line-opacity": 0.65
+        }
+      });
+    }
+
+    if (!map.getLayer("world-country-labels")) {
+      map.addLayer({
+        id: "world-country-labels",
+        type: "symbol",
+        source: "world-borders",
+        layout: {
+          "text-field": ["get", "NAME"],
+          "text-size": ["interpolate", ["linear"], ["zoom"], 3, 9, 6, 12, 10, 14],
+          "text-transform": "uppercase",
+          "text-letter-spacing": 0.1,
+          "text-max-width": 8
+        },
+        paint: {
+          "text-color": "#94a3b8",
+          "text-halo-color": "#020617",
+          "text-halo-width": 1.5
+        }
+      });
+    }
+
     if (!map.getSource("ukraine-borders")) {
       map.addSource("ukraine-borders", {
         type: "geojson",
@@ -1334,13 +1375,14 @@ export const MapView = ({
           // Physical MapLibre satellite tile brightness synchronization (throttled to 5s to eliminate WebGL recompile overhead)
           if (now - lastBrightnessCheckRef.current > 5000) {
             lastBrightnessCheckRef.current = now;
-            if (map.getLayer("esri-satellite-layer")) {
+            const satLayer = map.getLayer("satellite-tiles-layer") ? "satellite-tiles-layer" : map.getLayer("esri-satellite-layer") ? "esri-satellite-layer" : null;
+            if (satLayer) {
               const nightFactor = Math.min(1, Math.max(0, -elev / 15));
               const targetBrightness = elev < 0 ? Math.max(0.38, 1.0 - nightFactor * 0.58) : 1.0;
               if (Math.abs(targetBrightness - lastAppliedBrightnessRef.current) > 0.03) {
                 lastAppliedBrightnessRef.current = targetBrightness;
                 try {
-                  map.setPaintProperty("esri-satellite-layer", "raster-brightness-max", targetBrightness);
+                  map.setPaintProperty(satLayer, "raster-brightness-max", targetBrightness);
                 } catch {}
               }
             }
@@ -1414,12 +1456,12 @@ export const MapView = ({
           // Geometrically proportionate scale strictly preventing map obstruction on regional views
           const scale =
             zoom < 7.0
-              ? 9.5
+              ? 16.5
               : zoom < 10.0
-              ? 10.0 + (zoom - 7.0) * 1.8
+              ? 18.0 + (zoom - 7.0) * 2.2
               : zoom < 14.0
-              ? 16.0 + (zoom - 10.0) * 3.5
-              : Math.min(78, 30.0 + (zoom - 14.0) * 8.0);
+              ? 25.0 + (zoom - 10.0) * 3.5
+              : Math.min(84, 38.0 + (zoom - 14.0) * 8.0);
 
           // 3D Altitude perspective offset & Ground terrain projection
           const effectiveAltM =
