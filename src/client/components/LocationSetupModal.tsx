@@ -54,7 +54,7 @@ export const LocationSetupModal: React.FC<LocationSetupModalProps> = ({
   onStartPickOnMap,
   isFirstLaunch = false
 }) => {
-  const [tab, setTab] = useState<"gps" | "search" | "region" | "map">("search");
+  const [tab, setTab] = useState<"search" | "region" | "gps" | "map">("search");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedPending, setSelectedPending] = useState<ConfirmedLocation | null>(
     currentLocation ?? null
@@ -68,6 +68,13 @@ export const LocationSetupModal: React.FC<LocationSetupModalProps> = ({
     try {
       window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.("light");
     } catch {}
+  };
+
+  const handleSelectAndApply = (loc: ConfirmedLocation) => {
+    triggerHaptic();
+    setSelectedPending(loc);
+    onConfirmLocation(loc);
+    onClose();
   };
 
   const handleAutoDetect = () => {
@@ -87,7 +94,6 @@ export const LocationSetupModal: React.FC<LocationSetupModalProps> = ({
         const lat = Math.round(pos.coords.latitude * 10000) / 10000;
         const lon = Math.round(pos.coords.longitude * 10000) / 10000;
 
-        // Find closest recognized city from LOCATIONS
         let closestName = "Моя GPS локація";
         let closestDist = Infinity;
         for (const loc of LOCATIONS) {
@@ -104,11 +110,11 @@ export const LocationSetupModal: React.FC<LocationSetupModalProps> = ({
           name: closestName,
           region: "GPS"
         };
-        setSelectedPending(resolved);
+        handleSelectAndApply(resolved);
       },
-      (err) => {
+      () => {
         setIsLocating(false);
-        setGpsError("Доступ до геопозиції відхилено або недоступний");
+        setGpsError("Доступ до геопозиції відхилено. Оберіть місто зі списку вручну");
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
     );
@@ -122,15 +128,20 @@ export const LocationSetupModal: React.FC<LocationSetupModalProps> = ({
     );
   }, [searchQuery]);
 
-  const handleConfirm = () => {
-    if (!selectedPending) return;
+  const handleSkipOrOverview = () => {
     triggerHaptic();
-    onConfirmLocation(selectedPending);
+    const target = selectedPending || {
+      lat: 49.0,
+      lon: 31.5,
+      name: "Вся Україна",
+      region: "Загальний огляд"
+    };
+    onConfirmLocation(target);
     onClose();
   };
 
   return (
-    <div className="location-setup-overlay" onClick={isFirstLaunch ? undefined : onClose}>
+    <div className="location-setup-overlay" onClick={handleSkipOrOverview}>
       <div className="location-setup-card" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="location-setup-header">
@@ -138,33 +149,45 @@ export const LocationSetupModal: React.FC<LocationSetupModalProps> = ({
             <span className="location-setup-icon">📍</span>
             <div>
               <div className="location-setup-title">
-                {isFirstLaunch ? "ВСТАНОВЛЕННЯ ЛОКАЦІЇ" : "ЗМІНА МОЄЇ ЛОКАЦІЇ"}
+                {isFirstLaunch ? "ВСТАНОВЛЕННЯ ЛОКАЦІЇ" : "МОЯ ЛОКАЦІЯ"}
               </div>
               <div className="location-setup-sub">
-                Потрібна для адресного розрахунку наближення повітряних загроз
+                Оберіть місто/область одним дотиком
               </div>
             </div>
           </div>
-          {!isFirstLaunch && (
-            <button type="button" className="location-setup-close" onClick={onClose}>
-              ✕
-            </button>
-          )}
+          <button
+            type="button"
+            className="location-setup-close"
+            onClick={handleSkipOrOverview}
+            title="Закрити та перейти до карти"
+          >
+            ✕
+          </button>
         </div>
 
-        {/* Currently Selected Banner */}
-        {selectedPending && (
-          <div className="location-selected-banner">
-            <span className="selected-dot">●</span>
-            <div className="selected-text">
-              <strong>{selectedPending.name}</strong>
-              {selectedPending.region && ` (${selectedPending.region})`}
-              <span className="selected-coords">
-                {selectedPending.lat.toFixed(4)}°N, {selectedPending.lon.toFixed(4)}°E
-              </span>
+        {/* Quick Country-wide Overview Action Button */}
+        <div className="location-quick-overview-bar">
+          <button
+            type="button"
+            className="location-overview-btn"
+            onClick={() =>
+              handleSelectAndApply({
+                lat: 49.0,
+                lon: 31.5,
+                name: "Вся Україна",
+                region: "Загальний огляд"
+              })
+            }
+          >
+            <span className="overview-flag">🇺🇦</span>
+            <div className="overview-text">
+              <strong>ВСЯ УКРАЇНА (ЗАГАЛЬНИЙ ОГЛЯД)</strong>
+              <span>Дивитися всю карту та всі загрози без прив'язки</span>
             </div>
-          </div>
-        )}
+            <span className="overview-arrow">➔</span>
+          </button>
+        </div>
 
         {/* Method Selector Tabs */}
         <div className="location-method-tabs">
@@ -180,6 +203,16 @@ export const LocationSetupModal: React.FC<LocationSetupModalProps> = ({
           </button>
           <button
             type="button"
+            className={`location-tab-btn ${tab === "region" ? "active" : ""}`}
+            onClick={() => {
+              triggerHaptic();
+              setTab("region");
+            }}
+          >
+            🏛️ Область
+          </button>
+          <button
+            type="button"
             className={`location-tab-btn ${tab === "gps" ? "active" : ""}`}
             onClick={() => {
               triggerHaptic();
@@ -190,16 +223,6 @@ export const LocationSetupModal: React.FC<LocationSetupModalProps> = ({
             }}
           >
             🛰️ GPS
-          </button>
-          <button
-            type="button"
-            className={`location-tab-btn ${tab === "region" ? "active" : ""}`}
-            onClick={() => {
-              triggerHaptic();
-              setTab("region");
-            }}
-          >
-            🏛️ Область
           </button>
           <button
             type="button"
@@ -221,7 +244,7 @@ export const LocationSetupModal: React.FC<LocationSetupModalProps> = ({
               <input
                 type="text"
                 className="location-search-input"
-                placeholder="Почніть вводити назву міста..."
+                placeholder="Почніть вводити місто (наприклад, Київ, Одеса...)"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 autoFocus
@@ -246,21 +269,20 @@ export const LocationSetupModal: React.FC<LocationSetupModalProps> = ({
                     key={`${loc.name}-${loc.region}`}
                     type="button"
                     className={`location-item-row ${isSelected ? "selected" : ""}`}
-                    onClick={() => {
-                      triggerHaptic();
-                      setSelectedPending({
+                    onClick={() =>
+                      handleSelectAndApply({
                         lat: loc.lat,
                         lon: loc.lon,
                         name: loc.name,
                         region: loc.region
-                      });
-                    }}
+                      })
+                    }
                   >
                     <div className="location-item-main">
                       <strong>{loc.name}</strong>
                       <span className="location-item-sub">{loc.region}</span>
                     </div>
-                    {isSelected && <span className="location-check">✓</span>}
+                    <span className="location-arrow-tag">Обрати ➔</span>
                   </button>
                 );
               })}
@@ -268,7 +290,38 @@ export const LocationSetupModal: React.FC<LocationSetupModalProps> = ({
           </div>
         )}
 
-        {/* Tab 2: GPS Auto-detect */}
+        {/* Tab 2: Region / Oblast Picker */}
+        {tab === "region" && (
+          <div className="location-tab-content">
+            <div className="location-regions-grid">
+              {OBLASTS_OF_UKRAINE.map((ob) => {
+                const isSelected =
+                  selectedPending?.lat === ob.center.lat && selectedPending?.lon === ob.center.lon;
+                return (
+                  <button
+                    key={ob.name}
+                    type="button"
+                    className={`location-region-card ${isSelected ? "selected" : ""}`}
+                    onClick={() =>
+                      handleSelectAndApply({
+                        lat: ob.center.lat,
+                        lon: ob.center.lon,
+                        name: ob.name,
+                        region: ob.region
+                      })
+                    }
+                  >
+                    <span className="region-icon">🏛️</span>
+                    <span className="region-name">{ob.name}</span>
+                    {isSelected && <span className="region-check">✓</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Tab 3: GPS Auto-detect */}
         {tab === "gps" && (
           <div className="location-tab-content gps-tab">
             <div className="gps-auto-box">
@@ -286,43 +339,11 @@ export const LocationSetupModal: React.FC<LocationSetupModalProps> = ({
                   className="gps-refresh-btn"
                   onClick={handleAutoDetect}
                 >
-                  🛰️ Оновити координати GPS
+                  🛰️ Визначити мої координати GPS
                 </button>
               )}
 
               {gpsError && <div className="gps-error-notice">⚠️ {gpsError}</div>}
-            </div>
-          </div>
-        )}
-
-        {/* Tab 3: Region / Oblast Picker */}
-        {tab === "region" && (
-          <div className="location-tab-content">
-            <div className="location-regions-grid">
-              {OBLASTS_OF_UKRAINE.map((ob) => {
-                const isSelected =
-                  selectedPending?.lat === ob.center.lat && selectedPending?.lon === ob.center.lon;
-                return (
-                  <button
-                    key={ob.name}
-                    type="button"
-                    className={`location-region-card ${isSelected ? "selected" : ""}`}
-                    onClick={() => {
-                      triggerHaptic();
-                      setSelectedPending({
-                        lat: ob.center.lat,
-                        lon: ob.center.lon,
-                        name: ob.name,
-                        region: ob.region
-                      });
-                    }}
-                  >
-                    <span className="region-icon">🏛️</span>
-                    <span className="region-name">{ob.name}</span>
-                    {isSelected && <span className="region-check">✓</span>}
-                  </button>
-                );
-              })}
             </div>
           </div>
         )}
@@ -334,8 +355,7 @@ export const LocationSetupModal: React.FC<LocationSetupModalProps> = ({
               <span className="map-pick-icon">🎯</span>
               <div className="map-pick-title">Вказати точку безпосередньо на карті</div>
               <div className="map-pick-desc">
-                Натисніть кнопку нижче, щоб перейти на карту. Потім клікніть у потрібне місце на карті
-                та збережіть точку.
+                Натисніть кнопку нижче, щоб перейти до карти. Клікніть у будь-яке місце, щоб встановити свою точку.
               </div>
 
               <button
@@ -357,13 +377,10 @@ export const LocationSetupModal: React.FC<LocationSetupModalProps> = ({
         <div className="location-setup-footer">
           <button
             type="button"
-            className="location-confirm-btn"
-            disabled={!selectedPending}
-            onClick={handleConfirm}
+            className="location-skip-btn"
+            onClick={handleSkipOrOverview}
           >
-            {selectedPending
-              ? `✓ ПІДТВЕРДИТИ: ${selectedPending.name}`
-              : "Оберіть населений пункт або точку"}
+            Дивитися всю карту ➔
           </button>
         </div>
       </div>

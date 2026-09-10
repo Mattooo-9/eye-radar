@@ -18,6 +18,7 @@ interface MapViewProps {
   packets: TrackPacket[];
   mapStyleUrl: string;
   location: TrustedLocation | null;
+  confirmedLocation?: { lat: number; lon: number; name: string; region?: string } | null;
   filters?: FilterState;
   satelliteMode?: boolean;
   visionMode?: VisionMode;
@@ -1114,6 +1115,121 @@ const drawSelectedLocationBeacon = (
   ctx.restore();
 };
 
+const drawUserHomeBeacon = (
+  ctx: CanvasRenderingContext2D,
+  map: maplibregl.Map,
+  loc: { lat: number; lon: number },
+  name: string | undefined,
+  timeMs: number,
+  width: number,
+  height: number
+) => {
+  const pt = map.project([loc.lon, loc.lat]);
+  if (pt.x < -250 || pt.x > width + 250 || pt.y < -250 || pt.y > height + 250) {
+    return;
+  }
+
+  ctx.save();
+  const zoom = map.getZoom();
+
+  // 1. Concentric range rings: 15 km (danger perimeter) & 35 km (warning perimeter)
+  if (zoom >= 6.2) {
+    const mpp = metersPerPixel(loc.lat, zoom);
+    if (mpp > 0) {
+      const r15Px = 15_000 / mpp;
+      const r35Px = 35_000 / mpp;
+
+      // 15 km danger ring
+      if (r15Px < width * 2.0) {
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, r15Px, 0, Math.PI * 2);
+        ctx.strokeStyle = "rgba(56, 189, 248, 0.28)";
+        ctx.lineWidth = 1.2;
+        ctx.setLineDash([4, 4]);
+        ctx.stroke();
+
+        if (zoom >= 7.8) {
+          ctx.setLineDash([]);
+          drawTextWithOutline(
+            ctx,
+            "15 км (сектор небезпеки)",
+            pt.x + 8,
+            pt.y - r15Px + 12,
+            "rgba(56, 189, 248, 0.85)",
+            "rgba(2, 6, 23, 0.9)",
+            "bold 9px Inter, system-ui, sans-serif"
+          );
+        }
+      }
+
+      // 35 km early warning ring
+      if (r35Px < width * 2.0 && zoom >= 6.8) {
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, r35Px, 0, Math.PI * 2);
+        ctx.strokeStyle = "rgba(56, 189, 248, 0.16)";
+        ctx.lineWidth = 1.0;
+        ctx.setLineDash([2, 5]);
+        ctx.stroke();
+
+        if (zoom >= 8.2) {
+          ctx.setLineDash([]);
+          drawTextWithOutline(
+            ctx,
+            "35 км (раннє виявлення)",
+            pt.x + 8,
+            pt.y - r35Px + 12,
+            "rgba(56, 189, 248, 0.7)",
+            "rgba(2, 6, 23, 0.9)",
+            "bold 9px Inter, system-ui, sans-serif"
+          );
+        }
+      }
+    }
+  }
+
+  ctx.setLineDash([]);
+
+  // 2. Pulsing tactical radar ping ripple
+  const pulse = (timeMs % 2200) / 2200;
+  const rippleR = 8 + pulse * 26;
+  const rippleAlpha = Math.max(0, (1 - pulse) * 0.55);
+
+  ctx.beginPath();
+  ctx.arc(pt.x, pt.y, rippleR, 0, Math.PI * 2);
+  ctx.strokeStyle = `rgba(14, 165, 233, ${rippleAlpha})`;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // 3. Tactical outer defense circle
+  ctx.beginPath();
+  ctx.arc(pt.x, pt.y, 8, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(14, 165, 233, 0.28)";
+  ctx.fill();
+  ctx.strokeStyle = "#38bdf8";
+  ctx.lineWidth = 2.0;
+  ctx.stroke();
+
+  // 4. Center solid beacon dot
+  ctx.beginPath();
+  ctx.arc(pt.x, pt.y, 3, 0, Math.PI * 2);
+  ctx.fillStyle = "#ffffff";
+  ctx.fill();
+
+  // 5. Tactical Callout Label (e.g. "📍 МОЯ ЛОКАЦІЯ: Київ")
+  const label = name ? `📍 ${name}` : "📍 МОЯ ЛОКАЦІЯ";
+  drawTextWithOutline(
+    ctx,
+    label,
+    pt.x + 13,
+    pt.y + 4,
+    "#38bdf8",
+    "rgba(2, 6, 23, 0.95)",
+    "bold 10px Inter, system-ui, sans-serif"
+  );
+
+  ctx.restore();
+};
+
 interface PillRect {
   x: number;
   y: number;
@@ -1596,6 +1712,7 @@ export const MapView = ({
   packets,
   mapStyleUrl,
   location,
+  confirmedLocation,
   filters,
   visionMode = "satellite",
   selectedTarget,
@@ -1645,6 +1762,9 @@ export const MapView = ({
 
   const locationRef = useRef(location);
   locationRef.current = location;
+
+  const confirmedLocationRef = useRef(confirmedLocation);
+  confirmedLocationRef.current = confirmedLocation;
 
   const selectedTargetRef = useRef(selectedTarget);
   selectedTargetRef.current = selectedTarget;
@@ -1952,7 +2072,7 @@ export const MapView = ({
 
     map.flyTo({
       center: [location.lon, location.lat],
-      zoom: 8.5,
+      zoom: 7.2,
       pitch: 0,
       duration: 1500
     });
@@ -2030,15 +2150,16 @@ export const MapView = ({
           ctx.save();
           if (elev < 0) {
             // Sun is below horizon: astronomical night / dusk transition
-            // At elev = -15 deg, full astronomical night is reached (factor = 1.0)
+            // Keep subtle atmospheric tint without blacking out satellite map
             const nightFactor = Math.min(1, Math.max(0, -elev / 15));
-            const baseAlpha = 0.52 + nightFactor * 0.28; // 0.52 at dusk -> 0.80 at deep night
+            const zoomDamping = Math.max(0.2, 1 - (zoom - 5.5) * 0.2);
+            const baseAlpha = (0.06 + nightFactor * 0.08) * zoomDamping; // Max 0.14 at night, subtle tactical atmosphere
 
-            // Atmosphere midnight gradient
+            // Atmosphere midnight gradient (translucent, never pitch black)
             const nightGrad = ctx.createLinearGradient(0, 0, 0, height);
-            nightGrad.addColorStop(0, `rgba(2, 6, 23, ${Math.min(0.88, baseAlpha + 0.06)})`);
+            nightGrad.addColorStop(0, `rgba(2, 6, 23, ${Math.min(0.20, baseAlpha + 0.04)})`);
             nightGrad.addColorStop(0.4, `rgba(3, 8, 26, ${baseAlpha})`);
-            nightGrad.addColorStop(1, `rgba(4, 10, 30, ${Math.max(0.42, baseAlpha - 0.05)})`);
+            nightGrad.addColorStop(1, `rgba(4, 10, 30, ${Math.max(0.03, baseAlpha - 0.02)})`);
             ctx.fillStyle = nightGrad;
             ctx.fillRect(0, 0, width, height);
 
@@ -2047,7 +2168,7 @@ export const MapView = ({
               const twilightFactor = 1 - (-elev / 12);
               const twiGrad = ctx.createLinearGradient(0, height * 0.65, 0, height);
               twiGrad.addColorStop(0, "rgba(217, 119, 6, 0)");
-              twiGrad.addColorStop(1, `rgba(217, 119, 6, ${0.16 * twilightFactor})`);
+              twiGrad.addColorStop(1, `rgba(217, 119, 6, ${0.12 * twilightFactor})`);
               ctx.fillStyle = twiGrad;
               ctx.fillRect(0, height * 0.65, width, height * 0.35);
             }
@@ -2065,7 +2186,7 @@ export const MapView = ({
           } else if (elev < 14) {
             // Golden hour warm tint
             const goldenFactor = (14 - elev) / 14;
-            ctx.fillStyle = `rgba(245, 158, 11, ${goldenFactor * 0.12})`;
+            ctx.fillStyle = `rgba(245, 158, 11, ${goldenFactor * 0.08})`;
             ctx.fillRect(0, 0, width, height);
           }
           ctx.restore();
@@ -2082,7 +2203,7 @@ export const MapView = ({
             const satLayer = map.getLayer("satellite-tiles-layer") ? "satellite-tiles-layer" : map.getLayer("esri-satellite-layer") ? "esri-satellite-layer" : null;
             if (satLayer) {
               const nightFactor = Math.min(1, Math.max(0, -elev / 15));
-              const targetBrightness = elev < 0 ? Math.max(0.38, 1.0 - nightFactor * 0.58) : 1.0;
+              const targetBrightness = elev < 0 ? Math.max(0.92, 1.0 - nightFactor * 0.06) : 1.0;
               if (Math.abs(targetBrightness - lastAppliedBrightnessRef.current) > 0.03) {
                 lastAppliedBrightnessRef.current = targetBrightness;
                 try {
@@ -2093,7 +2214,25 @@ export const MapView = ({
           }
         }
 
-        // 1. Draw Selected Location Tactical Beacon if user selected a place on the map
+        // 1. Draw User Confirmed Home Location Beacon & Range Rings (Always visible on map)
+        const activeHome = confirmedLocationRef.current
+          ? { lat: confirmedLocationRef.current.lat, lon: confirmedLocationRef.current.lon }
+          : currentLoc
+          ? { lat: currentLoc.lat, lon: currentLoc.lon }
+          : null;
+        if (activeHome) {
+          drawUserHomeBeacon(
+            ctx,
+            map,
+            activeHome,
+            confirmedLocationRef.current?.name,
+            now,
+            width,
+            height
+          );
+        }
+
+        // 1.1 Draw Selected Location Tactical Beacon if user inspected a temporary place on the map
         if (selectedLocationRef.current) {
           const selPt = map.project([selectedLocationRef.current.lon, selectedLocationRef.current.lat]);
           if (selPt.x >= -60 && selPt.x <= width + 60 && selPt.y >= -60 && selPt.y <= height + 60) {

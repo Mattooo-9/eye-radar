@@ -17,14 +17,7 @@ export const applyDynamicJitter = (
   location?: UserLocation
 ): CompactTrackPacket[] => {
   if (!location) {
-    return packets.map((packet) => {
-      const [id, type, lat, lon, heading, speed, timestamp] = packet;
-      const distance = 20_000;
-      const offset = 2_000 + stableNoise(`${id}:${timestamp}`) * 3_000;
-      const direction = heading + 20 + stableNoise(id) * 40;
-      const point = destinationPoint(lat, lon, direction, Math.min(offset, distance));
-      return [id, type, point.lat, point.lon, heading, speed, timestamp];
-    });
+    return packets;
   }
 
   return packets.map((packet) => {
@@ -44,11 +37,17 @@ export const applyDynamicJitter = (
     return [
       id,
       type,
-      Number(point.lat.toFixed(6)),
-      Number(point.lon.toFixed(6)),
+      Math.round(point.lat * 1_000_000) / 1_000_000,
+      Math.round(point.lon * 1_000_000) / 1_000_000,
       heading,
       speed,
-      timestamp
+      timestamp,
+      packet[7],
+      packet[8],
+      packet[9],
+      packet[10],
+      packet[11],
+      packet[12]
     ];
   });
 };

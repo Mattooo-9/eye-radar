@@ -293,12 +293,13 @@ export const App = () => {
     saveUserLocation(newLoc);
     setLocationSetupOpen(false);
     if (mapInstance) {
+      const isOverview = newLoc.name.includes("Вся Україна") || (newLoc.lat === 49.0 && newLoc.lon === 31.5);
       mapInstance.flyTo({
         center: [newLoc.lon, newLoc.lat],
-        zoom: 9.5,
+        zoom: isOverview ? 6.0 : 7.0,
         pitch: 0,
         bearing: 0,
-        duration: 1400
+        duration: 1200
       });
     }
   };
@@ -368,6 +369,7 @@ export const App = () => {
         impacts={impacts}
         mapStyleUrl={mapStyleUrl}
         location={location}
+        confirmedLocation={confirmedLocation}
         filters={filters}
         visionMode={visionMode}
         selectedTarget={selectedTarget}

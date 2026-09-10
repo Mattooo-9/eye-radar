@@ -162,13 +162,14 @@ export const useTrustedLocation = () => {
           userId: tgUserId,
           lat: location.lat,
           lon: location.lon,
+          cityName: confirmedLocation?.name,
           radiusKm: 35
         })
       }).catch(() => {});
     }, 1500);
 
     return () => clearTimeout(timer);
-  }, [location?.lat, location?.lon]);
+  }, [confirmedLocation?.name, location?.lat, location?.lon]);
 
   const saveUserLocation = useCallback(
     (loc: { lat: number; lon: number; name: string; region?: string }) => {
