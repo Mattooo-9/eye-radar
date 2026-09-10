@@ -4074,5 +4074,425 @@ body {
   }
 }
 
+/* ==========================================================================
+   Location Setup Modal (First-Launch Onboarding & Change Location)
+   ========================================================================== */
+.location-setup-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  background: rgba(3, 7, 18, 0.85);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.location-setup-card {
+  width: 100%;
+  max-width: 440px;
+  max-height: 90vh;
+  background: #0b1322;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-radius: 16px;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.7);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.location-setup-header {
+  padding: 14px 16px;
+  background: rgba(15, 23, 42, 0.8);
+  border-bottom: 1px solid rgba(56, 189, 248, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.location-setup-title-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.location-setup-icon {
+  font-size: 24px;
+}
+
+.location-setup-title {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  color: #38bdf8;
+}
+
+.location-setup-sub {
+  font-size: 10px;
+  color: #94a3b8;
+  margin-top: 1px;
+}
+
+.location-setup-close {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.location-selected-banner {
+  padding: 8px 16px;
+  background: rgba(2, 132, 199, 0.15);
+  border-bottom: 1px solid rgba(56, 189, 248, 0.25);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.selected-dot {
+  color: #38bdf8;
+  font-size: 12px;
+}
+
+.selected-text {
+  font-size: 11.5px;
+  color: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.selected-coords {
+  font-size: 9.5px;
+  color: #7dd3fc;
+  font-family: monospace;
+}
+
+.location-method-tabs {
+  display: flex;
+  background: rgba(15, 23, 42, 0.5);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.location-tab-btn {
+  flex: 1;
+  padding: 10px 4px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: #94a3b8;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.location-tab-btn.active {
+  color: #38bdf8;
+  border-bottom-color: #38bdf8;
+  background: rgba(56, 189, 248, 0.08);
+}
+
+.location-tab-content {
+  padding: 12px 16px;
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 240px;
+  max-height: 50vh;
+}
+
+.location-search-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.search-prefix {
+  position: absolute;
+  left: 10px;
+  font-size: 12px;
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+.location-search-input {
+  width: 100%;
+  padding: 8px 30px 8px 32px;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: 8px;
+  color: #f8fafc;
+  font-size: 12px;
+  outline: none;
+}
+
+.location-search-input:focus {
+  border-color: #38bdf8;
+}
+
+.search-clear-btn {
+  position: absolute;
+  right: 8px;
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.location-cities-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  max-height: 200px;
+}
+
+.location-item-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: #f8fafc;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.12s;
+}
+
+.location-item-row:hover {
+  background: rgba(56, 189, 248, 0.1);
+}
+
+.location-item-row.selected {
+  background: rgba(56, 189, 248, 0.2);
+  border-color: rgba(56, 189, 248, 0.5);
+}
+
+.location-item-main {
+  display: flex;
+  flex-direction: column;
+}
+
+.location-item-main strong {
+  font-size: 12px;
+}
+
+.location-item-sub {
+  font-size: 10px;
+  color: #94a3b8;
+}
+
+.location-check {
+  color: #38bdf8;
+  font-weight: 900;
+  font-size: 13px;
+}
+
+.gps-tab, .map-tab {
+  align-items: center;
+  justify-content: center;
+}
+
+.gps-auto-box, .map-pick-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 16px;
+  gap: 8px;
+}
+
+.gps-big-icon, .map-pick-icon {
+  font-size: 36px;
+}
+
+.gps-auto-title, .map-pick-title {
+  font-size: 13px;
+  font-weight: 800;
+  color: #f8fafc;
+}
+
+.gps-auto-desc, .map-pick-desc {
+  font-size: 11px;
+  color: #94a3b8;
+  max-width: 280px;
+  line-height: 1.4;
+}
+
+.gps-refresh-btn, .map-start-pick-btn {
+  margin-top: 8px;
+  padding: 8px 16px;
+  background: rgba(56, 189, 248, 0.2);
+  border: 1px solid #38bdf8;
+  border-radius: 10px;
+  color: #38bdf8;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.gps-refresh-btn:hover, .map-start-pick-btn:hover {
+  background: #38bdf8;
+  color: #0b1322;
+}
+
+.gps-locating-pill {
+  padding: 6px 14px;
+  background: rgba(245, 158, 11, 0.2);
+  border: 1px solid #fbbf24;
+  border-radius: 20px;
+  color: #fbbf24;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.gps-error-notice {
+  font-size: 10.5px;
+  color: #f87171;
+  margin-top: 4px;
+}
+
+.location-regions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 6px;
+  overflow-y: auto;
+  max-height: 220px;
+}
+
+.location-region-card {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: #f8fafc;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.12s;
+}
+
+.location-region-card:hover {
+  background: rgba(56, 189, 248, 0.1);
+}
+
+.location-region-card.selected {
+  background: rgba(56, 189, 248, 0.2);
+  border-color: #38bdf8;
+}
+
+.region-icon {
+  font-size: 13px;
+}
+
+.region-name {
+  font-size: 10.5px;
+  font-weight: 600;
+  flex: 1;
+}
+
+.region-check {
+  color: #38bdf8;
+  font-weight: 900;
+  font-size: 12px;
+}
+
+.location-setup-footer {
+  padding: 12px 16px;
+  background: rgba(15, 23, 42, 0.8);
+  border-top: 1px solid rgba(56, 189, 248, 0.2);
+}
+
+.location-confirm-btn {
+  width: 100%;
+  padding: 10px;
+  background: #0284c7;
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.location-confirm-btn:hover:not(:disabled) {
+  background: #0369a1;
+}
+
+.location-confirm-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Floating "Моя локація" button on the map */
+.floating-my-location-btn {
+  position: absolute;
+  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  right: 16px;
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: rgba(11, 19, 34, 0.88);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  border-radius: 20px;
+  color: #38bdf8;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.65), 0 0 10px rgba(56, 189, 248, 0.2);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.floating-my-location-btn:hover {
+  background: rgba(56, 189, 248, 0.22);
+  border-color: #38bdf8;
+  transform: translateY(-1px);
+}
+
+.floating-my-location-btn:active {
+  transform: scale(0.96);
+}
+
+.locator-icon {
+  font-size: 14px;
+}
+
+.primary-action-btn {
+  background: rgba(2, 132, 199, 0.35) !important;
+  border-color: #38bdf8 !important;
+  color: #ffffff !important;
+  font-weight: 800 !important;
+}
+
+.primary-action-btn:hover {
+  background: #0284c7 !important;
+}
+
+.gps-region-tag {
+  font-size: 10px;
+  color: #7dd3fc;
+  font-weight: normal;
+}
+
+
 
 

@@ -36,10 +36,13 @@ interface TacticalMenuModalProps {
   onFitAllTargets: () => void;
   // Location
   location: TrustedLocation | null;
+  confirmedLocation?: { lat: number; lon: number; name: string; region?: string } | null;
   isManual: boolean;
   isPickingLocation: boolean;
   onTogglePickLocation: () => void;
   onResetGps: () => void;
+  onOpenChangeLocation?: () => void;
+  onFlyToUser?: () => void;
   onSelectCity: (lat: number, lon: number, name: string, zoom?: number) => void;
   // Impacts & Events
   impacts: ImpactEvent[];
@@ -77,10 +80,13 @@ export const TacticalMenuModal: React.FC<TacticalMenuModalProps> = ({
   totalTrackCount,
   onFitAllTargets,
   location,
+  confirmedLocation,
   isManual,
   isPickingLocation,
   onTogglePickLocation,
   onResetGps,
+  onOpenChangeLocation,
+  onFlyToUser,
   onSelectCity,
   impacts,
   onFlyToCoord,
@@ -383,24 +389,53 @@ export const TacticalMenuModal: React.FC<TacticalMenuModalProps> = ({
             </div>
           )}
 
-          {/* TAB 4: CITIES & GPS */}
+          {/* TAB 4: CITIES & MY LOCATION */}
           {activeTab === "cities" && (
             <div className="tactical-tab-pane">
-              <div className="tactical-section-title">ПОЗИЦІОНУВАННЯ ТА ШВИДКИЙ ПЕРЕХІД ДО МІСТ</div>
+              <div className="tactical-section-title">МОЯ ЗАКРІПЛЕНА ЛОКАЦІЯ</div>
 
               <div className="gps-control-card">
                 <div className="gps-card-info">
                   <span className="gps-icon">📍</span>
                   <div>
                     <div className="gps-title">
-                      {isManual ? "Власна точка (Вручну)" : "GPS Навігація пристрою"}
+                      {confirmedLocation?.name || (isManual ? "Власна точка (Вручну)" : "GPS Навігація пристрою")}
+                      {confirmedLocation?.region && <span className="gps-region-tag"> • {confirmedLocation.region}</span>}
                     </div>
                     <div className="gps-sub">
-                      {location ? `${location.lat.toFixed(3)}°N, ${location.lon.toFixed(3)}°E` : "Очікування координат..."}
+                      {location
+                        ? `${location.lat.toFixed(4)}°N, ${location.lon.toFixed(4)}°E (похибка ~${location.accuracy}м)`
+                        : "Очікування координат..."}
                     </div>
                   </div>
                 </div>
                 <div className="gps-card-actions">
+                  {onOpenChangeLocation && (
+                    <button
+                      type="button"
+                      className="tactical-sub-btn primary-action-btn"
+                      onClick={() => {
+                        onClose();
+                        onOpenChangeLocation();
+                      }}
+                      title="Змінити місто, область, визначити GPS або вказати точку на карті"
+                    >
+                      ✏️ ЗМІНИТИ ЛОКАЦІЮ
+                    </button>
+                  )}
+                  {onFlyToUser && (
+                    <button
+                      type="button"
+                      className="tactical-sub-btn"
+                      onClick={() => {
+                        onFlyToUser();
+                        onClose();
+                      }}
+                      title="Перемістити камеру карти до моєї закріпленої точки"
+                    >
+                      🎯 ФОКУС НА МЕНЕ
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="tactical-sub-btn"
@@ -408,18 +443,9 @@ export const TacticalMenuModal: React.FC<TacticalMenuModalProps> = ({
                       onResetGps();
                       onClose();
                     }}
+                    title="Скинути до поточного супутникового GPS"
                   >
-                    📍 Моє GPS
-                  </button>
-                  <button
-                    type="button"
-                    className={`tactical-sub-btn ${isPickingLocation ? "btn-active" : ""}`}
-                    onClick={() => {
-                      onTogglePickLocation();
-                      onClose();
-                    }}
-                  >
-                    🗺️ Точка на карті
+                    🛰️ Моє GPS
                   </button>
                 </div>
               </div>

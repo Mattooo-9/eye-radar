@@ -77,8 +77,12 @@
 
 ## 2. Test & Quality Metrics
 
-- **TypeScript Check:** `npm run check` — 0 errors.
-- **Vitest Unit & Benchmark Test Suite:** `npm test` — 30 tests passing across 11 test suites:
+- **TypeScript Check:** `npm run check` — 0 errors (`tsc --noEmit`).
+- **Vitest Unit & Benchmark Test Suite:** `npm test` — **46 tests passing across 15 test suites**:
+  - `locationLogic.test.ts` (Location setup onboarding, region geocoding, localStorage confirmation, prevention of accidental map click mutation)
+  - `classificationAlternative.test.ts` (Shahed-136 vs Shahed-238 probabilistic classification, nearest alternative, hysteresis, UNKNOWN fallback)
+  - `crossingTracks.test.ts` (Crossing tracks heading separation, speed gating, track reacquisition in COASTING state)
+  - `sourceHealth.test.ts` (Source lifecycle OFFLINE -> LIVE, p50/p95/p99 latency calculations, error degradation, active tracks helped)
   - `sourceAudit.test.ts` (Automated source audit, lifecycle transitions, p50/p95/p99 latency, tracks helped)
   - `provenance.test.ts` (Provenance chain tracking, measured vs estimated telemetry, track diagnostics, synthetic isolation)
   - `websocketDelta.test.ts` (Sequence number monotonicity, removed ID pruning, 13-element compact packet schema)
@@ -94,5 +98,6 @@
 ---
 
 ## 3. Production Verification
-- **Render Backend:** Live at `https://eye-radar.onrender.com/health` (145+ live tracks, healthy multi-source status, `/api/audit`, `/api/tracks`, `/api/tracks/:id/diagnostic`).
-- **Vercel Frontend:** Live at `https://eye-radar.vercel.app` (React 19 Mini App with Live Timeline bar, Performance Tiers, and Track Inspector).
+- **Render Backend:** Live at `https://eye-radar.onrender.com/health` (Healthy multi-source status, `/api/audit`, `/api/tracks`, `/api/tracks/:id/diagnostic`).
+- **Vercel Frontend:** Live at `https://eye-radar.vercel.app` (React 19 Mini App with Logical Location Onboarding, Clean Vector Map, Live Timeline bar, Performance Tiers, and Track Inspector).
+

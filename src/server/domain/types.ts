@@ -81,6 +81,9 @@ export interface TrackState {
   threatLevel?: ThreatLevel;
   lastUpdated?: number;
   model?: string;
+  alternativeType?: TrackType;
+  alternativeModel?: string;
+  alternativeConfidence?: number;
   callsign?: string;
   lifecycle?: TrackLifecycle;
   measuredSpeed?: number;

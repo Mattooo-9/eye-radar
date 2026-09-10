@@ -16,6 +16,7 @@ import { type ImpactEvent, type TrackPacket, useWsRadar } from "./hooks/useWsRad
 import { haversineMeters } from "./lib/geo";
 import { soundEngine } from "./lib/sound";
 import { useTrustedLocation } from "./location/useTrustedLocation";
+import { LocationSetupModal, type ConfirmedLocation } from "./components/LocationSetupModal";
 
 const getUserId = (): string => {
   const tgUserId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
@@ -37,14 +38,18 @@ export const App = () => {
   const userId = useMemo(getUserId, []);
   const {
     location,
+    confirmedLocation,
+    isConfirmed,
     isManual,
     trustScore,
     flags,
     needsManualConfirm,
     setManualLocation,
+    saveUserLocation,
     resetToGps
   } = useTrustedLocation();
   const [isPickingLocation, setIsPickingLocation] = useState(false);
+  const [locationSetupOpen, setLocationSetupOpen] = useState(!isConfirmed);
   const { packets, impacts, connectionState, mapStyleUrl } = useWsRadar(
     userId,
     location,
@@ -284,13 +289,33 @@ export const App = () => {
     }
   };
 
+  const handleConfirmLocation = (newLoc: ConfirmedLocation) => {
+    saveUserLocation(newLoc);
+    setLocationSetupOpen(false);
+    if (mapInstance) {
+      mapInstance.flyTo({
+        center: [newLoc.lon, newLoc.lat],
+        zoom: 9.5,
+        pitch: 0,
+        bearing: 0,
+        duration: 1400
+      });
+    }
+  };
+
   const handlePickLocation = (lat: number, lon: number) => {
-    setManualLocation({ lat, lon });
+    const customLoc: ConfirmedLocation = {
+      lat: Math.round(lat * 10000) / 10000,
+      lon: Math.round(lon * 10000) / 10000,
+      name: "Точка на карті",
+      region: "Власна геопозиція"
+    };
+    saveUserLocation(customLoc);
     setIsPickingLocation(false);
     if (mapInstance) {
       mapInstance.flyTo({
         center: [lon, lat],
-        zoom: 9.0,
+        zoom: 9.5,
         pitch: 0,
         bearing: 0,
         duration: 1200
@@ -302,7 +327,7 @@ export const App = () => {
     if (!mapInstance || !location) return;
     mapInstance.flyTo({
       center: [location.lon, location.lat],
-      zoom: 9.0,
+      zoom: 9.5,
       pitch: 0,
       bearing: 0,
       duration: 1400
@@ -370,12 +395,25 @@ export const App = () => {
           setInspectedTarget(null);
           setSelectedLocation(null);
         }}
-        onSelectLocation={(lat, lon) => {
-          setSelectedLocation({ lat, lon });
+        onSelectLocation={() => {
+          setSelectedLocation(null);
           setInspectedTarget(null);
           setSelectedImpact(null);
         }}
       />
+
+      {/* Floating "Моя локація" / Locator Button on Map */}
+      {location && (
+        <button
+          type="button"
+          className="floating-my-location-btn"
+          onClick={handleFlyToUser}
+          title="Фокус на моїй закріпленій локації"
+        >
+          <span className="locator-icon">🎯</span>
+          <span className="locator-text">МОЯ ЛОКАЦІЯ</span>
+        </button>
+      )}
 
       {/* 3. The Unified Tactical Options Drawer / Dropdown */}
       <TacticalMenuModal
@@ -405,10 +443,13 @@ export const App = () => {
         totalTrackCount={filteredPackets.length}
         onFitAllTargets={handleFitAllTargets}
         location={location}
+        confirmedLocation={confirmedLocation}
         isManual={isManual}
         isPickingLocation={isPickingLocation}
         onTogglePickLocation={() => setIsPickingLocation((prev) => !prev)}
         onResetGps={resetToGps}
+        onOpenChangeLocation={() => setLocationSetupOpen(true)}
+        onFlyToUser={handleFlyToUser}
         onSelectCity={handleSelectCity}
         impacts={impacts}
         onFlyToCoord={(lat, lon) => {
@@ -532,6 +573,18 @@ export const App = () => {
         location={location}
         trustScore={trustScore}
         onClose={() => setReportOpen(false)}
+      />
+
+      <LocationSetupModal
+        isOpen={locationSetupOpen}
+        onClose={() => setLocationSetupOpen(false)}
+        currentLocation={confirmedLocation}
+        onConfirmLocation={handleConfirmLocation}
+        onStartPickOnMap={() => {
+          setIsPickingLocation(true);
+          setLocationSetupOpen(false);
+        }}
+        isFirstLaunch={!isConfirmed}
       />
     </main>
   );

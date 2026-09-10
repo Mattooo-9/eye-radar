@@ -23,35 +23,42 @@ interface IpFallbackResponse {
 }
 
 export const useTrustedLocation = () => {
-  const [location, setLocation] = useState<TrustedLocation | null>(null);
+  const [confirmedLocation, setConfirmedLocation] = useState<{
+    lat: number;
+    lon: number;
+    name: string;
+    region?: string;
+  } | null>(() => {
+    try {
+      const raw = localStorage.getItem("eye-radar-user-location");
+      return raw ? (JSON.parse(raw) as { lat: number; lon: number; name: string; region?: string }) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [isConfirmed, setIsConfirmed] = useState<boolean>(() => {
+    return Boolean(localStorage.getItem("eye-radar-user-location-confirmed"));
+  });
+
+  const [location, setLocation] = useState<TrustedLocation | null>(() => {
+    if (confirmedLocation) {
+      return {
+        lat: confirmedLocation.lat,
+        lon: confirmedLocation.lon,
+        accuracy: 15,
+        timestamp: Date.now()
+      };
+    }
+    return null;
+  });
+
   const [coarseLocation, setCoarseLocation] = useState<TrustedLocation | null>(null);
   const [trustScore, setTrustScore] = useState(100);
   const [flags, setFlags] = useState<string[]>([]);
-  const [needsManualConfirm, setNeedsManualConfirm] = useState(false);
+  const [needsManualConfirm, setNeedsManualConfirm] = useState(!isConfirmed);
   const previousRef = useRef<RawLocationSample | null>(null);
-
-  useEffect(() => {
-    const loadCoarse = async (): Promise<void> => {
-      try {
-        const response = await fetch("/api/location/ip");
-        const data = (await response.json()) as IpFallbackResponse;
-        if (data.fallback?.lat && data.fallback?.lon) {
-          setCoarseLocation({
-            lat: Number(data.fallback.lat),
-            lon: Number(data.fallback.lon),
-            accuracy: 50_000,
-            timestamp: Date.now()
-          });
-        }
-      } catch {
-        setCoarseLocation(null);
-      }
-    };
-
-    void loadCoarse();
-  }, []);
-
-  const [isManual, setIsManual] = useState(false);
+  const [isManual, setIsManual] = useState(Boolean(confirmedLocation));
   const lastGpsRef = useRef<TrustedLocation | null>(null);
 
   useEffect(() => {
@@ -163,16 +170,45 @@ export const useTrustedLocation = () => {
     return () => clearTimeout(timer);
   }, [location?.lat, location?.lon]);
 
+  const saveUserLocation = useCallback(
+    (loc: { lat: number; lon: number; name: string; region?: string }) => {
+      try {
+        localStorage.setItem("eye-radar-user-location", JSON.stringify(loc));
+        localStorage.setItem("eye-radar-user-location-confirmed", "true");
+      } catch {}
+      setConfirmedLocation(loc);
+      setIsConfirmed(true);
+      setManualLocation({ lat: loc.lat, lon: loc.lon });
+      setNeedsManualConfirm(false);
+    },
+    [setManualLocation]
+  );
+
   return useMemo(
     () => ({
       location,
+      confirmedLocation,
+      isConfirmed,
       isManual,
       trustScore,
       flags,
       needsManualConfirm,
       setManualLocation,
+      saveUserLocation,
       resetToGps
     }),
-    [flags, isManual, location, needsManualConfirm, resetToGps, setManualLocation, trustScore]
+    [
+      confirmedLocation,
+      flags,
+      isConfirmed,
+      isManual,
+      location,
+      needsManualConfirm,
+      resetToGps,
+      saveUserLocation,
+      setManualLocation,
+      trustScore
+    ]
   );
 };
+

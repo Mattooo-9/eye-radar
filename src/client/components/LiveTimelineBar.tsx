@@ -10,12 +10,11 @@ interface LiveTimelineBarProps {
 }
 
 const TIMELINE_STEPS = [
-  { label: "● LIVE", offsetSec: 0, title: "Реальний час спостереження" },
-  { label: "-1 хв", offsetSec: 60, title: "1 хвилину тому" },
-  { label: "-5 хв", offsetSec: 300, title: "5 хвилин тому" },
-  { label: "-10 хв", offsetSec: 600, title: "10 хвилин тому" },
-  { label: "-30 хв", offsetSec: 1800, title: "30 хвилин тому" },
-  { label: "-60 хв", offsetSec: 3600, title: "1 годину тому" }
+  { label: "СЕЙЧАС", offsetSec: 0, title: "Реальний час спостереження (LIVE)" },
+  { label: "5 хв", offsetSec: 300, title: "5 хвилин тому" },
+  { label: "10 хв", offsetSec: 600, title: "10 хвилин тому" },
+  { label: "30 хв", offsetSec: 1800, title: "30 хвилин тому" },
+  { label: "60 хв", offsetSec: 3600, title: "60 хвилин тому" }
 ];
 
 export const LiveTimelineBar: React.FC<LiveTimelineBarProps> = ({

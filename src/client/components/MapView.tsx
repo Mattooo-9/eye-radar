@@ -176,13 +176,13 @@ const drawUavSilhouette = (
   ctx.translate(x, y);
   ctx.rotate((rotation * Math.PI) / 180);
 
-  const isJet = model?.toLowerCase().includes("238") || model?.toLowerCase().includes("jet") || speedKmh >= 235;
-  const isRecon =
+  const isJet = Boolean(model?.toLowerCase().includes("238") || model?.toLowerCase().includes("jet"));
+  const isRecon = Boolean(
     model?.toLowerCase().includes("recon") ||
     model?.toLowerCase().includes("supercam") ||
     model?.toLowerCase().includes("orlan") ||
-    model?.toLowerCase().includes("zala") ||
-    (!isJet && speedKmh < 140);
+    model?.toLowerCase().includes("zala")
+  );
 
   if (isRecon) {
     // Orlan-10 / Supercam S350 — high-aspect straight wing ISR UAV
@@ -1035,204 +1035,80 @@ const drawUncertaintyCone = (
   ctx.restore();
 };
 
-const drawLockReticle = (
+const drawTacticalSelectionHalo = (
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
-  rotationDeg: number
+  timeMs: number,
+  color = "#38bdf8"
 ) => {
   ctx.save();
-  ctx.translate(x, y);
-  ctx.rotate((rotationDeg * Math.PI) / 180);
+  const pulse = Math.sin(timeMs / 260) * 0.12 + 0.88;
+  const radius = 24 * pulse;
 
-  const size = 28;
-  const bracket = 9;
-  ctx.strokeStyle = "#38bdf8";
-  ctx.lineWidth = 2.2;
-
-  // Brackets
+  // 1. Soft tactical selection ambient glow
   ctx.beginPath();
-  ctx.moveTo(-size, -size + bracket);
-  ctx.lineTo(-size, -size);
-  ctx.lineTo(-size + bracket, -size);
-  ctx.moveTo(size - bracket, -size);
-  ctx.lineTo(size, -size);
-  ctx.lineTo(size, -size + bracket);
-  ctx.moveTo(size, size - bracket);
-  ctx.lineTo(size, size);
-  ctx.lineTo(size - bracket, size);
-  ctx.moveTo(-size + bracket, size);
-  ctx.lineTo(-size, size);
-  ctx.lineTo(-size, size - bracket);
+  ctx.arc(x, y, radius + 3, 0, Math.PI * 2);
+  ctx.strokeStyle = "rgba(56, 189, 248, 0.22)";
+  ctx.lineWidth = 3;
   ctx.stroke();
 
-  // Crosshairs
-  ctx.strokeStyle = "rgba(56, 189, 248, 0.45)";
-  ctx.lineWidth = 1;
+  // 2. Crisp tactical ring (no sci-fi rotating crosshairs or brackets)
   ctx.beginPath();
-  ctx.moveTo(-6, 0);
-  ctx.lineTo(6, 0);
-  ctx.moveTo(0, -6);
-  ctx.lineTo(0, 6);
-  ctx.stroke();
-
-  ctx.restore();
-};
-
-const drawMissileFlame = (
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  heading: number,
-  timeMs: number
-) => {
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.rotate(((heading + 180) * Math.PI) / 180);
-
-  const flicker = (Math.sin(timeMs / 35) * 0.5 + 0.5) * 8;
-  const flameLen = 18 + flicker;
-
-  const grad = ctx.createLinearGradient(0, 0, 0, flameLen);
-  grad.addColorStop(0, "rgba(255, 255, 255, 0.98)");
-  grad.addColorStop(0.25, "rgba(251, 146, 60, 0.95)");
-  grad.addColorStop(0.65, "rgba(239, 68, 68, 0.8)");
-  grad.addColorStop(1, "rgba(239, 68, 68, 0)");
-
-  ctx.fillStyle = grad;
-  ctx.beginPath();
-  ctx.moveTo(-3.5, 0);
-  ctx.lineTo(0, flameLen);
-  ctx.lineTo(3.5, 0);
-  ctx.closePath();
-  ctx.fill();
-
-  const diamondY = flameLen * 0.45;
-  ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
-  ctx.beginPath();
-  ctx.moveTo(0, diamondY - 2.5);
-  ctx.lineTo(2, diamondY);
-  ctx.lineTo(0, diamondY + 2.5);
-  ctx.lineTo(-2, diamondY);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.restore();
-};
-
-const drawGroundReticle = (
-  ctx: CanvasRenderingContext2D,
-  gx: number,
-  gy: number,
-  isThreat: boolean,
-  timeMs: number
-) => {
-  ctx.save();
-  const bSize = 14;
-  const bLen = 5;
-  const pulse = Math.sin(timeMs / 180) * 0.2 + 0.8;
-  const strokeCol = isThreat
-    ? `rgba(239, 68, 68, ${pulse})`
-    : `rgba(56, 189, 248, ${pulse})`;
-
-  ctx.strokeStyle = strokeCol;
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.strokeStyle = color;
   ctx.lineWidth = 1.6;
-
-  // 4 corner brackets pinned to ground
-  ctx.beginPath();
-  // Top-left
-  ctx.moveTo(gx - bSize, gy - bSize + bLen);
-  ctx.lineTo(gx - bSize, gy - bSize);
-  ctx.lineTo(gx - bSize + bLen, gy - bSize);
-  // Top-right
-  ctx.moveTo(gx + bSize - bLen, gy - bSize);
-  ctx.lineTo(gx + bSize, gy - bSize);
-  ctx.lineTo(gx + bSize, gy - bSize + bLen);
-  // Bottom-right
-  ctx.moveTo(gx + bSize, gy + bSize - bLen);
-  ctx.lineTo(gx + bSize, gy + bSize);
-  ctx.lineTo(gx + bSize - bLen, gy + bSize);
-  // Bottom-left
-  ctx.moveTo(gx - bSize + bLen, gy + bSize);
-  ctx.lineTo(gx - bSize, gy + bSize);
-  ctx.lineTo(gx - bSize, gy + bSize - bLen);
   ctx.stroke();
 
-  // Fine crosshair ticks
-  ctx.lineWidth = 1;
+  // 3. Small cardinal tick marks for precision orientation
+  const tickLen = 4;
   ctx.beginPath();
-  ctx.moveTo(gx - 4, gy);
-  ctx.lineTo(gx + 4, gy);
-  ctx.moveTo(gx, gy - 4);
-  ctx.lineTo(gx, gy + 4);
+  ctx.moveTo(x, y - radius - tickLen);
+  ctx.lineTo(x, y - radius + 1);
+  ctx.moveTo(x, y + radius - 1);
+  ctx.lineTo(x, y + radius + tickLen);
+  ctx.moveTo(x - radius - tickLen, y);
+  ctx.lineTo(x - radius + 1, y);
+  ctx.moveTo(x + radius - 1, y);
+  ctx.lineTo(x + radius + tickLen, y);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.4;
   ctx.stroke();
-
-  // Central nadir pin
-  ctx.fillStyle = isThreat ? "#ef4444" : "#38bdf8";
-  ctx.beginPath();
-  ctx.arc(gx, gy, 2, 0, Math.PI * 2);
-  ctx.fill();
 
   ctx.restore();
 };
 
-const drawSelectedLocationReticle = (
+const drawSelectedLocationBeacon = (
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
   timeMs: number
 ) => {
   ctx.save();
-  const pulse = Math.sin(timeMs / 220) * 0.25 + 0.75;
-  const outerR = 20 + Math.sin(timeMs / 300) * 4;
+  const pulse = (timeMs % 1600) / 1600;
+  const rippleR = 8 + pulse * 20;
+  const rippleAlpha = Math.max(0, (1 - pulse) * 0.45);
 
-  // 1. Concentric pulsing radar ring
+  // Soft subtle radar ping ripple
   ctx.beginPath();
-  ctx.arc(x, y, outerR, 0, Math.PI * 2);
-  ctx.strokeStyle = `rgba(56, 189, 248, ${0.45 * pulse})`;
-  ctx.lineWidth = 1.4;
-  ctx.setLineDash([4, 4]);
+  ctx.arc(x, y, rippleR, 0, Math.PI * 2);
+  ctx.strokeStyle = `rgba(56, 189, 248, ${rippleAlpha})`;
+  ctx.lineWidth = 1.2;
   ctx.stroke();
 
-  // 2. Tactical corner brackets
-  const bSize = 16;
-  const bLen = 6;
-  ctx.setLineDash([]);
-  ctx.strokeStyle = `rgba(56, 189, 248, ${0.9 * pulse})`;
-  ctx.lineWidth = 2;
+  // Tactical beacon circle
   ctx.beginPath();
-  // TL
-  ctx.moveTo(x - bSize, y - bSize + bLen);
-  ctx.lineTo(x - bSize, y - bSize);
-  ctx.lineTo(x - bSize + bLen, y - bSize);
-  // TR
-  ctx.moveTo(x + bSize - bLen, y - bSize);
-  ctx.lineTo(x + bSize, y - bSize);
-  ctx.lineTo(x + bSize, y - bSize + bLen);
-  // BR
-  ctx.moveTo(x + bSize, y + bSize - bLen);
-  ctx.lineTo(x + bSize, y + bSize);
-  ctx.lineTo(x + bSize - bLen, y + bSize);
-  // BL
-  ctx.moveTo(x - bSize + bLen, y + bSize);
-  ctx.lineTo(x - bSize, y + bSize);
-  ctx.lineTo(x - bSize, y + bSize - bLen);
+  ctx.arc(x, y, 7, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(14, 165, 233, 0.25)";
+  ctx.fill();
+  ctx.strokeStyle = "#38bdf8";
+  ctx.lineWidth = 1.8;
   ctx.stroke();
 
-  // 3. Pinpoint crosshair
-  ctx.lineWidth = 1;
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.9)";
-  ctx.beginPath();
-  ctx.moveTo(x - 5, y);
-  ctx.lineTo(x + 5, y);
-  ctx.moveTo(x, y - 5);
-  ctx.lineTo(x, y + 5);
-  ctx.stroke();
-
-  // 4. Center cyan dot
+  // Center solid dot
   ctx.beginPath();
   ctx.arc(x, y, 2.5, 0, Math.PI * 2);
-  ctx.fillStyle = "#38bdf8";
+  ctx.fillStyle = "#f8fafc";
   ctx.fill();
 
   ctx.restore();
@@ -1570,9 +1446,11 @@ const drawTacticalImpactMarker = (
   y: number,
   isImpact: boolean,
   label: string,
-  now: number
+  now: number,
+  opacity = 1.0
 ) => {
   ctx.save();
+  ctx.globalAlpha = Math.max(0.15, Math.min(1.0, opacity));
   const pulse = Math.sin(now / 220) * 0.2 + 0.8;
   const radius = isImpact ? 14 : 13;
 
@@ -2215,11 +2093,11 @@ export const MapView = ({
           }
         }
 
-        // 1. Draw Selected Location Tactical Reticle if user selected a place on the map
+        // 1. Draw Selected Location Tactical Beacon if user selected a place on the map
         if (selectedLocationRef.current) {
           const selPt = map.project([selectedLocationRef.current.lon, selectedLocationRef.current.lat]);
           if (selPt.x >= -60 && selPt.x <= width + 60 && selPt.y >= -60 && selPt.y <= height + 60) {
-            drawSelectedLocationReticle(ctx, selPt.x, selPt.y, now);
+            drawSelectedLocationBeacon(ctx, selPt.x, selPt.y, now);
           }
         }
 
@@ -2257,7 +2135,7 @@ export const MapView = ({
           }
         }
 
-        // 2. Camera target tracking & selected lock reticle
+        // 2. Camera target tracking & selected lock halo
         if (followingTargetIdRef.current) {
           const follow = currentPackets.find((p) => p[0] === followingTargetIdRef.current);
           if (follow) {
@@ -2268,7 +2146,7 @@ export const MapView = ({
         if (currentSelected) {
           const selPt = map.project([currentSelected[3], currentSelected[2]]);
           if (selPt.x >= -60 && selPt.x <= width + 60 && selPt.y >= -60 && selPt.y <= height + 60) {
-            drawLockReticle(ctx, selPt.x, selPt.y, (now / 40) % 360);
+            drawTacticalSelectionHalo(ctx, selPt.x, selPt.y, now);
           }
         }
 
@@ -2407,21 +2285,21 @@ export const MapView = ({
           const shortName = packetModel
             ? packetModel.replace(" Cruise Missile", "").replace(" Fighting Falcon", "").replace(" Fulcrum", "").replace(" (Jet)", "-Jet")
             : type === "uav"
-            ? (speedKmh >= 235 ? "Shahed-238" : speedKmh < 140 ? "Розвід-БПЛА" : "Shahed-136")
+            ? "БПЛА"
             : type === "bomb"
-            ? "КАБ-500"
+            ? "КАБ"
             : type === "fpv"
-            ? "FPV-дрон"
+            ? "FPV"
             : type === "munition"
-            ? "Х-101"
+            ? "Ракета"
             : type === "helicopter"
-            ? "Ка-52"
+            ? "Гелікоптер"
             : id.startsWith("adsb-")
             ? id.slice(5).toUpperCase()
-            : "Су-34М";
+            : "Ціль";
 
           if (isSelected) {
-            drawLockReticle(ctx, targetX, targetY, (now / 40) % 360);
+            drawTacticalSelectionHalo(ctx, targetX, targetY, now, color);
             drawMilitaryCalloutPill(
               ctx,
               targetX,
@@ -2463,21 +2341,23 @@ export const MapView = ({
           }
         }
 
-        // 2.4 Draw Recent Impacts & Interceptions (< 15 min old)
+        // 2.4 Draw Recent Impacts (60 min TTL) & Interceptions (10 min TTL) with smooth fading
         if (impactsRef.current && impactsRef.current.length > 0) {
           for (const evt of impactsRef.current) {
             const elapsedMs = Math.max(0, now - evt.timestamp);
-            if (elapsedMs > 15 * 60 * 1000) continue;
+            const isImpact = evt.type === "impact";
+            const ttlMs = isImpact ? 60 * 60 * 1000 : 10 * 60 * 1000;
+            if (elapsedMs > ttlMs) continue;
 
             const pt = map.project([evt.lon, evt.lat]);
             if (pt.x < -80 || pt.x > width + 80 || pt.y < -80 || pt.y > height + 80) continue;
 
-            const isImpact = evt.type === "impact";
+            const fade = Math.max(0.15, 1 - elapsedMs / ttlMs);
             const minAgo = Math.max(1, Math.round(elapsedMs / 60000));
             const timeText = elapsedMs < 60000 ? "< 1 хв тому" : minAgo < 60 ? `${minAgo} хв тому` : `${Math.floor(minAgo / 60)} год тому`;
             const label = isImpact ? `💥 ПРИЛІТ (${timeText})` : `🛡️ ЗБИТТЯ (${timeText})`;
 
-            drawTacticalImpactMarker(ctx, pt.x, pt.y, isImpact, label, now);
+            drawTacticalImpactMarker(ctx, pt.x, pt.y, isImpact, label, now, fade);
           }
         }
 
