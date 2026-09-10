@@ -62,6 +62,8 @@ export interface Observation {
   meta?: Record<string, string | number | boolean>;
 }
 
+export type TrackLifecycle = "TENTATIVE" | "CONFIRMED" | "COASTING" | "STALE" | "EXPIRED";
+
 export interface TrackState {
   id: string;
   type: TrackType;
@@ -80,6 +82,11 @@ export interface TrackState {
   lastUpdated?: number;
   model?: string;
   callsign?: string;
+  lifecycle?: TrackLifecycle;
+  measuredSpeed?: number;
+  measuredAltitude?: number;
+  evidence?: string[];
+  propulsion?: string;
 }
 
 export interface UserLocation {

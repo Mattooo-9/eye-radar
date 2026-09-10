@@ -11,6 +11,9 @@ import type { Observation } from "./domain/types.js";
 import { parseOsintText } from "./ingest/osintParser.js";
 import { normalizeSdrPayload, type SdrPayload } from "./ingest/sdrGateway.js";
 import { AirplanesLiveSource } from "./sources/airplanesLive.js";
+import { OpenskyAdsbLolSource } from "./sources/openskyAdsbLol.js";
+import { LocalReceiverSource } from "./sources/localReceiver.js";
+import { toObservation } from "./domain/unifiedObservation.js";
 import { AlertsInUaSource } from "./sources/alertsInUa.js";
 import { FirmsThermalSource } from "./sources/firmsThermal.js";
 import { OpenMeteoWindSource } from "./sources/openMeteoWind.js";
@@ -36,6 +39,8 @@ const alertsSource = new AlertsInUaSource();
 const firmsSource = new FirmsThermalSource();
 const windSource = new OpenMeteoWindSource();
 const airplanesSource = new AirplanesLiveSource();
+const openskyLolSource = new OpenskyAdsbLolSource();
+const localReceiverSource = new LocalReceiverSource();
 const simulator = new AirspaceSimulator();
 simulator.setAlertsSource(alertsSource);
 const healthTracker = new SourceHealthTracker();
@@ -43,6 +48,8 @@ let simulationEnabled = true;
 
 healthTracker.registerSource("alerts.in.ua");
 healthTracker.registerSource("airplanes.live");
+healthTracker.registerSource("adsb.lol");
+healthTracker.registerSource("local.sdr");
 healthTracker.registerSource("open-meteo");
 healthTracker.registerSource("nasa-firms");
 healthTracker.registerSource("simulator");
@@ -490,6 +497,34 @@ setInterval(async () => {
       healthTracker.recordSuccess("airplanes.live", Date.now() - t0);
     } catch (err) {
       healthTracker.recordError("airplanes.live", err instanceof Error ? err : String(err));
+    }
+
+    // Secondary multi-corridor ADS-B & OpenSky feed
+    const tAdsb = Date.now();
+    try {
+      const flightObs = await openskyLolSource.fetchFlightObservations();
+      for (const fo of flightObs) {
+        trackManager.ingest(toObservation(fo));
+      }
+      healthTracker.recordSuccess("adsb.lol", Date.now() - tAdsb);
+    } catch (err) {
+      healthTracker.recordError("adsb.lol", err instanceof Error ? err : String(err));
+    }
+  }
+
+  // Poll Local SDR Receiver (dump1090/readsb) every 5 seconds if configured
+  if (cycleCounter === 1 || cycleCounter % 5 === 0) {
+    const tSdr = Date.now();
+    try {
+      const sdrObs = await localReceiverSource.fetchLocalReceiverData();
+      for (const so of sdrObs) {
+        trackManager.ingest(toObservation(so));
+      }
+      if (sdrObs.length > 0) {
+        healthTracker.recordSuccess("local.sdr", Date.now() - tSdr);
+      }
+    } catch (err) {
+      healthTracker.recordError("local.sdr", err instanceof Error ? err : String(err));
     }
   }
 

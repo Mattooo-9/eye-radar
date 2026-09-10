@@ -1,16 +1,19 @@
 import type { ImpactEvent, TrackType } from "../domain/types.js";
 
+export const IMPACT_TTL_MS = 60 * 60 * 1000;      // 60 minutes for impacts / explosions
+export const INTERCEPT_TTL_MS = 10 * 60 * 1000;   // 10 minutes for interceptions / shootdowns
+
 export class ImpactManager {
   private events: ImpactEvent[] = [];
-  private readonly maxEvents = 8;
-  private readonly retentionMs = 5 * 60 * 1000; // 5 minutes live display window
+  private readonly maxEvents = 60;
 
   recordEvent(event: ImpactEvent): void {
-    // Avoid dropping duplicate badges directly on top of recent nearby events
+    // Avoid dropping duplicate badges directly on top of recent nearby events within 2 minutes
     const isDuplicate = this.events.some(
       (e) =>
-        Math.hypot(e.lat - event.lat, e.lon - event.lon) < 0.12 &&
-        Math.abs(e.timestamp - event.timestamp) < 5 * 60 * 1000
+        Math.hypot(e.lat - event.lat, e.lon - event.lon) < 0.05 &&
+        Math.abs(e.timestamp - event.timestamp) < 2 * 60 * 1000 &&
+        e.type === event.type
     );
     if (isDuplicate) return;
 
@@ -44,9 +47,11 @@ export class ImpactManager {
     return event;
   }
 
-  getRecentEvents(maxAgeMs = this.retentionMs): ImpactEvent[] {
-    const cutoff = Date.now() - maxAgeMs;
-    this.events = this.events.filter((e) => e.timestamp >= cutoff);
+  getRecentEvents(now = Date.now()): ImpactEvent[] {
+    this.events = this.events.filter((e) => {
+      const ttl = e.type === "impact" ? IMPACT_TTL_MS : INTERCEPT_TTL_MS;
+      return now - e.timestamp <= ttl;
+    });
     return [...this.events];
   }
 

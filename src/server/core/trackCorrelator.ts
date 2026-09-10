@@ -4,13 +4,35 @@ import type { Observation, TrackState } from "../domain/types.js";
 export interface CorrelationMatch {
   matchedTrackId: string | null;
   confidenceBonus: number;
+  mahalanobisDistance?: number;
 }
 
 export class TrackCorrelator {
   private readonly maxAssociationDistanceMeters: number;
+  private readonly chiSquareGateThreshold = 9.21; // 99% confidence threshold for 2-DOF chi-square distribution
 
   constructor(maxAssociationDistanceMeters = 35_000) {
     this.maxAssociationDistanceMeters = maxAssociationDistanceMeters;
+  }
+
+  /**
+   * Calculates Mahalanobis distance between track state and new observation
+   */
+  calculateMahalanobisDistance(track: TrackState, obs: Observation): number {
+    const latMeters = (obs.lat - track.lat) * 111_139;
+    const lonMeters = (obs.lon - track.lon) * 111_139 * Math.cos((track.lat * Math.PI) / 180);
+
+    // Track uncertainty in meters squared
+    const trackVarMetersSq = Math.max(200 ** 2, (track.uncertaintyRadius || 500) ** 2);
+    // Observation measurement accuracy in meters squared
+    const obsAccuracy = typeof obs.meta?.measurement_accuracy === "number"
+      ? (obs.meta.measurement_accuracy as number)
+      : 500;
+    const obsVarMetersSq = Math.max(50 ** 2, obsAccuracy ** 2);
+
+    const totalVar = trackVarMetersSq + obsVarMetersSq;
+    const dSq = (latMeters ** 2 + lonMeters ** 2) / totalVar;
+    return Math.sqrt(dSq);
   }
 
   findBestMatch(
@@ -20,11 +42,12 @@ export class TrackCorrelator {
     // If observation explicitly specifies an existing ID, check if it exists
     const directMatch = activeTracks.find((t) => t.id === observation.id);
     if (directMatch) {
-      return { matchedTrackId: directMatch.id, confidenceBonus: 0.1 };
+      return { matchedTrackId: directMatch.id, confidenceBonus: 0.1, mahalanobisDistance: 0 };
     }
 
     let bestTrack: TrackState | null = null;
     let minDistance = Infinity;
+    let bestMahalanobis = Infinity;
 
     for (const track of activeTracks) {
       // Don't correlate if types are fundamentally incompatible (e.g. aircraft vs munition)
@@ -39,27 +62,41 @@ export class TrackCorrelator {
       const distance = haversineMeters(track.lat, track.lon, observation.lat, observation.lon);
       const timeDiffSec = Math.abs(observation.timestamp - track.timestamp) / 1000;
 
-      // Allow distance gating to expand proportionally with target speed and time delta
+      // Spatial gating threshold based on speed and time delta
       const allowedGate = Math.max(
         this.maxAssociationDistanceMeters,
         (track.speed || 50) * timeDiffSec + 10_000
       );
 
-      if (distance < allowedGate && distance < minDistance) {
-        // If both have heading, check directional compatibility
-        if (
-          typeof observation.heading === "number" &&
-          typeof track.heading === "number"
-        ) {
-          const headingDiff = Math.abs(observation.heading - track.heading);
-          const normalizedDiff = Math.min(headingDiff, 360 - headingDiff);
-          if (normalizedDiff > 70) {
-            // Divergent headings; likely different objects
-            continue;
-          }
-        }
+      if (distance > allowedGate) {
+        continue;
+      }
 
+      // Check Mahalanobis distance gating (ellipsoid containment)
+      const mahaDist = this.calculateMahalanobisDistance(track, observation);
+      const mahaSq = mahaDist ** 2;
+
+      // Reject if outside dynamic chi-square gate (unless initial fast expanding track)
+      if (timeDiffSec < 10 && mahaSq > this.chiSquareGateThreshold * 2.5) {
+        continue;
+      }
+
+      // If both have heading, check directional compatibility
+      if (
+        typeof observation.heading === "number" &&
+        typeof track.heading === "number"
+      ) {
+        const headingDiff = Math.abs(observation.heading - track.heading);
+        const normalizedDiff = Math.min(headingDiff, 360 - headingDiff);
+        if (normalizedDiff > 70) {
+          // Divergent headings; likely different objects
+          continue;
+        }
+      }
+
+      if (distance < minDistance) {
         minDistance = distance;
+        bestMahalanobis = mahaDist;
         bestTrack = track;
       }
     }
@@ -71,7 +108,8 @@ export class TrackCorrelator {
 
       return {
         matchedTrackId: bestTrack.id,
-        confidenceBonus
+        confidenceBonus,
+        mahalanobisDistance: Math.round(bestMahalanobis * 100) / 100
       };
     }
 

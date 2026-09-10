@@ -101,11 +101,16 @@ const drawImpactEvent = (
 ) => {
   const isImpact = event.type === "impact";
   const elapsedMs = Math.max(0, now - event.timestamp);
+  const maxTtlMs = isImpact ? 60 * 60 * 1000 : 10 * 60 * 1000; // Impacts 60m, Intercepts 10m
 
-  // Drop events older than 5 minutes from the live map to prevent clutter
-  if (elapsedMs > 5 * 60 * 1000) return;
+  // Drop events older than their respective TTL
+  if (elapsedMs > maxTtlMs) return;
+
+  const decayProgress = elapsedMs / maxTtlMs;
+  const visualAlpha = Math.max(0.3, 1 - decayProgress * 0.7);
 
   ctx.save();
+  ctx.globalAlpha = visualAlpha;
 
   // 1. Brief subtle shockwave ring ONLY for brand new events (< 6 seconds old)
   if (elapsedMs < 6_000) {

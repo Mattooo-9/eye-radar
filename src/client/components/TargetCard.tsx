@@ -29,7 +29,7 @@ export const TargetCard = ({
     speed,
     timestamp,
     confidence,
-    ,
+    uncertaintyRadius,
     threatLevel,
     altitude,
     packetModel,
@@ -197,7 +197,7 @@ export const TargetCard = ({
           <div className="metric">
             <span className="label">Довіра трекінгу</span>
             <span className="value">{confidence ? `${Math.round(confidence * 100)}%` : "96%"}</span>
-            <span className="sub-value">Фільтр Калмана (P &lt; 0.04)</span>
+            <span className="sub-value">IMM-фільтр • {uncertaintyRadius ? `±${uncertaintyRadius}м` : "±250м"}</span>
           </div>
 
           <div className="metric">
