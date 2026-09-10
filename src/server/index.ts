@@ -296,7 +296,37 @@ const server = createServer(async (req, res) => {
         }
       };
 
-      if (reportType.includes("explosion") || reportType.includes("munition") || (parsed.comment && (parsed.comment.includes("вибух") || parsed.comment.includes("приліт")))) {
+      const lowerComment = (parsed.comment || "").toLowerCase();
+      const isIntercept =
+        reportType.includes("air_defense") ||
+        reportType.includes("intercept") ||
+        lowerComment.includes("збито") ||
+        lowerComment.includes("збили") ||
+        lowerComment.includes("ппо") ||
+        lowerComment.includes("перехоп") ||
+        lowerComment.includes("мінус");
+
+      const isImpact =
+        reportType.includes("explosion") ||
+        reportType.includes("impact") ||
+        lowerComment.includes("вибух") ||
+        lowerComment.includes("приліт") ||
+        lowerComment.includes("влучання") ||
+        lowerComment.includes("детонація") ||
+        lowerComment.includes("пожежа");
+
+      if (isIntercept) {
+        impactManager.createAndRecord(
+          "intercept",
+          lat,
+          lon,
+          isMunition ? "Крилата ракета" : "БПЛА-камікадзе",
+          isMunition ? "munition" : "uav",
+          "За рапортом очевидця",
+          parsed.comment || "Успішне перехоплення мобільною вогневою групою / підрозділом ППО"
+        );
+        hub.broadcastImpacts(impactManager.getRecentEvents());
+      } else if (isImpact) {
         impactManager.createAndRecord(
           "impact",
           lat,
@@ -304,7 +334,7 @@ const server = createServer(async (req, res) => {
           isMunition ? "Крилата/Балістична ракета" : "БПЛА-камікадзе",
           isMunition ? "munition" : "uav",
           "За рапортом очевидця",
-          parsed.comment || "Громадянський акустичний рапорт про вибух / приліт"
+          parsed.comment || "Зафіксовано вибух / влучання на місцевості"
         );
         hub.broadcastImpacts(impactManager.getRecentEvents());
       }

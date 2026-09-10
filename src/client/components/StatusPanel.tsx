@@ -213,7 +213,7 @@ export const StatusPanel = ({
                       <div className="threat-item-left">
                         <span className={`threat-dot ${type}`} />
                         <span className="threat-item-name">{name}</span>
-                        <span className="threat-item-speed">{speedKmh} км/г</span>
+                        <span className="threat-item-speed">{speedKmh} км/год</span>
                       </div>
                       <div className="threat-item-right">
                         {distKm !== null && <span className="threat-item-dist">{distKm} км</span>}

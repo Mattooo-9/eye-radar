@@ -140,7 +140,7 @@ const drawImpactEvent = (
 
   // 3. Label Pill
   const minAgo = Math.max(1, Math.round(elapsedMs / 60000));
-  const timeText = minAgo < 60 ? `${minAgo}м тому` : `${Math.floor(minAgo / 60)}г тому`;
+  const timeText = elapsedMs < 60000 ? "< 1 хв тому" : minAgo < 60 ? `${minAgo} хв тому` : `${Math.floor(minAgo / 60)} год тому`;
   const label = isImpact ? `💥 ПРИЛІТ (${timeText})` : `🛡️ ЗБИТТЯ (${timeText})`;
 
   ctx.font = "bold 10px Inter, system-ui, sans-serif";
@@ -747,25 +747,37 @@ const drawMilitaryCalloutPill = (
   const screenH = ctx.canvas.height / ratio;
 
   const text = showAlt
-    ? `${modelName} • ${speedKmh} км/г • ${altStr}`
-    : `${modelName} • ${speedKmh} км/г`;
+    ? `${modelName} • ${speedKmh} км/год • ${altStr}`
+    : `${modelName} • ${speedKmh} км/год`;
 
   ctx.font = "bold 10px Inter, -apple-system, system-ui, sans-serif";
   const metrics = ctx.measureText(text);
   const pillW = Math.max(85, Math.ceil(metrics.width) + 18);
   const pillH = 18;
 
-  // Anti-collision candidate slots around target center
-  const candidates: Array<{ x: number; y: number }> = [
-    { x: targetX + 14, y: Math.round(targetY - pillH / 2) }, // Right
-    { x: targetX + 14, y: Math.round(targetY - pillH / 2 - 20) }, // Right-Up
-    { x: targetX + 14, y: Math.round(targetY - pillH / 2 + 20) }, // Right-Down
-    { x: targetX - pillW - 14, y: Math.round(targetY - pillH / 2) }, // Left
-    { x: targetX - pillW - 14, y: Math.round(targetY - pillH / 2 - 20) }, // Left-Up
-    { x: targetX - pillW - 14, y: Math.round(targetY - pillH / 2 + 20) }, // Left-Down
-    { x: Math.round(targetX - pillW / 2), y: targetY - pillH - 12 }, // Top
-    { x: Math.round(targetX - pillW / 2), y: targetY + 14 } // Bottom
-  ];
+  // Anti-collision candidate slots prioritizing screen interior to prevent clipping
+  const isRightHalf = targetX > screenW * 0.55;
+  const candidates: Array<{ x: number; y: number }> = isRightHalf
+    ? [
+        { x: targetX - pillW - 14, y: Math.round(targetY - pillH / 2) }, // Left
+        { x: targetX - pillW - 14, y: Math.round(targetY - pillH / 2 - 20) }, // Left-Up
+        { x: targetX - pillW - 14, y: Math.round(targetY - pillH / 2 + 20) }, // Left-Down
+        { x: Math.round(targetX - pillW / 2), y: targetY - pillH - 12 }, // Top
+        { x: Math.round(targetX - pillW / 2), y: targetY + 14 }, // Bottom
+        { x: targetX + 14, y: Math.round(targetY - pillH / 2) }, // Right
+        { x: targetX + 14, y: Math.round(targetY - pillH / 2 - 20) }, // Right-Up
+        { x: targetX + 14, y: Math.round(targetY - pillH / 2 + 20) } // Right-Down
+      ]
+    : [
+        { x: targetX + 14, y: Math.round(targetY - pillH / 2) }, // Right
+        { x: targetX + 14, y: Math.round(targetY - pillH / 2 - 20) }, // Right-Up
+        { x: targetX + 14, y: Math.round(targetY - pillH / 2 + 20) }, // Right-Down
+        { x: Math.round(targetX - pillW / 2), y: targetY - pillH - 12 }, // Top
+        { x: Math.round(targetX - pillW / 2), y: targetY + 14 }, // Bottom
+        { x: targetX - pillW - 14, y: Math.round(targetY - pillH / 2) }, // Left
+        { x: targetX - pillW - 14, y: Math.round(targetY - pillH / 2 - 20) }, // Left-Up
+        { x: targetX - pillW - 14, y: Math.round(targetY - pillH / 2 + 20) } // Left-Down
+      ];
 
   let chosenX = candidates[0].x;
   let chosenY = candidates[0].y;
@@ -785,7 +797,12 @@ const drawMilitaryCalloutPill = (
     }
   }
 
+  // If all candidates collide with existing pills, do not draw overlapping clutter
   if (!foundNonColliding) {
+    if (placedBoxes.length > 0) {
+      ctx.restore();
+      return;
+    }
     chosenX = Math.max(6, Math.min(screenW - pillW - 6, candidates[0].x));
     chosenY = Math.max(6, Math.min(screenH - pillH - 6, candidates[0].y));
   }
@@ -1331,18 +1348,9 @@ export const MapView = ({
       let minDistance = 38;
 
       for (const packet of packetsRef.current) {
-        const [, type, lat, lon, heading, speed, timestamp, , , , altitude] = packet;
-        const elapsedSeconds = Math.max(0, (Date.now() - timestamp) / 1000);
-        const predicted = destinationPoint({ lat, lon }, heading, speed * elapsedSeconds);
-        const ground = map.project([predicted.lon, predicted.lat]);
-
-        const effAlt = altitude ?? (type === "aircraft" ? 9800 : type === "helicopter" ? 750 : 250);
-        const altElev = Math.min(54, (effAlt / 1000) * (currentZoom * 0.7));
-        const airPoint = { x: ground.x, y: ground.y - altElev };
-
-        const distAir = Math.hypot(airPoint.x - clickX, airPoint.y - clickY);
-        const distGround = Math.hypot(ground.x - clickX, ground.y - clickY);
-        const dist = Math.min(distAir, distGround);
+        const [, , lat, lon] = packet;
+        const ground = map.project([lon, lat]);
+        const dist = Math.hypot(ground.x - clickX, ground.y - clickY);
 
         if (dist < minDistance) {
           minDistance = dist;
@@ -1600,24 +1608,12 @@ export const MapView = ({
             if (type === "helicopter" && (currentFilters.helicopter !== undefined ? !currentFilters.helicopter : !currentFilters.aircraft)) continue;
           }
 
-          // Capped dead reckoning strictly prevents coordinate drift across network latency
-          const elapsedSeconds = Math.min(4, Math.max(0, (now - timestamp) / 1000));
-          const headingRad = (heading * Math.PI) / 180;
-          const latRad = (lat * Math.PI) / 180;
-          const cosLat = Math.cos(latRad);
-          const metersPerDegLat = 111139;
-          const metersPerDegLon = metersPerDegLat * (cosLat > 0.05 ? cosLat : 0.05);
-
-          const vxMps = Math.sin(headingRad) * speed;
-          const vyMps = Math.cos(headingRad) * speed;
-
-          const predLat = lat + (vyMps * elapsedSeconds) / metersPerDegLat;
-          const predLon = lon + (vxMps * elapsedSeconds) / metersPerDegLon;
-          const groundPoint = map.project([predLon, predLat]);
+          // Exact physical ground coordinates anchored directly to geographic location
+          const groundPoint = map.project([lon, lat]);
 
           // Real-time camera target lock & tracking
           if (followingTargetIdRef.current && followingTargetIdRef.current === id) {
-            map.easeTo({ center: [predLon, predLat], duration: 80, easing: (t) => t });
+            map.easeTo({ center: [lon, lat], duration: 80, easing: (t) => t });
           }
 
           if (
@@ -1629,48 +1625,31 @@ export const MapView = ({
             continue;
           }
 
-          // Geometrically proportionate scale strictly preventing map obstruction on regional views
+          // Geometrical scale strictly calibrated for clutter-free rendering at all scales
           const scale =
-            zoom < 7.0
-              ? 16.5
-              : zoom < 10.0
-              ? 18.0 + (zoom - 7.0) * 2.2
-              : zoom < 14.0
-              ? 25.0 + (zoom - 10.0) * 3.5
-              : Math.min(84, 38.0 + (zoom - 14.0) * 8.0);
-
-          // 3D Altitude perspective offset & Ground terrain projection
-          const effectiveAltM =
-            altitude !== undefined && altitude !== null
-              ? altitude
-              : type === "aircraft"
-              ? 9800
-              : type === "helicopter"
-              ? 750
-              : type === "munition"
-              ? 450
-              : 180;
+            zoom < 6.5
+              ? 15.0
+              : zoom < 8.5
+              ? 17.0 + (zoom - 6.5) * 2.0
+              : zoom < 12.0
+              ? 21.0 + (zoom - 8.5) * 2.8
+              : Math.min(68, 31.0 + (zoom - 12.0) * 5.5);
 
           // Subpixel-locked target coordinates directly anchored to geographic ground coordinates
           const targetX = groundPoint.x;
           const targetY = groundPoint.y;
 
-          // Geographically synchronized forward projection vector
-          const futureSec = Math.max(15, Math.min(90, 450 / Math.max(1, zoom)));
-          const futLat = predLat + (vyMps * futureSec) / metersPerDegLat;
-          const futLon = predLon + (vxMps * futureSec) / metersPerDegLon;
-          const futureProj = map.project([futLon, futLat]);
-
-          // Screen heading strictly matching the projected vector on camera
-          const vDx = futureProj.x - targetX;
-          const vDy = futureProj.y - targetY;
-          const vDist = Math.hypot(vDx, vDy);
-          const screenHeadingDeg = vDist > 0.5 ? (Math.atan2(vDx, -vDy) * 180) / Math.PI : heading;
+          // Camera-adjusted true flight heading (0° = North/Up, 90° = East/Right, 180° = South/Down, 270° = West/Left)
+          const mapBearing = map.getBearing() || 0;
+          const screenHeadingDeg = (heading - mapBearing + 360) % 360;
+          const headingRad = (screenHeadingDeg * Math.PI) / 180;
+          const fwdX = Math.sin(headingRad);
+          const fwdY = -Math.cos(headingRad);
 
           // Scale Level-of-Detail (LOD)
           const isSelected = Boolean(currentSelected && currentSelected[0] === id);
           const isHighThreat = type === "uav" || type === "munition";
-          const isLowZoom = zoom < 5.0;
+          const isLowZoom = zoom < 4.8;
 
           let color = "#7dd3fc";
           if (type === "uav") color = "#ef4444";
@@ -1720,11 +1699,40 @@ export const MapView = ({
             drawGroundReticle(ctx, targetX, targetY, isHighThreat, now);
           }
 
-          // Subtle uncertainty cone ONLY on selected targets or high zoom (never blocking whole regions)
-          if ((isSelected || zoom >= 11) && speed > 5) {
-            drawUncertaintyCone(ctx, targetX, targetY, screenHeadingDeg, Math.min(36, vDist * 0.8));
+          // Forward flight trajectory vector (aligned colinearly with silhouette nose)
+          if (speed > 5) {
+            const vectorLen = zoom < 6.5 ? 26 : zoom < 9 ? 38 : 54;
+            const tipX = targetX + fwdX * vectorLen;
+            const tipY = targetY + fwdY * vectorLen;
+
+            ctx.save();
+            ctx.strokeStyle = color;
+            ctx.lineWidth = zoom >= 10 ? 1.8 : 1.3;
+            ctx.setLineDash([4, 3]);
+            ctx.beginPath();
+            ctx.moveTo(targetX, targetY);
+            ctx.lineTo(tipX, tipY);
+            ctx.stroke();
+
+            // Waypoint tick dot at tip
+            ctx.beginPath();
+            ctx.arc(tipX, tipY, 2.2, 0, Math.PI * 2);
+            ctx.fillStyle = color;
+            ctx.fill();
+
+            // Estimated 2-minute distance crosshair tick
+            const midX = targetX + fwdX * (vectorLen * 0.55);
+            const midY = targetY + fwdY * (vectorLen * 0.55);
+            const tickNormX = -fwdY * 3.5;
+            const tickNormY = fwdX * 3.5;
+            ctx.beginPath();
+            ctx.moveTo(midX - tickNormX, midY - tickNormY);
+            ctx.lineTo(midX + tickNormX, midY + tickNormY);
+            ctx.stroke();
+            ctx.restore();
           }
 
+          // 2. Draw Military Silhouette strictly pointing in flight direction
           if (type === "uav") {
             drawUavSilhouette(ctx, targetX, targetY, scale, screenHeadingDeg, color, now, packetModel);
           } else if (type === "munition") {
@@ -1735,25 +1743,17 @@ export const MapView = ({
             drawAircraftSilhouette(ctx, targetX, targetY, scale, screenHeadingDeg, color, now);
           }
 
-          // Geographically synchronized velocity vector with 5-minute waypoint tick
-          if (speed > 5 && vDist > 2) {
-            ctx.save();
-            ctx.strokeStyle = color;
-            ctx.lineWidth = zoom >= 10 ? 1.8 : 1.2;
-            ctx.setLineDash([3, 3]);
-            ctx.beginPath();
-            ctx.moveTo(targetX, targetY);
-            ctx.lineTo(futureProj.x, futureProj.y);
-            ctx.stroke();
-
-            ctx.beginPath();
-            ctx.arc(futureProj.x, futureProj.y, 2, 0, Math.PI * 2);
-            ctx.fillStyle = color;
-            ctx.fill();
-            ctx.restore();
-          }
-
           // Target Tag & Telemetry: Crisp Military Pill or Selected Tactical Glass HUD Badge
+          const effectiveAltM =
+            altitude !== undefined && altitude !== null
+              ? altitude
+              : type === "aircraft"
+              ? 9800
+              : type === "helicopter"
+              ? 750
+              : type === "munition"
+              ? 450
+              : 180;
           const speedKmh = Math.round(speed * 3.6);
           const altMsl = effectiveAltM >= 1000 ? `${(effectiveAltM / 1000).toFixed(1)} км` : `${Math.round(effectiveAltM)} м`;
 
@@ -1771,7 +1771,7 @@ export const MapView = ({
               : "🔵 СУ-34М (АВІАЦІЯ)";
             const speedKnots = Math.round(speed * 1.94384);
             const altFt = Math.round(effectiveAltM * 3.28084);
-            const landmark = findNearestLandmark(predLat, predLon);
+            const landmark = findNearestLandmark(lat, lon);
             drawTacticalGlassBadge(
               ctx,
               targetX,
@@ -1785,7 +1785,7 @@ export const MapView = ({
               landmark,
               isHighThreat
             );
-          } else if (isHighThreat || zoom >= 6.8 || (zoom >= 4.8 && !id.startsWith("adsb-"))) {
+          } else if (zoom >= 6.8 || (zoom >= 4.8 && isHighThreat)) {
             const shortName = packetModel
               ? packetModel.replace(" Cruise Missile", "").replace(" Fighting Falcon", "").replace(" Fulcrum", "")
               : type === "uav"
@@ -1826,9 +1826,17 @@ export const MapView = ({
               const waypoints = [300, 600, 900];
               const wpCoords: Array<{ x: number; y: number; min: number }> = [];
 
+              const headingRadGeo = (heading * Math.PI) / 180;
+              const latRadGeo = (lat * Math.PI) / 180;
+              const cosLatGeo = Math.cos(latRadGeo);
+              const mLat = 111139;
+              const mLon = mLat * (cosLatGeo > 0.05 ? cosLatGeo : 0.05);
+              const vx = Math.sin(headingRadGeo) * speed;
+              const vy = Math.cos(headingRadGeo) * speed;
+
               for (const sec of waypoints) {
-                const wpLat = predLat + (vyMps * sec) / metersPerDegLat;
-                const wpLon = predLon + (vxMps * sec) / metersPerDegLon;
+                const wpLat = lat + (vy * sec) / mLat;
+                const wpLon = lon + (vx * sec) / mLon;
                 const wpProj = map.project([wpLon, wpLat]);
                 ctx.lineTo(wpProj.x, wpProj.y);
                 wpCoords.push({ x: wpProj.x, y: wpProj.y, min: sec / 60 });

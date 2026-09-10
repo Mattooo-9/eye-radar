@@ -128,7 +128,7 @@ export const TacticalParamsModal = ({
             <div className="param-title-row">
               <label className="param-title">ШВИДКІСТЬ ЦІЛЕЙ (КМ/ГОД)</label>
               <span className="param-value-tag">
-                {filters.minSpeedKmh} – {filters.maxSpeedKmh >= 1500 ? "1500+ км/г" : `${filters.maxSpeedKmh} км/г`}
+                {filters.minSpeedKmh} – {filters.maxSpeedKmh >= 1500 ? "1500+ км/год" : `${filters.maxSpeedKmh} км/год`}
               </span>
             </div>
 

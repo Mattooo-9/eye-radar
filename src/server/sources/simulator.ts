@@ -37,6 +37,33 @@ interface RegionCorridor {
   model: string;
 }
 
+function formatOblastTitle(keyword?: string): string {
+  if (!keyword) return "Україна";
+  const map: Record<string, string> = {
+    "київ": "Київська область",
+    "чернігів": "Чернігівська область",
+    "сум": "Сумська область",
+    "харків": "Харківська область",
+    "дніпро": "Дніпропетровська область",
+    "запоріж": "Запорізька область",
+    "донець": "Донецька область",
+    "луган": "Луганська область",
+    "полтав": "Полтавська область",
+    "черкас": "Черкаська область",
+    "кіровоград": "Кіровоградська область",
+    "одес": "Одеська область",
+    "миколаїв": "Миколаївська область",
+    "херсон": "Херсонська область",
+    "вінниць": "Вінницька область",
+    "житомир": "Житомирська область",
+    "хмельницьк": "Хмельницька область",
+    "рівнен": "Рівненська область",
+    "волин": "Волинська область",
+    "львів": "Львівська область"
+  };
+  return map[keyword] || `${keyword.charAt(0).toUpperCase() + keyword.slice(1)} область`;
+}
+
 const REGION_CORRIDORS: RegionCorridor[] = [
   {
     regionKeyword: "київ",
@@ -189,16 +216,181 @@ const REGION_CORRIDORS: RegionCorridor[] = [
     model: "Kh-101 Cruise Missile"
   },
   {
-    regionKeyword: "луган",
+    regionKeyword: "полтав",
+    type: "uav",
+    minLat: 49.3,
+    maxLat: 49.9,
+    minLon: 34.2,
+    maxLon: 35.1,
+    headingMin: 225,
+    headingMax: 255,
+    speedKmhMin: 180,
+    speedKmhMax: 192,
+    altitudeMin: 150,
+    altitudeMax: 230,
+    model: "Shahed-136"
+  },
+  {
+    regionKeyword: "черкас",
+    type: "uav",
+    minLat: 49.1,
+    maxLat: 49.7,
+    minLon: 31.8,
+    maxLon: 32.6,
+    headingMin: 250,
+    headingMax: 280,
+    speedKmhMin: 180,
+    speedKmhMax: 195,
+    altitudeMin: 160,
+    altitudeMax: 240,
+    model: "Shahed-136"
+  },
+  {
+    regionKeyword: "кіровоград",
+    type: "uav",
+    minLat: 48.3,
+    maxLat: 48.8,
+    minLon: 31.9,
+    maxLon: 32.6,
+    headingMin: 280,
+    headingMax: 310,
+    speedKmhMin: 178,
+    speedKmhMax: 190,
+    altitudeMin: 140,
+    altitudeMax: 220,
+    model: "Shahed-136"
+  },
+  {
+    regionKeyword: "одес",
+    type: "uav",
+    minLat: 46.2,
+    maxLat: 46.8,
+    minLon: 30.4,
+    maxLon: 31.2,
+    headingMin: 325,
+    headingMax: 355,
+    speedKmhMin: 182,
+    speedKmhMax: 195,
+    altitudeMin: 120,
+    altitudeMax: 200,
+    model: "Shahed-136"
+  },
+  {
+    regionKeyword: "миколаїв",
+    type: "uav",
+    minLat: 46.8,
+    maxLat: 47.3,
+    minLon: 31.8,
+    maxLon: 32.6,
+    headingMin: 330,
+    headingMax: 360,
+    speedKmhMin: 180,
+    speedKmhMax: 194,
+    altitudeMin: 130,
+    altitudeMax: 210,
+    model: "Shahed-136"
+  },
+  {
+    regionKeyword: "херсон",
+    type: "uav",
+    minLat: 46.5,
+    maxLat: 47.0,
+    minLon: 32.5,
+    maxLon: 33.5,
+    headingMin: 310,
+    headingMax: 340,
+    speedKmhMin: 178,
+    speedKmhMax: 190,
+    altitudeMin: 110,
+    altitudeMax: 190,
+    model: "Shahed-136"
+  },
+  {
+    regionKeyword: "вінниць",
+    type: "uav",
+    minLat: 49.0,
+    maxLat: 49.5,
+    minLon: 28.2,
+    maxLon: 29.0,
+    headingMin: 270,
+    headingMax: 300,
+    speedKmhMin: 180,
+    speedKmhMax: 192,
+    altitudeMin: 170,
+    altitudeMax: 250,
+    model: "Shahed-136"
+  },
+  {
+    regionKeyword: "житомир",
+    type: "uav",
+    minLat: 50.1,
+    maxLat: 50.6,
+    minLon: 28.5,
+    maxLon: 29.2,
+    headingMin: 250,
+    headingMax: 275,
+    speedKmhMin: 180,
+    speedKmhMax: 192,
+    altitudeMin: 150,
+    altitudeMax: 230,
+    model: "Shahed-136"
+  },
+  {
+    regionKeyword: "хмельницьк",
     type: "munition",
-    minLat: 48.6,
-    maxLat: 49.2,
-    minLon: 38.5,
-    maxLon: 39.5,
-    headingMin: 260,
-    headingMax: 285,
-    speedKmhMin: 850,
+    minLat: 49.3,
+    maxLat: 49.8,
+    minLon: 26.8,
+    maxLon: 27.5,
+    headingMin: 270,
+    headingMax: 295,
+    speedKmhMin: 860,
     speedKmhMax: 900,
+    altitudeMin: 80,
+    altitudeMax: 130,
+    model: "Kh-101 Cruise Missile"
+  },
+  {
+    regionKeyword: "рівнен",
+    type: "uav",
+    minLat: 50.5,
+    maxLat: 51.0,
+    minLon: 26.0,
+    maxLon: 26.6,
+    headingMin: 265,
+    headingMax: 290,
+    speedKmhMin: 180,
+    speedKmhMax: 194,
+    altitudeMin: 150,
+    altitudeMax: 220,
+    model: "Shahed-136"
+  },
+  {
+    regionKeyword: "волин",
+    type: "uav",
+    minLat: 50.7,
+    maxLat: 51.2,
+    minLon: 25.1,
+    maxLon: 25.7,
+    headingMin: 270,
+    headingMax: 300,
+    speedKmhMin: 180,
+    speedKmhMax: 192,
+    altitudeMin: 160,
+    altitudeMax: 240,
+    model: "Shahed-136"
+  },
+  {
+    regionKeyword: "львів",
+    type: "munition",
+    minLat: 49.7,
+    maxLat: 50.1,
+    minLon: 23.8,
+    maxLon: 24.5,
+    headingMin: 275,
+    headingMax: 305,
+    speedKmhMin: 870,
+    speedKmhMax: 920,
     altitudeMin: 70,
     altitudeMax: 120,
     model: "Kh-101 Cruise Missile"
@@ -240,15 +432,16 @@ export class AirspaceSimulator {
         // If target reached terminal destination: record impact or interception & DELETE IMMEDIATELY
         if (ageSec >= track.maxLifetimeSec) {
           const isIntercept = Math.random() < 0.78;
+          const regionName = formatOblastTitle(track.assignedRegion);
           impactManager.createAndRecord(
             isIntercept ? "intercept" : "impact",
             track.lat,
             track.lon,
             track.model,
             track.type,
-            track.assignedRegion ?? "Україна",
+            regionName,
             isIntercept
-              ? `Успішне перехоплення мобільною вогневою групою / ППО: ${track.model}`
+              ? `Успішне перехоплення мобільною вогневою групою / підрозділом ППО: ${track.model}`
               : `Зафіксовано влучання / детонацію боєприпасу: ${track.model}`
           );
           this.tracks.delete(id);

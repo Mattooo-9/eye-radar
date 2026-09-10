@@ -8,7 +8,13 @@ interface CitizenReportModalProps {
   onClose: () => void;
 }
 
-type ReportCategory = "uav_sound" | "munition_visual" | "explosion" | "visual";
+type ReportCategory =
+  | "uav_sound"
+  | "munition_visual"
+  | "air_defense_intercept"
+  | "ground_explosion_impact"
+  | "explosion"
+  | "visual";
 type DirectionType = "N" | "NE" | "E" | "SE" | "S" | "SW" | "W" | "NW";
 
 export const CitizenReportModal = ({
@@ -145,16 +151,31 @@ export const CitizenReportModal = ({
 
                 <button
                   type="button"
-                  className={`category-card ${category === "explosion" ? "active" : ""}`}
+                  className={`category-card ${category === "air_defense_intercept" ? "active" : ""}`}
                   onClick={() => {
                     triggerHaptic();
-                    setCategory("explosion");
+                    setCategory("air_defense_intercept");
+                  }}
+                >
+                  <span className="cat-icon">🛡️</span>
+                  <div className="cat-info">
+                    <strong className="cat-name">Робота ППО / Збиття</strong>
+                    <span className="cat-sub">Мобільна вогнева група, перехоплення цілі</span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  className={`category-card ${category === "ground_explosion_impact" ? "active" : ""}`}
+                  onClick={() => {
+                    triggerHaptic();
+                    setCategory("ground_explosion_impact");
                   }}
                 >
                   <span className="cat-icon">💥</span>
                   <div className="cat-info">
-                    <strong className="cat-name">Вибух / ППО</strong>
-                    <span className="cat-sub">Акустичний вибух, перехоплення</span>
+                    <strong className="cat-name">Вибух / Приліт</strong>
+                    <span className="cat-sub">Детонація боєприпасу, влучання на місцевості</span>
                   </div>
                 </button>
 
