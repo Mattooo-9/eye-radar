@@ -55,6 +55,9 @@ export const drawNightCityLights = (
   if (nightFactor <= 0.05) return;
 
   const zoom = map.getZoom();
+  // Regional city bloom is only relevant on regional view; skip at local zoom to save GPU
+  if (zoom > 8.0) return;
+
   ctx.save();
 
   // Natural radial urban illumination glow

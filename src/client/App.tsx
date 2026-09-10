@@ -62,7 +62,7 @@ export const App = () => {
   const [briefingOpen, setBriefingOpen] = useState(false);
   const [selectedCityName, setSelectedCityName] = useState<string>("");
   const [activeAlerts, setActiveAlerts] = useState<string[]>([]);
-  const [showWeather, setShowWeather] = useState(true);
+  const [showWeather, setShowWeather] = useState(false);
   const [showSatellites, setShowSatellites] = useState(true);
   const [followedTargetId, setFollowedTargetId] = useState<string | null>(null);
   const [alertsModalOpen, setAlertsModalOpen] = useState(false);

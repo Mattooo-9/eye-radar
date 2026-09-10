@@ -50,7 +50,7 @@ const SATELLITE_STYLE = {
         "https://mt3.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
       ],
       tileSize: 256,
-      maxzoom: 20
+      maxzoom: 19
     }
   },
   layers: [
@@ -889,6 +889,14 @@ const drawMilitaryCalloutPill = (
 const syncWeatherLayer = async (map: maplibregl.Map, visible: boolean) => {
   try {
     if (!map || !map.isStyleLoaded()) return;
+
+    if (!visible) {
+      if (map.getLayer("rainviewer-radar-layer")) {
+        map.setLayoutProperty("rainviewer-radar-layer", "visibility", "none");
+      }
+      return;
+    }
+
     const tileUrl = await getLiveWeatherRadarTileUrl();
     if (!tileUrl || !map || !map.isStyleLoaded()) return;
 
@@ -897,7 +905,8 @@ const syncWeatherLayer = async (map: maplibregl.Map, visible: boolean) => {
         type: "raster",
         tiles: [tileUrl],
         tileSize: 256,
-        attribution: "RainViewer"
+        minzoom: 0,
+        maxzoom: 6 // RainViewer only serves radar up to zoom 6/7; higher requests return "Zoom Level Not Supported" tiles!
       });
     }
 
@@ -908,12 +917,13 @@ const syncWeatherLayer = async (map: maplibregl.Map, visible: boolean) => {
           id: "rainviewer-radar-layer",
           type: "raster",
           source: "rainviewer-radar",
+          maxzoom: 7, // Automatically hides at zoom >= 7 so detailed city views are 100% crystal clear without error tiles!
           paint: {
             "raster-opacity": 0.45,
-            "raster-fade-duration": 300
+            "raster-fade-duration": 200
           },
           layout: {
-            visibility: visible ? "visible" : "none"
+            visibility: "visible"
           }
         },
         beforeLayer
@@ -922,7 +932,7 @@ const syncWeatherLayer = async (map: maplibregl.Map, visible: boolean) => {
       map.setLayoutProperty(
         "rainviewer-radar-layer",
         "visibility",
-        visible ? "visible" : "none"
+        "visible"
       );
     }
   } catch {
@@ -1236,7 +1246,7 @@ export const MapView = ({
     const container = mapContainerRef.current;
     if (!canvas || !container) return;
 
-    const ratio = window.devicePixelRatio || 1;
+    const ratio = Math.min(window.devicePixelRatio || 1, 2);
     const w = container.clientWidth;
     const h = container.clientHeight;
     if (w <= 0 || h <= 0) return;
@@ -1284,17 +1294,10 @@ export const MapView = ({
     onMapReadyRef.current?.(map);
 
     const handleMapClick = (e: maplibregl.MapMouseEvent) => {
-      if (isPickingLocationRef.current) {
-        onPickLocationRef.current?.(e.lngLat.lat, e.lngLat.lng);
-        window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.("medium");
-        return;
-      }
-
       const clickX = e.point.x;
       const clickY = e.point.y;
-      const currentZoom = map.getZoom();
 
-      // Check click on recent Impact/Interception events first
+      // Check impacts first
       for (const evt of impactsRef.current) {
         const pt = map.project([evt.lon, evt.lat]);
         const dist = Math.hypot(pt.x - clickX, pt.y - clickY);
@@ -1305,6 +1308,13 @@ export const MapView = ({
         }
       }
 
+      if (isPickingLocationRef.current) {
+        onPickLocationRef.current?.(e.lngLat.lat, e.lngLat.lng);
+        window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.("medium");
+        return;
+      }
+
+      const currentZoom = map.getZoom();
       let closest: TrackPacket | null = null;
       let minDistance = 38;
 
@@ -1336,10 +1346,6 @@ export const MapView = ({
     window.addEventListener("resize", handleWindowResize);
     window.Telegram?.WebApp?.onEvent?.("viewportChanged", handleWindowResize);
 
-    const onMapRedraw = () => {
-      renderRef.current?.();
-    };
-
     map.on("load", () => {
       resizeCanvasSafe();
       syncWeatherLayer(map, showWeatherRef.current !== false);
@@ -1352,11 +1358,7 @@ export const MapView = ({
     });
     map.on("resize", () => {
       resizeCanvasSafe();
-      renderRef.current?.();
     });
-    map.on("render", onMapRedraw);
-    map.on("move", onMapRedraw);
-    map.on("zoom", onMapRedraw);
     map.on("click", handleMapClick);
 
     // Initial resize right away
@@ -1365,9 +1367,6 @@ export const MapView = ({
     return () => {
       window.removeEventListener("resize", handleWindowResize);
       window.Telegram?.WebApp?.offEvent?.("viewportChanged", handleWindowResize);
-      map.off("render", onMapRedraw);
-      map.off("move", onMapRedraw);
-      map.off("zoom", onMapRedraw);
       map.off("click", handleMapClick);
       map.remove();
       mapRef.current = null;
@@ -1415,19 +1414,28 @@ export const MapView = ({
     centeredRef.current = true;
   }, [location]);
 
-  // 4. Stable 60 FPS Canvas overlay render loop
+  // 4. Smooth 30 FPS Canvas overlay render loop (optimized for low-end mobile & Telegram WebApp)
   useEffect(() => {
     let animId: number;
     let lastAudioCheck = 0;
+    let lastFrameTime = 0;
+    const TARGET_FPS = 30;
+    const FRAME_INTERVAL = 1000 / TARGET_FPS;
 
-    const render = () => {
-      renderRef.current = render;
+    const render = (time = performance.now()) => {
+      animId = requestAnimationFrame(render);
+      if (time - lastFrameTime < FRAME_INTERVAL) {
+        return;
+      }
+      lastFrameTime = time;
+
+      renderRef.current = () => render(performance.now());
       const map = mapRef.current;
       const canvas = canvasRef.current;
       const ctx = canvas?.getContext("2d");
 
       if (map && canvas && ctx && canvas.width > 0 && canvas.height > 0) {
-        const ratio = window.devicePixelRatio || 1;
+        const ratio = Math.min(window.devicePixelRatio || 1, 2);
         const width = canvas.width / ratio;
         const height = canvas.height / ratio;
 
@@ -1750,8 +1758,6 @@ export const MapView = ({
           drawSatelliteReconLayer(ctx, map, cachedSatellitesRef.current, now, width, height);
         }
       }
-
-      animId = requestAnimationFrame(render);
     };
 
     animId = requestAnimationFrame(render);
