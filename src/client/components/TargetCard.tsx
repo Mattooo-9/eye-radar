@@ -110,6 +110,19 @@ export const TargetCard = ({
           <button className="close-btn" onClick={onClose} title="Закрити картку">✕</button>
         </div>
 
+        {/* Visual Engine Propulsion Identification Banner */}
+        {spec.propulsionSummary && (
+          <div className={`propulsion-banner ${spec.isJet ? "propulsion-jet" : "propulsion-piston"}`}>
+            <span className="propulsion-icon">{spec.isJet ? "🔥" : "⚙️"}</span>
+            <div className="propulsion-info">
+              <div className="propulsion-title">
+                {spec.isJet ? "Турбореактивна тяга (ТРД • Без гвинта)" : "Поршневий двигун (ДВЗ • Штовхаючий гвинт)"}
+              </div>
+              <div className="propulsion-desc">{spec.propulsionSummary}</div>
+            </div>
+          </div>
+        )}
+
         {/* Exact Location & Nearest Settlement */}
         <div className="target-card-location-box">
           <div className="location-row">
@@ -133,6 +146,22 @@ export const TargetCard = ({
               )}
             </div>
           </div>
+        </div>
+
+        {/* Real Sensors & Launch Area */}
+        <div className="target-origin-section">
+          {spec.detectionSensors && (
+            <div className="origin-row">
+              <span className="origin-label">🛰️ Комплекси виявлення:</span>
+              <span className="origin-val">{spec.detectionSensors}</span>
+            </div>
+          )}
+          {spec.launchOrigin && (
+            <div className="origin-row">
+              <span className="origin-label">🛫 Ймовірний район старту:</span>
+              <span className="origin-val">{spec.launchOrigin}</span>
+            </div>
+          )}
         </div>
 
         {/* Live Flight Telemetry Grid */}
@@ -191,6 +220,14 @@ export const TargetCard = ({
           </div>
         </div>
 
+        {/* Real Tactical Threat Assessment */}
+        {spec.tacticalThreatAssessment && (
+          <div className="target-threat-banner">
+            <span className="threat-banner-title">⚠️ Оперативна оцінка обстановки:</span>
+            <p className="threat-banner-desc">{spec.tacticalThreatAssessment}</p>
+          </div>
+        )}
+
         {/* Full Military Specifications (TTX) */}
         <div className="target-ttx-section">
           <div className="ttx-title">📋 Тактико-технічні характеристики (ТТХ):</div>
@@ -223,6 +260,12 @@ export const TargetCard = ({
               <span className="ttx-key">Рекомендована ППО:</span>
               <span className="ttx-val">{spec.airDefenseCounters}</span>
             </div>
+            {spec.reactionTimeWindow && (
+              <div className="ttx-row">
+                <span className="ttx-key">Час реакції ППО:</span>
+                <span className="ttx-val" style={{ color: "#f59e0b", fontWeight: 700 }}>{spec.reactionTimeWindow}</span>
+              </div>
+            )}
           </div>
         </div>
 

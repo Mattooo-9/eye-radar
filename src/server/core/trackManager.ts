@@ -13,6 +13,20 @@ interface InternalTrack {
 
 const STALE_AFTER_MS = 15_000; // 15 seconds without fresh measurement = target pruned immediately
 
+function resolveRealisticModel(type: string, speedMs: number, providedModel?: string): string | undefined {
+  if (type === "uav") {
+    const speedKmh = speedMs * 3.6;
+    if (speedKmh >= 235 || (providedModel && (providedModel.includes("238") || providedModel.includes("Jet")))) {
+      return "Shahed-238 (Jet)";
+    }
+    if (speedKmh < 135 || (providedModel && (providedModel.includes("Supercam") || providedModel.includes("Orlan") || providedModel.includes("ZALA")))) {
+      return providedModel || "Supercam S350 Recon";
+    }
+    return "Shahed-136";
+  }
+  return providedModel;
+}
+
 export class TrackManager {
   private readonly tracks = new Map<string, InternalTrack>();
   private readonly correlator = new TrackCorrelator();
@@ -33,13 +47,20 @@ export class TrackManager {
     if (!existing) {
       const filter = new KalmanFilter2D();
       const filtered = filter.update(observation.timestamp, observation.lat, observation.lon);
+      const effectiveSpeed = observation.speed ?? 45;
+      const initialModel = resolveRealisticModel(
+        observation.type,
+        effectiveSpeed,
+        typeof observation.meta?.model === "string" ? observation.meta.model : undefined
+      );
+
       const state: TrackState = {
         id: targetId,
         type: observation.type,
         lat: filtered.lat,
         lon: filtered.lon,
         heading: observation.heading ?? 0,
-        speed: observation.speed ?? 45, // default ~160 km/h for typical drone if unknown
+        speed: effectiveSpeed,
         timestamp: observation.timestamp,
         confidence: Math.min(1, observation.confidence + correlation.confidenceBonus),
         sources: new Set([observation.source]),
@@ -48,7 +69,7 @@ export class TrackManager {
         covLon: filtered.covLon,
         uncertaintyRadius: filtered.uncertaintyRadiusMeters,
         lastUpdated: now,
-        model: typeof observation.meta?.model === "string" ? observation.meta.model : undefined,
+        model: initialModel,
         callsign: typeof observation.meta?.callsign === "string" ? observation.meta.callsign : undefined
       };
 
@@ -75,6 +96,12 @@ export class TrackManager {
       previous.confidence * 0.4 + observation.confidence * 0.5 + sourceDiversityBonus
     );
 
+    const updatedModel = resolveRealisticModel(
+      observation.type,
+      updatedSpeed,
+      typeof observation.meta?.model === "string" ? observation.meta.model : previous.model
+    );
+
     existing.lastMeasurementTime = now;
     existing.state = {
       ...previous,
@@ -90,7 +117,7 @@ export class TrackManager {
       covLon: filtered.covLon,
       uncertaintyRadius: Math.round(filtered.uncertaintyRadiusMeters),
       lastUpdated: now,
-      model: typeof observation.meta?.model === "string" ? observation.meta.model : previous.model,
+      model: updatedModel,
       callsign: typeof observation.meta?.callsign === "string" ? observation.meta.callsign : previous.callsign
     };
 

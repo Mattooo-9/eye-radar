@@ -162,14 +162,20 @@ const drawUavSilhouette = (
   rotation: number,
   color: string,
   timeMs: number,
-  model?: string
+  model?: string,
+  speedKmh: number = 180
 ) => {
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate((rotation * Math.PI) / 180);
 
-  const isJet = model?.includes("238") || model?.includes("Jet");
-  const isRecon = model?.includes("Recon") || model?.includes("Supercam") || model?.includes("Orlan");
+  const isJet = model?.toLowerCase().includes("238") || model?.toLowerCase().includes("jet") || speedKmh >= 235;
+  const isRecon =
+    model?.toLowerCase().includes("recon") ||
+    model?.toLowerCase().includes("supercam") ||
+    model?.toLowerCase().includes("orlan") ||
+    model?.toLowerCase().includes("zala") ||
+    (!isJet && speedKmh < 140);
 
   if (isRecon) {
     // Orlan-10 / Supercam S350 — high-aspect straight wing ISR UAV
@@ -2317,21 +2323,6 @@ export const MapView = ({
             ctx.restore();
           }
 
-          // Draw Military Silhouette strictly pointing in flight direction
-          if (type === "uav") {
-            drawUavSilhouette(ctx, targetX, targetY, scale, screenHeadingDeg, color, now, packetModel);
-          } else if (type === "bomb") {
-            drawKabSilhouette(ctx, targetX, targetY, scale, screenHeadingDeg, color, now);
-          } else if (type === "fpv") {
-            drawFpvSilhouette(ctx, targetX, targetY, scale, screenHeadingDeg, color, now);
-          } else if (type === "munition") {
-            drawMissileSilhouette(ctx, targetX, targetY, scale, screenHeadingDeg, color, now);
-          } else if (type === "helicopter") {
-            drawHelicopterSilhouette(ctx, targetX, targetY, scale, screenHeadingDeg, color, now);
-          } else {
-            drawAircraftSilhouette(ctx, targetX, targetY, scale, screenHeadingDeg, color, now);
-          }
-
           // Target Tag & Telemetry: Crisp, non-colliding military pill
           const effectiveAltM =
             altitude !== undefined && altitude !== null
@@ -2350,10 +2341,25 @@ export const MapView = ({
           const speedKmh = Math.round(speed * 3.6);
           const altMsl = effectiveAltM >= 1000 ? `${(effectiveAltM / 1000).toFixed(1)} км` : `${Math.round(effectiveAltM)} м`;
 
+          // Draw Military Silhouette strictly pointing in flight direction
+          if (type === "uav") {
+            drawUavSilhouette(ctx, targetX, targetY, scale, screenHeadingDeg, color, now, packetModel, speedKmh);
+          } else if (type === "bomb") {
+            drawKabSilhouette(ctx, targetX, targetY, scale, screenHeadingDeg, color, now);
+          } else if (type === "fpv") {
+            drawFpvSilhouette(ctx, targetX, targetY, scale, screenHeadingDeg, color, now);
+          } else if (type === "munition") {
+            drawMissileSilhouette(ctx, targetX, targetY, scale, screenHeadingDeg, color, now);
+          } else if (type === "helicopter") {
+            drawHelicopterSilhouette(ctx, targetX, targetY, scale, screenHeadingDeg, color, now);
+          } else {
+            drawAircraftSilhouette(ctx, targetX, targetY, scale, screenHeadingDeg, color, now);
+          }
+
           const shortName = packetModel
             ? packetModel.replace(" Cruise Missile", "").replace(" Fighting Falcon", "").replace(" Fulcrum", "").replace(" (Jet)", "-Jet")
             : type === "uav"
-            ? "Shahed-136"
+            ? (speedKmh >= 235 ? "Shahed-238" : speedKmh < 140 ? "Розвід-БПЛА" : "Shahed-136")
             : type === "bomb"
             ? "КАБ-500"
             : type === "fpv"

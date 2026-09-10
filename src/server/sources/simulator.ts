@@ -111,6 +111,21 @@ const REGION_CORRIDORS: RegionCorridor[] = [
     model: "Shahed-136"
   },
   {
+    regionKeyword: "чернігів",
+    type: "uav",
+    minLat: 51.2,
+    maxLat: 51.8,
+    minLon: 31.4,
+    maxLon: 32.5,
+    headingMin: 215,
+    headingMax: 245,
+    speedKmhMin: 490,
+    speedKmhMax: 540,
+    altitudeMin: 400,
+    altitudeMax: 700,
+    model: "Shahed-238 (Jet)"
+  },
+  {
     regionKeyword: "сум",
     type: "uav",
     minLat: 50.7,
@@ -142,6 +157,21 @@ const REGION_CORRIDORS: RegionCorridor[] = [
   },
   {
     regionKeyword: "сум",
+    type: "uav",
+    minLat: 50.8,
+    maxLat: 51.5,
+    minLon: 34.0,
+    maxLon: 35.1,
+    headingMin: 220,
+    headingMax: 250,
+    speedKmhMin: 490,
+    speedKmhMax: 540,
+    altitudeMin: 400,
+    altitudeMax: 750,
+    model: "Shahed-238 (Jet)"
+  },
+  {
+    regionKeyword: "сум",
     type: "bomb",
     minLat: 51.0,
     maxLat: 51.4,
@@ -169,6 +199,21 @@ const REGION_CORRIDORS: RegionCorridor[] = [
     altitudeMin: 160,
     altitudeMax: 250,
     model: "Shahed-136"
+  },
+  {
+    regionKeyword: "харків",
+    type: "uav",
+    minLat: 49.9,
+    maxLat: 50.3,
+    minLon: 36.3,
+    maxLon: 37.3,
+    headingMin: 205,
+    headingMax: 235,
+    speedKmhMin: 480,
+    speedKmhMax: 540,
+    altitudeMin: 400,
+    altitudeMax: 800,
+    model: "Shahed-238 (Jet)"
   },
   {
     regionKeyword: "харків",
@@ -229,6 +274,21 @@ const REGION_CORRIDORS: RegionCorridor[] = [
     altitudeMin: 150,
     altitudeMax: 240,
     model: "Shahed-136"
+  },
+  {
+    regionKeyword: "дніпро",
+    type: "uav",
+    minLat: 48.3,
+    maxLat: 48.8,
+    minLon: 34.9,
+    maxLon: 35.9,
+    headingMin: 315,
+    headingMax: 345,
+    speedKmhMin: 490,
+    speedKmhMax: 540,
+    altitudeMin: 350,
+    altitudeMax: 750,
+    model: "Shahed-238 (Jet)"
   },
   {
     regionKeyword: "запоріж",
@@ -379,6 +439,21 @@ const REGION_CORRIDORS: RegionCorridor[] = [
     altitudeMin: 120,
     altitudeMax: 200,
     model: "Shahed-136"
+  },
+  {
+    regionKeyword: "одес",
+    type: "uav",
+    minLat: 46.2,
+    maxLat: 46.9,
+    minLon: 30.2,
+    maxLon: 31.1,
+    headingMin: 320,
+    headingMax: 350,
+    speedKmhMin: 480,
+    speedKmhMax: 540,
+    altitudeMin: 350,
+    altitudeMax: 700,
+    model: "Shahed-238 (Jet)"
   },
   {
     regionKeyword: "миколаїв",
@@ -650,7 +725,13 @@ export class AirspaceSimulator {
             model: corridor.model,
             callsign:
               corridor.type === "uav"
-                ? `SHD-${Math.floor(100 + Math.random() * 899)}`
+                ? (corridor.model.includes("238")
+                  ? `SHD-238-${Math.floor(100 + Math.random() * 899)}`
+                  : corridor.model.includes("Supercam")
+                  ? `SCAM-${Math.floor(100 + Math.random() * 899)}`
+                  : corridor.model.includes("Orlan")
+                  ? `ORLAN-${Math.floor(100 + Math.random() * 899)}`
+                  : `SHD-136-${Math.floor(100 + Math.random() * 899)}`)
                 : corridor.type === "bomb"
                 ? `KAB-${Math.floor(10 + Math.random() * 89)}`
                 : corridor.type === "fpv"
