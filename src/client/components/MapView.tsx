@@ -8,7 +8,7 @@ import { getSubsolarPoint, getTerminatorCoordinates, getLocalSolarStatus } from 
 import { findNearestLandmark } from "../lib/landmarks";
 import { getLiveWeatherRadarTileUrl } from "../lib/weatherRadar";
 import { calculateSatellitePositions, type SatelliteTrack } from "../lib/satelliteRecon";
-import { getUkraineBordersGeoJSON, getFrontlineGeoJSON } from "../lib/ukraineBorders";
+import { getFrontlineGeoJSON } from "../lib/ukraineBorders";
 import { drawNightCityLights } from "../lib/nightCityLights";
 import type { FilterState } from "./StatusPanel";
 
@@ -172,152 +172,219 @@ const drawUavSilhouette = (
   const isRecon = model?.includes("Recon") || model?.includes("Supercam") || model?.includes("Orlan");
 
   if (isRecon) {
-    // 1. High-Aspect Reconnaissance UAV (Supercam S350 / Orlan-10)
-    ctx.shadowColor = "rgba(0, 0, 0, 0.75)";
-    ctx.shadowBlur = 4;
-
-    ctx.fillStyle = "#1e293b"; // Dark composite body
-    ctx.beginPath();
-    ctx.ellipse(0, 0, size * 0.14, size * 0.72, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.strokeStyle = "#38bdf8";
-    ctx.lineWidth = 1.2;
-    ctx.stroke();
-
-    // High-aspect straight glider wings
-    ctx.beginPath();
-    ctx.rect(-size * 0.95, -size * 0.1, size * 1.9, size * 0.2);
-    ctx.fill();
-    ctx.stroke();
-
-    // V-tail
-    ctx.beginPath();
-    ctx.moveTo(-size * 0.32, size * 0.62);
-    ctx.lineTo(0, size * 0.48);
-    ctx.lineTo(size * 0.32, size * 0.62);
-    ctx.stroke();
-
-    // Optical gimbal camera pod at nose
-    ctx.fillStyle = "#38bdf8";
-    ctx.beginPath();
-    ctx.arc(0, -size * 0.65, 2.2, 0, Math.PI * 2);
-    ctx.fill();
-  } else if (isJet) {
-    // 2. Shahed-238 Turbojet Powered Delta Wing (Matte stealth black + thermal exhaust)
-    ctx.shadowColor = "rgba(0, 0, 0, 0.85)";
+    // Orlan-10 / Supercam S350 — high-aspect straight wing ISR UAV
+    ctx.shadowColor = "rgba(0,0,0,0.8)";
     ctx.shadowBlur = 5;
 
-    ctx.fillStyle = "#09090b"; // Stealth RAM coating
+    // Fuselage pod (flat belly, rounded top)
+    ctx.fillStyle = "#1e293b";
     ctx.beginPath();
-    ctx.moveTo(0, -size * 0.95);
-    ctx.lineTo(size * 0.76, size * 0.5);
-    ctx.lineTo(size * 0.76, size * 0.68); // Winglet fin
-    ctx.lineTo(size * 0.64, size * 0.68);
-    ctx.lineTo(size * 0.18, size * 0.48);
-    ctx.lineTo(size * 0.12, size * 0.65); // Jet nozzle
-    ctx.lineTo(-size * 0.12, size * 0.65);
-    ctx.lineTo(-size * 0.18, size * 0.48);
-    ctx.lineTo(-size * 0.64, size * 0.68);
-    ctx.lineTo(-size * 0.76, size * 0.68);
-    ctx.lineTo(-size * 0.76, size * 0.5);
+    ctx.moveTo(-size * 0.13, -size * 0.72);
+    ctx.quadraticCurveTo(-size * 0.17, 0, -size * 0.14, size * 0.55);
+    ctx.lineTo(size * 0.14, size * 0.55);
+    ctx.quadraticCurveTo(size * 0.17, 0, size * 0.13, -size * 0.72);
     ctx.closePath();
     ctx.fill();
-
-    // Glowing thermal warning border
-    ctx.strokeStyle = "#f59e0b";
-    ctx.lineWidth = 1.4;
+    ctx.strokeStyle = "#38bdf8";
+    ctx.lineWidth = 1.1;
     ctx.stroke();
 
-    // Dorsal air intake scoop
-    ctx.fillStyle = "#ea580c";
-    ctx.fillRect(-size * 0.08, -size * 0.12, size * 0.16, size * 0.24);
-
-    // Turbojet afterburner flame plume
-    const jetPlumeLen = size * (0.35 + Math.sin(timeMs / 18) * 0.1);
-    ctx.fillStyle = "rgba(239, 68, 68, 0.9)";
+    // High-aspect straight wings
+    ctx.fillStyle = "#1e3a5f";
     ctx.beginPath();
-    ctx.moveTo(-size * 0.1, size * 0.65);
-    ctx.lineTo(0, size * 0.65 + jetPlumeLen);
-    ctx.lineTo(size * 0.1, size * 0.65);
+    ctx.moveTo(-size * 0.15, -size * 0.08);
+    ctx.lineTo(-size * 1.05, -size * 0.04);
+    ctx.lineTo(-size * 1.05, size * 0.18);
+    ctx.lineTo(-size * 0.15, size * 0.14);
     ctx.closePath();
     ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(size * 0.15, -size * 0.08);
+    ctx.lineTo(size * 1.05, -size * 0.04);
+    ctx.lineTo(size * 1.05, size * 0.18);
+    ctx.lineTo(size * 0.15, size * 0.14);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "#38bdf8";
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+
+    // Pusher prop at tail
+    const reA = (timeMs / 12) % 360;
+    ctx.save();
+    ctx.translate(0, size * 0.55);
+    ctx.rotate((reA * Math.PI) / 180);
+    ctx.strokeStyle = "rgba(148,163,184,0.9)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(-size * 0.22, 0); ctx.lineTo(size * 0.22, 0);
+    ctx.moveTo(0, -size * 0.22); ctx.lineTo(0, size * 0.22);
+    ctx.stroke();
+    ctx.fillStyle = "#f59e0b";
+    ctx.beginPath(); ctx.arc(0, 0, 2, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+
+    // V-tail
+    ctx.strokeStyle = "#38bdf8";
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.moveTo(-size * 0.28, size * 0.42);
+    ctx.lineTo(0, size * 0.30);
+    ctx.lineTo(size * 0.28, size * 0.42);
+    ctx.stroke();
+
+    // EO/IR sensor ball under nose
+    ctx.fillStyle = "#0ea5e9";
+    ctx.beginPath();
+    ctx.arc(0, -size * 0.68, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#bae6fd";
+    ctx.beginPath();
+    ctx.arc(-0.6, -size * 0.68 - 0.6, 1.2, 0, Math.PI * 2);
+    ctx.fill();
+
+  } else if (isJet) {
+    // Shahed-238 — turbojet delta (stealth matte black)
+    ctx.shadowColor = "rgba(0,0,0,0.9)";
+    ctx.shadowBlur = 6;
+
+    // Main delta wing body
+    ctx.fillStyle = "#09090b";
+    ctx.beginPath();
+    ctx.moveTo(0, -size * 0.95);
+    ctx.lineTo(size * 0.78, size * 0.52);
+    ctx.lineTo(size * 0.78, size * 0.70);
+    ctx.lineTo(size * 0.60, size * 0.70);
+    ctx.lineTo(size * 0.16, size * 0.47);
+    ctx.lineTo(size * 0.11, size * 0.64);
+    ctx.lineTo(-size * 0.11, size * 0.64);
+    ctx.lineTo(-size * 0.16, size * 0.47);
+    ctx.lineTo(-size * 0.60, size * 0.70);
+    ctx.lineTo(-size * 0.78, size * 0.70);
+    ctx.lineTo(-size * 0.78, size * 0.52);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "#f59e0b";
+    ctx.lineWidth = 1.3;
+    ctx.stroke();
+
+    // Fuselage spine
+    ctx.fillStyle = "#1c1917";
+    ctx.beginPath();
+    ctx.ellipse(0, -size * 0.10, size * 0.12, size * 0.52, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Wing panel lines
+    ctx.strokeStyle = "rgba(251,191,36,0.25)";
+    ctx.lineWidth = 0.7;
+    ctx.beginPath();
+    ctx.moveTo(0, -size * 0.55); ctx.lineTo(size * 0.62, size * 0.44);
+    ctx.moveTo(0, -size * 0.55); ctx.lineTo(-size * 0.62, size * 0.44);
+    ctx.stroke();
+
+    // Jet exhaust plume (animated)
+    const plumeLen = size * (0.28 + Math.sin(timeMs / 16) * 0.09);
+    const grad = ctx.createLinearGradient(0, size * 0.64, 0, size * 0.64 + plumeLen);
+    grad.addColorStop(0, "rgba(251,191,36,0.95)");
+    grad.addColorStop(0.4, "rgba(239,68,68,0.7)");
+    grad.addColorStop(1, "rgba(239,68,68,0)");
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(-size * 0.09, size * 0.64);
+    ctx.lineTo(0, size * 0.64 + plumeLen);
+    ctx.lineTo(size * 0.09, size * 0.64);
+    ctx.closePath();
+    ctx.fill();
+
+    // Wingtip fins
+    ctx.fillStyle = "#27272a";
+    ctx.fillRect(-size * 0.78, size * 0.46, 2.5, size * 0.24);
+    ctx.fillRect(size * 0.78 - 2.5, size * 0.46, 2.5, size * 0.24);
+    ctx.fillStyle = "#f59e0b";
+    ctx.fillRect(-size * 0.78, size * 0.46, 2.5, size * 0.08);
+    ctx.fillRect(size * 0.78 - 2.5, size * 0.46, 2.5, size * 0.08);
+
+    // Nose glint
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.arc(0, -size * 0.88, 1.8, 0, Math.PI * 2);
+    ctx.fill();
+
   } else {
-    // 3. Real Military Shahed-136 Kamikaze Delta Wing (Aerospace-grade realistic illustration)
-    ctx.shadowColor = "rgba(0, 0, 0, 0.85)";
+    // Shahed-136 — pusher-prop kamikaze delta (most common target)
+    ctx.shadowColor = "rgba(0,0,0,0.85)";
     ctx.shadowBlur = 6;
     ctx.shadowOffsetY = 1;
 
-    // Delta wing base shape
-    ctx.fillStyle = "#1e293b"; // Dark graphite composite RAM airframe
+    // Delta wing (RAM-coated dark graphite)
+    ctx.fillStyle = "#1e293b";
     ctx.beginPath();
-    ctx.moveTo(0, -size * 0.95); // Nose radome
-    ctx.lineTo(size * 0.76, size * 0.48); // Right wingtip
-    ctx.lineTo(size * 0.76, size * 0.65); // Right winglet trailing edge
-    ctx.lineTo(size * 0.62, size * 0.65); // Right winglet base
-    ctx.lineTo(size * 0.16, size * 0.45); // Right wing root trailing edge
-    ctx.lineTo(size * 0.12, size * 0.58); // Propeller mount starboard
-    ctx.lineTo(-size * 0.12, size * 0.58); // Propeller mount port
-    ctx.lineTo(-size * 0.16, size * 0.45); // Left wing root trailing edge
-    ctx.lineTo(-size * 0.62, size * 0.65); // Left winglet base
-    ctx.lineTo(-size * 0.76, size * 0.65); // Left winglet trailing edge
-    ctx.lineTo(-size * 0.76, size * 0.48); // Left wingtip
+    ctx.moveTo(0, -size * 0.95);  // Nose radome
+    ctx.lineTo(size * 0.76, size * 0.48);  // Right wingtip
+    ctx.lineTo(size * 0.76, size * 0.65);
+    ctx.lineTo(size * 0.62, size * 0.65);
+    ctx.lineTo(size * 0.16, size * 0.45);
+    ctx.lineTo(size * 0.12, size * 0.58);
+    ctx.lineTo(-size * 0.12, size * 0.58);
+    ctx.lineTo(-size * 0.16, size * 0.45);
+    ctx.lineTo(-size * 0.62, size * 0.65);
+    ctx.lineTo(-size * 0.76, size * 0.65);
+    ctx.lineTo(-size * 0.76, size * 0.48);
     ctx.closePath();
     ctx.fill();
-
-    // Threat danger outline (red)
     ctx.strokeStyle = "#ef4444";
-    ctx.lineWidth = 1.4;
+    ctx.lineWidth = 1.3;
     ctx.stroke();
 
-    // Central fuselage spine fairing
+    // Upper fuselage fairing / spine
     ctx.fillStyle = "#334155";
     ctx.beginPath();
-    ctx.ellipse(0, -size * 0.1, size * 0.14, size * 0.5, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, -size * 0.10, size * 0.13, size * 0.50, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = "rgba(239, 68, 68, 0.6)";
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = "rgba(239,68,68,0.5)";
+    ctx.lineWidth = 0.9;
     ctx.stroke();
 
-    // Wing structural panel lines
-    ctx.strokeStyle = "rgba(148, 163, 184, 0.35)";
-    ctx.lineWidth = 0.8;
+    // Wing structural ribs
+    ctx.strokeStyle = "rgba(148,163,184,0.30)";
+    ctx.lineWidth = 0.7;
     ctx.beginPath();
-    ctx.moveTo(0, -size * 0.5);
-    ctx.lineTo(size * 0.6, size * 0.42);
-    ctx.moveTo(0, -size * 0.5);
-    ctx.lineTo(-size * 0.6, size * 0.42);
+    ctx.moveTo(0, -size * 0.50); ctx.lineTo(size * 0.60, size * 0.42);
+    ctx.moveTo(0, -size * 0.50); ctx.lineTo(-size * 0.60, size * 0.42);
+    ctx.moveTo(0, -size * 0.20); ctx.lineTo(size * 0.42, size * 0.38);
+    ctx.moveTo(0, -size * 0.20); ctx.lineTo(-size * 0.42, size * 0.38);
     ctx.stroke();
 
-    // Wingtip vertical stabilizer fins (with high-visibility tactical chevrons)
+    // Winglet vertical fins (white + red tip)
     ctx.fillStyle = "#f8fafc";
-    ctx.fillRect(-size * 0.76, size * 0.42, 2.5, size * 0.22);
-    ctx.fillRect(size * 0.76 - 2.5, size * 0.42, 2.5, size * 0.22);
+    ctx.fillRect(-size * 0.76, size * 0.42, 2.5, size * 0.23);
+    ctx.fillRect(size * 0.76 - 2.5, size * 0.42, 2.5, size * 0.23);
     ctx.fillStyle = "#ef4444";
     ctx.fillRect(-size * 0.76, size * 0.42, 2.5, size * 0.08);
     ctx.fillRect(size * 0.76 - 2.5, size * 0.42, 2.5, size * 0.08);
 
-    // Nose optical sensor / guidance radome
+    // Nose guidance radome
     ctx.fillStyle = "#ffffff";
     ctx.beginPath();
-    ctx.arc(0, -size * 0.85, 2.2, 0, Math.PI * 2);
+    ctx.arc(0, -size * 0.88, 2.0, 0, Math.PI * 2);
     ctx.fill();
 
-    // Rear MD-550 pusher propeller disc (spinning)
-    const propAngle = (timeMs / 10) % 360;
+    // MD-550 pusher propeller (spinning animation)
+    const propAngle = (timeMs / 9) % 360;
     ctx.save();
     ctx.translate(0, size * 0.58);
     ctx.rotate((propAngle * Math.PI) / 180);
-    ctx.strokeStyle = "rgba(254, 202, 202, 0.85)";
-    ctx.lineWidth = 1.6;
-    ctx.beginPath();
-    ctx.moveTo(-size * 0.24, 0);
-    ctx.lineTo(size * 0.24, 0);
-    ctx.stroke();
-    // Central propeller hub
+    // 3-blade prop
+    for (let b = 0; b < 3; b++) {
+      ctx.fillStyle = "rgba(226,232,240,0.88)";
+      ctx.beginPath();
+      ctx.ellipse(0, -size * 0.18, size * 0.04, size * 0.18, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.rotate((120 * Math.PI) / 180);
+    }
     ctx.fillStyle = "#f59e0b";
     ctx.beginPath();
-    ctx.arc(0, 0, 2, 0, Math.PI * 2);
+    ctx.arc(0, 0, 2.2, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   }
@@ -325,56 +392,114 @@ const drawUavSilhouette = (
   ctx.restore();
 };
 
+
 const drawMissileSilhouette = (
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
   size: number,
   rotation: number,
-  color: string
+  color: string,
+  timeMs: number = 0
 ) => {
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate((rotation * Math.PI) / 180);
 
-  // Cruise missile body (Kh-101 / Kalibr)
-  ctx.fillStyle = color;
+  ctx.shadowColor = "rgba(0,0,0,0.85)";
+  ctx.shadowBlur = 6;
+
+  // Main fuselage — Kh-101 narrow ogive torpedo body
+  const bodyGrad = ctx.createLinearGradient(-size * 0.18, 0, size * 0.18, 0);
+  bodyGrad.addColorStop(0, "#1e293b");
+  bodyGrad.addColorStop(0.35, "#334155");
+  bodyGrad.addColorStop(0.65, "#475569");
+  bodyGrad.addColorStop(1, "#1e293b");
+  ctx.fillStyle = bodyGrad;
   ctx.beginPath();
-  ctx.moveTo(0, -size * 1.0); // Radome ogive nose
-  ctx.lineTo(size * 0.16, -size * 0.65);
-  ctx.lineTo(size * 0.16, -size * 0.15);
-  ctx.lineTo(size * 0.7, -size * 0.05); // Deployed cruise wing
-  ctx.lineTo(size * 0.7, size * 0.05);
-  ctx.lineTo(size * 0.16, 0);
-  ctx.lineTo(size * 0.16, size * 0.6);
-  ctx.lineTo(size * 0.38, size * 0.75); // Tail fin
-  ctx.lineTo(size * 0.38, size * 0.82);
-  ctx.lineTo(size * 0.14, size * 0.75);
-  ctx.lineTo(0, size * 0.72);
-  ctx.lineTo(-size * 0.14, size * 0.75);
-  ctx.lineTo(-size * 0.38, size * 0.82);
-  ctx.lineTo(-size * 0.38, size * 0.75);
-  ctx.lineTo(-size * 0.16, size * 0.6);
-  ctx.lineTo(-size * 0.16, 0);
-  ctx.lineTo(-size * 0.7, size * 0.05);
-  ctx.lineTo(-size * 0.7, -size * 0.05);
-  ctx.lineTo(-size * 0.16, -size * 0.15);
-  ctx.lineTo(-size * 0.16, -size * 0.65);
+  ctx.moveTo(0, -size * 1.02);       // Ogive nose tip
+  ctx.bezierCurveTo(size * 0.06, -size * 0.9, size * 0.17, -size * 0.7, size * 0.17, -size * 0.45);
+  ctx.lineTo(size * 0.17, size * 0.55);
+  ctx.bezierCurveTo(size * 0.17, size * 0.72, size * 0.09, size * 0.78, 0, size * 0.78);
+  ctx.bezierCurveTo(-size * 0.09, size * 0.78, -size * 0.17, size * 0.72, -size * 0.17, size * 0.55);
+  ctx.lineTo(-size * 0.17, -size * 0.45);
+  ctx.bezierCurveTo(-size * 0.17, -size * 0.7, -size * 0.06, -size * 0.9, 0, -size * 1.02);
   ctx.closePath();
   ctx.fill();
-
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.95)";
+  ctx.strokeStyle = color;
   ctx.lineWidth = 1.2;
   ctx.stroke();
 
-  // Missile nose radome tip
-  ctx.fillStyle = "#ffffff";
+  // Deployed folding cruise wing (port side)
+  ctx.fillStyle = "#334155";
   ctx.beginPath();
-  ctx.arc(0, -size * 0.95, 1.5, 0, Math.PI * 2);
+  ctx.moveTo(-size * 0.17, -size * 0.18);
+  ctx.lineTo(-size * 0.75, -size * 0.02);
+  ctx.lineTo(-size * 0.75, size * 0.09);
+  ctx.lineTo(-size * 0.17, size * 0.01);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255,255,255,0.7)";
+  ctx.lineWidth = 0.8;
+  ctx.stroke();
+
+  // Deployed folding cruise wing (starboard side)
+  ctx.beginPath();
+  ctx.moveTo(size * 0.17, -size * 0.18);
+  ctx.lineTo(size * 0.75, -size * 0.02);
+  ctx.lineTo(size * 0.75, size * 0.09);
+  ctx.lineTo(size * 0.17, size * 0.01);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Cruciform tail fins (4 fins — top view shows 2 laterals)
+  ctx.fillStyle = "#1e293b";
+  // Lateral fins
+  ctx.beginPath();
+  ctx.moveTo(-size * 0.17, size * 0.45);
+  ctx.lineTo(-size * 0.44, size * 0.68);
+  ctx.lineTo(-size * 0.44, size * 0.76);
+  ctx.lineTo(-size * 0.12, size * 0.60);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(size * 0.17, size * 0.45);
+  ctx.lineTo(size * 0.44, size * 0.68);
+  ctx.lineTo(size * 0.44, size * 0.76);
+  ctx.lineTo(size * 0.12, size * 0.60);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Turbofan exhaust nozzle glow
+  const exGlow = size * (0.22 + Math.sin(timeMs / 14) * 0.06);
+  const exhaustGrad = ctx.createRadialGradient(0, size * 0.78, 0, 0, size * 0.78, exGlow);
+  exhaustGrad.addColorStop(0, "rgba(251,191,36,0.9)");
+  exhaustGrad.addColorStop(0.4, "rgba(239,68,68,0.5)");
+  exhaustGrad.addColorStop(1, "rgba(239,68,68,0)");
+  ctx.fillStyle = exhaustGrad;
+  ctx.beginPath();
+  ctx.arc(0, size * 0.78, exGlow, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Nose radome tip
+  ctx.fillStyle = "#f0f9ff";
+  ctx.beginPath();
+  ctx.arc(0, -size * 0.96, 2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // INS/GLONASS seeker dome highlight on body
+  ctx.fillStyle = "rgba(56,189,248,0.4)";
+  ctx.beginPath();
+  ctx.ellipse(0, -size * 0.70, size * 0.06, size * 0.10, 0, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.restore();
 };
+
 
 const drawKabSilhouette = (
   ctx: CanvasRenderingContext2D,
@@ -597,63 +722,128 @@ const drawAircraftSilhouette = (
   ctx.translate(x, y);
   ctx.rotate((rotation * Math.PI) / 180);
 
-  // High-fidelity Civil/Military Jet Aircraft
-  ctx.fillStyle = color;
+  ctx.shadowColor = "rgba(0,0,0,0.8)";
+  ctx.shadowBlur = 7;
+
+  // Fuselage body with gradient shading (dark top, lighter belly)
+  const fuseGrad = ctx.createLinearGradient(-size * 0.16, 0, size * 0.16, 0);
+  fuseGrad.addColorStop(0, "#1e293b");
+  fuseGrad.addColorStop(0.4, "#334155");
+  fuseGrad.addColorStop(0.6, "#475569");
+  fuseGrad.addColorStop(1, "#1e293b");
+  ctx.fillStyle = fuseGrad;
   ctx.beginPath();
-  ctx.moveTo(0, -size * 0.95); // Nose cone
-  ctx.lineTo(size * 0.14, -size * 0.55);
-  ctx.lineTo(size * 0.14, -size * 0.15);
-  ctx.lineTo(size * 0.85, size * 0.28); // Swept main wing
-  ctx.lineTo(size * 0.85, size * 0.38);
-  ctx.lineTo(size * 0.18, size * 0.22);
-  ctx.lineTo(size * 0.18, size * 0.68);
-  ctx.lineTo(size * 0.42, size * 0.85); // Horizontal stabilizer
-  ctx.lineTo(size * 0.42, size * 0.92);
-  ctx.lineTo(0, size * 0.80); // Tail cone
-  ctx.lineTo(-size * 0.42, size * 0.92);
-  ctx.lineTo(-size * 0.42, size * 0.85);
-  ctx.lineTo(-size * 0.18, size * 0.68);
-  ctx.lineTo(-size * 0.18, size * 0.22);
-  ctx.lineTo(-size * 0.85, size * 0.38);
-  ctx.lineTo(-size * 0.85, size * 0.28);
-  ctx.lineTo(-size * 0.14, -size * 0.15);
-  ctx.lineTo(-size * 0.14, -size * 0.55);
+  ctx.moveTo(0, -size * 0.96);         // Nose radome tip
+  ctx.bezierCurveTo(size * 0.08, -size * 0.78, size * 0.14, -size * 0.52, size * 0.14, -size * 0.18);
+  ctx.lineTo(size * 0.14, size * 0.72);
+  ctx.bezierCurveTo(size * 0.14, size * 0.84, size * 0.06, size * 0.90, 0, size * 0.88);
+  ctx.bezierCurveTo(-size * 0.06, size * 0.90, -size * 0.14, size * 0.84, -size * 0.14, size * 0.72);
+  ctx.lineTo(-size * 0.14, -size * 0.18);
+  ctx.bezierCurveTo(-size * 0.14, -size * 0.52, -size * 0.08, -size * 0.78, 0, -size * 0.96);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.1;
+  ctx.stroke();
+
+  // Swept main wings (delta/cropped delta — Su-25/MiG style)
+  ctx.fillStyle = "#1e3a5f";
+  // Right wing
+  ctx.beginPath();
+  ctx.moveTo(size * 0.14, -size * 0.05);
+  ctx.lineTo(size * 0.90, size * 0.32);
+  ctx.lineTo(size * 0.90, size * 0.42);
+  ctx.lineTo(size * 0.38, size * 0.42);
+  ctx.lineTo(size * 0.14, size * 0.28);
+  ctx.closePath();
+  ctx.fill();
+  // Left wing
+  ctx.beginPath();
+  ctx.moveTo(-size * 0.14, -size * 0.05);
+  ctx.lineTo(-size * 0.90, size * 0.32);
+  ctx.lineTo(-size * 0.90, size * 0.42);
+  ctx.lineTo(-size * 0.38, size * 0.42);
+  ctx.lineTo(-size * 0.14, size * 0.28);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 0.9;
+  ctx.stroke();
+
+  // Horizontal stabilizers (tail planes)
+  ctx.fillStyle = "#1e3a5f";
+  ctx.beginPath();
+  ctx.moveTo(size * 0.14, size * 0.62);
+  ctx.lineTo(size * 0.52, size * 0.82);
+  ctx.lineTo(size * 0.52, size * 0.88);
+  ctx.lineTo(size * 0.14, size * 0.76);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(-size * 0.14, size * 0.62);
+  ctx.lineTo(-size * 0.52, size * 0.82);
+  ctx.lineTo(-size * 0.52, size * 0.88);
+  ctx.lineTo(-size * 0.14, size * 0.76);
   ctx.closePath();
   ctx.fill();
 
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.88)";
-  ctx.lineWidth = 1.3;
+  // Wing structural panel lines
+  ctx.strokeStyle = "rgba(148,163,184,0.25)";
+  ctx.lineWidth = 0.7;
+  ctx.beginPath();
+  ctx.moveTo(size * 0.14, size * 0.10); ctx.lineTo(size * 0.70, size * 0.36);
+  ctx.moveTo(-size * 0.14, size * 0.10); ctx.lineTo(-size * 0.70, size * 0.36);
   ctx.stroke();
 
-  // Cockpit glass canopy highlight
-  ctx.fillStyle = "#bae6fd";
+  // Cockpit canopy (fighter-style bubble)
+  ctx.fillStyle = "#7dd3fc";
   ctx.beginPath();
-  ctx.ellipse(0, -size * 0.65, size * 0.08, size * 0.18, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, -size * 0.62, size * 0.08, size * 0.22, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,0.35)";
+  ctx.beginPath();
+  ctx.ellipse(-size * 0.025, -size * 0.68, size * 0.035, size * 0.10, 0.2, 0, Math.PI * 2);
   ctx.fill();
 
-  // Turbofan engine nacelles under wings
-  ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
-  ctx.fillRect(-size * 0.38, size * 0.18, size * 0.1, size * 0.24);
-  ctx.fillRect(size * 0.28, size * 0.18, size * 0.1, size * 0.24);
+  // Twin engine nacelles (under rear fuselage)
+  ctx.fillStyle = "#0f172a";
+  ctx.beginPath();
+  ctx.rect(-size * 0.36, size * 0.30, size * 0.12, size * 0.32);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.rect(size * 0.24, size * 0.30, size * 0.12, size * 0.32);
+  ctx.fill();
 
-  // Navigation Lights: Left Wing Port (RED), Right Wing Starboard (GREEN)
+  // Afterburner glow from both engines
+  const abFlicker = Math.sin(timeMs / 30) * 0.12 + 0.88;
+  const abLen = size * (0.18 + Math.sin(timeMs / 22) * 0.05);
+  const abGradL = ctx.createLinearGradient(-size * 0.30, size * 0.62, -size * 0.30, size * 0.62 + abLen);
+  abGradL.addColorStop(0, `rgba(251,191,36,${abFlicker})`);
+  abGradL.addColorStop(0.45, `rgba(239,68,68,${abFlicker * 0.65})`);
+  abGradL.addColorStop(1, "rgba(239,68,68,0)");
+  ctx.fillStyle = abGradL;
+  ctx.beginPath();
+  ctx.moveTo(-size * 0.36, size * 0.62); ctx.lineTo(-size * 0.30, size * 0.62 + abLen); ctx.lineTo(-size * 0.24, size * 0.62);
+  ctx.closePath(); ctx.fill();
+  const abGradR = ctx.createLinearGradient(size * 0.30, size * 0.62, size * 0.30, size * 0.62 + abLen);
+  abGradR.addColorStop(0, `rgba(251,191,36,${abFlicker})`);
+  abGradR.addColorStop(0.45, `rgba(239,68,68,${abFlicker * 0.65})`);
+  abGradR.addColorStop(1, "rgba(239,68,68,0)");
+  ctx.fillStyle = abGradR;
+  ctx.beginPath();
+  ctx.moveTo(size * 0.24, size * 0.62); ctx.lineTo(size * 0.30, size * 0.62 + abLen); ctx.lineTo(size * 0.36, size * 0.62);
+  ctx.closePath(); ctx.fill();
+
+  // Nav lights: Port=red, Starboard=green
   ctx.fillStyle = "#ef4444";
-  ctx.beginPath();
-  ctx.arc(-size * 0.85, size * 0.33, 2, 0, Math.PI * 2);
-  ctx.fill();
-
+  ctx.beginPath(); ctx.arc(-size * 0.90, size * 0.37, 2, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = "#22c55e";
-  ctx.beginPath();
-  ctx.arc(size * 0.85, size * 0.33, 2, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.beginPath(); ctx.arc(size * 0.90, size * 0.37, 2, 0, Math.PI * 2); ctx.fill();
 
-  // Anti-collision strobe flashing at tail
-  const isStrobeOn = timeMs % 1000 < 130;
-  if (isStrobeOn) {
+  // Anti-collision strobe
+  if (timeMs % 900 < 110) {
     ctx.fillStyle = "#ffffff";
-    ctx.beginPath();
-    ctx.arc(0, size * 0.80, 2.5, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.beginPath(); ctx.arc(0, size * 0.86, 2.5, 0, Math.PI * 2); ctx.fill();
   }
 
   ctx.restore();
@@ -672,60 +862,132 @@ const drawHelicopterSilhouette = (
   ctx.translate(x, y);
   ctx.rotate((rotation * Math.PI) / 180);
 
-  // Helicopter Cabin & Cockpit
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.ellipse(0, -size * 0.15, size * 0.28, size * 0.52, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.88)";
-  ctx.lineWidth = 1.3;
-  ctx.stroke();
+  ctx.shadowColor = "rgba(0,0,0,0.85)";
+  ctx.shadowBlur = 6;
 
-  // Cockpit glass
-  ctx.fillStyle = "#bae6fd";
+  // --- Main fuselage body (Ka-52 / Mi-28 attack helo shape) ---
+  ctx.fillStyle = "#1e293b";
   ctx.beginPath();
-  ctx.ellipse(0, -size * 0.42, size * 0.16, size * 0.18, 0, 0, Math.PI * 2);
+  ctx.moveTo(0, -size * 0.62);           // Nose tip
+  ctx.bezierCurveTo(size * 0.22, -size * 0.50, size * 0.28, -size * 0.20, size * 0.26, size * 0.18);
+  ctx.lineTo(size * 0.20, size * 0.45);
+  ctx.lineTo(0, size * 0.50);
+  ctx.lineTo(-size * 0.20, size * 0.45);
+  ctx.lineTo(-size * 0.26, size * 0.18);
+  ctx.bezierCurveTo(-size * 0.28, -size * 0.20, -size * 0.22, -size * 0.50, 0, -size * 0.62);
+  ctx.closePath();
   ctx.fill();
-
-  // Tail Boom & Fin
-  ctx.beginPath();
-  ctx.moveTo(0, size * 0.35);
-  ctx.lineTo(0, size * 0.98);
-  ctx.lineTo(size * 0.24, size * 0.98);
   ctx.strokeStyle = color;
-  ctx.lineWidth = 2.8;
+  ctx.lineWidth = 1.2;
   ctx.stroke();
 
-  // Tail rotor
-  const tailRotorAngle = (timeMs / 10) % 360;
-  ctx.save();
-  ctx.translate(size * 0.24, size * 0.98);
-  ctx.rotate((tailRotorAngle * Math.PI) / 180);
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.8)";
-  ctx.lineWidth = 1.5;
+  // Tail boom (extends rearward)
+  ctx.fillStyle = "#1e293b";
   ctx.beginPath();
-  ctx.moveTo(0, -size * 0.22);
-  ctx.lineTo(0, size * 0.22);
+  ctx.moveTo(-size * 0.08, size * 0.44);
+  ctx.lineTo(-size * 0.08, size * 0.96);
+  ctx.lineTo(size * 0.08, size * 0.96);
+  ctx.lineTo(size * 0.08, size * 0.44);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 0.9;
   ctx.stroke();
+
+  // Tail fin (horizontal)
+  ctx.fillStyle = "#334155";
+  ctx.beginPath();
+  ctx.moveTo(-size * 0.08, size * 0.90);
+  ctx.lineTo(-size * 0.38, size * 0.88);
+  ctx.lineTo(-size * 0.38, size * 0.96);
+  ctx.lineTo(-size * 0.08, size * 0.96);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(size * 0.08, size * 0.90);
+  ctx.lineTo(size * 0.32, size * 0.88);
+  ctx.lineTo(size * 0.32, size * 0.96);
+  ctx.lineTo(size * 0.08, size * 0.96);
+  ctx.closePath();
+  ctx.fill();
+
+  // Tail rotor (spinning)
+  const tailRotorAngle = (timeMs / 8) % 360;
+  ctx.save();
+  ctx.translate(-size * 0.38, size * 0.92);
+  ctx.rotate((tailRotorAngle * Math.PI) / 180);
+  ctx.strokeStyle = "rgba(255,255,255,0.85)";
+  ctx.lineWidth = 1.4;
+  for (let b = 0; b < 3; b++) {
+    ctx.beginPath();
+    ctx.moveTo(0, 0); ctx.lineTo(0, -size * 0.20); ctx.stroke();
+    ctx.rotate((120 * Math.PI) / 180);
+  }
   ctx.restore();
 
-  // Main 4-blade rotor disk with motion blur
-  const rotorAngle = (timeMs / 16) % 360;
-  ctx.save();
-  ctx.translate(0, -size * 0.15);
-  ctx.rotate((rotorAngle * Math.PI) / 180);
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.78)";
-  ctx.lineWidth = 2;
+  // Stub wings with hardpoints (weapons rails)
+  ctx.fillStyle = "#334155";
+  // Right stub wing
   ctx.beginPath();
-  ctx.moveTo(0, -size * 0.95);
-  ctx.lineTo(0, size * 0.95);
-  ctx.moveTo(-size * 0.95, 0);
-  ctx.lineTo(size * 0.95, 0);
+  ctx.moveTo(size * 0.26, -size * 0.05);
+  ctx.lineTo(size * 0.64, -size * 0.02);
+  ctx.lineTo(size * 0.64, size * 0.10);
+  ctx.lineTo(size * 0.26, size * 0.12);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 0.8;
   ctx.stroke();
-  // Central rotor mast
-  ctx.fillStyle = "#ffffff";
+  // Left stub wing
   ctx.beginPath();
-  ctx.arc(0, 0, 2.5, 0, Math.PI * 2);
+  ctx.moveTo(-size * 0.26, -size * 0.05);
+  ctx.lineTo(-size * 0.64, -size * 0.02);
+  ctx.lineTo(-size * 0.64, size * 0.10);
+  ctx.lineTo(-size * 0.26, size * 0.12);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Weapons pods on wingtips
+  ctx.fillStyle = "#ef4444";
+  ctx.fillRect(size * 0.60, -size * 0.01, size * 0.12, size * 0.07);
+  ctx.fillRect(-size * 0.72, -size * 0.01, size * 0.12, size * 0.07);
+
+  // Bubble cockpit / armored nose
+  ctx.fillStyle = "#7dd3fc";
+  ctx.beginPath();
+  ctx.ellipse(0, -size * 0.42, size * 0.15, size * 0.22, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,0.30)";
+  ctx.beginPath();
+  ctx.ellipse(-size * 0.04, -size * 0.48, size * 0.06, size * 0.10, 0.25, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Main rotor system (top-down view: spinning disc)
+  const rotorAngle = (timeMs / 14) % 360;
+  ctx.save();
+  ctx.translate(0, -size * 0.08);
+  ctx.rotate((rotorAngle * Math.PI) / 180);
+  // Rotor disc motion blur ring
+  ctx.strokeStyle = "rgba(203,213,225,0.25)";
+  ctx.lineWidth = size * 0.12;
+  ctx.beginPath();
+  ctx.arc(0, 0, size * 0.88, 0, Math.PI * 2);
+  ctx.stroke();
+  // 5-blade rotor
+  ctx.strokeStyle = "rgba(255,255,255,0.80)";
+  ctx.lineWidth = 2;
+  for (let b = 0; b < 5; b++) {
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, -size * 0.92);
+    ctx.stroke();
+    ctx.rotate((72 * Math.PI) / 180);
+  }
+  // Rotor hub
+  ctx.fillStyle = "#f59e0b";
+  ctx.beginPath();
+  ctx.arc(0, 0, 3, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 
@@ -1153,7 +1415,8 @@ const syncWeatherLayer = async (map: maplibregl.Map, visible: boolean) => {
 const syncUkraineBorders = (map: maplibregl.Map, showFrontline = true) => {
   if (!map || !map.isStyleLoaded()) return;
   try {
-    // 0. Foreign Countries Borders (Strictly excluding Ukraine so NO double borders exist!)
+    // All Country Borders — world-borders.geojson includes accurate Ukraine geometry
+    // NO custom Ukraine overlay: only this real-data layer is used
     if (!map.getSource("world-borders")) {
       map.addSource("world-borders", {
         type: "geojson",
@@ -1161,23 +1424,11 @@ const syncUkraineBorders = (map: maplibregl.Map, showFrontline = true) => {
       });
     }
 
-    const nonUkraineFilter: any = [
-      "all",
-      ["!=", "NAME", "Ukraine"],
-      ["!=", "NAME_EN", "Ukraine"],
-      ["!=", "NAME_UK", "Україна"],
-      ["!=", "ISO_A3", "UKR"],
-      ["!=", "ADM0_A3", "UKR"],
-      ["!=", "SOV_A3", "UKR"],
-      ["!=", "ADMIN", "Ukraine"]
-    ];
-
     if (!map.getLayer("world-borders-glow")) {
       map.addLayer({
         id: "world-borders-glow",
         type: "line",
         source: "world-borders",
-        filter: nonUkraineFilter,
         paint: {
           "line-color": "#475569",
           "line-width": ["interpolate", ["linear"], ["zoom"], 3, 2.0, 6, 3.5, 10, 5.0],
@@ -1192,7 +1443,6 @@ const syncUkraineBorders = (map: maplibregl.Map, showFrontline = true) => {
         id: "world-borders-line",
         type: "line",
         source: "world-borders",
-        filter: nonUkraineFilter,
         paint: {
           "line-color": "#94a3b8",
           "line-width": ["interpolate", ["linear"], ["zoom"], 3, 1.0, 6, 1.6, 10, 2.2],
@@ -1201,77 +1451,46 @@ const syncUkraineBorders = (map: maplibregl.Map, showFrontline = true) => {
       });
     }
 
-    // 1. Ukraine's Recognized 1991 State Borders (All 24 Oblasts, Crimea & Sevastopol)
-    if (!map.getSource("ukraine-borders")) {
-      map.addSource("ukraine-borders", {
-        type: "geojson",
-        data: getUkraineBordersGeoJSON()
-      });
-    }
-
-    // Soft Outer Tactical Glow for recognized state border
-    if (!map.getLayer("ukraine-border-glow")) {
+    // Ukraine state border: bright distinct highlight on top of world-borders-line
+    // Uses world-borders source, filter by ISO_A3 = UKR for accurate geometry
+    if (!map.getLayer("ukraine-real-glow")) {
       map.addLayer({
-        id: "ukraine-border-glow",
+        id: "ukraine-real-glow",
         type: "line",
-        source: "ukraine-borders",
-        filter: ["==", "type", "state_border"],
+        source: "world-borders",
+        filter: ["any",
+          ["==", ["get", "ISO_A3"], "UKR"],
+          ["==", ["get", "ADM0_A3"], "UKR"],
+          ["==", ["get", "SOV_A3"], "UKR"]
+        ],
         paint: {
-          "line-color": "#0284c7",
-          "line-width": ["interpolate", ["linear"], ["zoom"], 4, 4.5, 8, 7.5, 12, 11],
-          "line-blur": ["interpolate", ["linear"], ["zoom"], 4, 2.5, 8, 4.5, 12, 6.5],
-          "line-opacity": 0.7
+          "line-color": "#0ea5e9",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 3, 3.5, 6, 6.0, 10, 9.0],
+          "line-blur": ["interpolate", ["linear"], ["zoom"], 3, 2.0, 6, 3.5, 10, 5.0],
+          "line-opacity": 0.65
         }
       });
     }
 
-    // High-Contrast Tactical Oblast Divisions
-    if (!map.getLayer("ukraine-oblast-borders")) {
+    if (!map.getLayer("ukraine-real-border")) {
       map.addLayer({
-        id: "ukraine-oblast-borders",
+        id: "ukraine-real-border",
         type: "line",
-        source: "ukraine-borders",
-        filter: ["==", "type", "oblast_border"],
+        source: "world-borders",
+        filter: ["any",
+          ["==", ["get", "ISO_A3"], "UKR"],
+          ["==", ["get", "ADM0_A3"], "UKR"],
+          ["==", ["get", "SOV_A3"], "UKR"]
+        ],
         paint: {
           "line-color": "#38bdf8",
-          "line-width": ["interpolate", ["linear"], ["zoom"], 4, 1.0, 8, 1.5, 12, 2.0],
-          "line-opacity": 0.5,
-          "line-dasharray": [4, 4]
-        }
-      });
-    }
-
-    // Sharp Luminous State Boundary Line
-    if (!map.getLayer("ukraine-state-border")) {
-      map.addLayer({
-        id: "ukraine-state-border",
-        type: "line",
-        source: "ukraine-borders",
-        filter: ["==", "type", "state_border"],
-        paint: {
-          "line-color": "#00f0ff",
-          "line-width": ["interpolate", ["linear"], ["zoom"], 4, 2.0, 8, 3.2, 12, 4.2],
+          "line-width": ["interpolate", ["linear"], ["zoom"], 3, 1.5, 6, 2.2, 10, 3.0],
           "line-opacity": 0.95
         }
       });
     }
 
-    // Ultra-Crisp White Centerline Core for state border
-    if (!map.getLayer("ukraine-state-border-core")) {
-      map.addLayer({
-        id: "ukraine-state-border-core",
-        type: "line",
-        source: "ukraine-borders",
-        filter: ["==", "type", "state_border"],
-        paint: {
-          "line-color": "#f0fdfa",
-          "line-width": ["interpolate", ["linear"], ["zoom"], 4, 0.8, 8, 1.3, 12, 1.8],
-          "line-opacity": 0.88
-        }
-      });
-    }
-
-    // 2. Tactical Line of Contact / Frontline (ЛБЗ // Лінія фронту)
+    // Tactical Line of Contact / Frontline (ЛБЗ)
     if (!map.getSource("ukraine-frontline")) {
       map.addSource("ukraine-frontline", {
         type: "geojson",
@@ -2096,7 +2315,7 @@ export const MapView = ({
           } else if (type === "fpv") {
             drawFpvSilhouette(ctx, targetX, targetY, scale, screenHeadingDeg, color, now);
           } else if (type === "munition") {
-            drawMissileSilhouette(ctx, targetX, targetY, scale, screenHeadingDeg, color);
+            drawMissileSilhouette(ctx, targetX, targetY, scale, screenHeadingDeg, color, now);
           } else if (type === "helicopter") {
             drawHelicopterSilhouette(ctx, targetX, targetY, scale, screenHeadingDeg, color, now);
           } else {
