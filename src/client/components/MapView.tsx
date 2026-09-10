@@ -1057,81 +1057,29 @@ const drawUncertaintyCone = (
 };
 
 const drawTacticalSelectionHalo = (
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  timeMs: number,
-  color = "#38bdf8"
+  _ctx: CanvasRenderingContext2D,
+  _x: number,
+  _y: number,
+  _timeMs: number,
+  _color = "#38bdf8"
 ) => {
-  ctx.save();
-  const pulse = Math.sin(timeMs / 260) * 0.12 + 0.88;
-  const radius = 24 * pulse;
-
-  // 1. Soft tactical selection ambient glow
-  ctx.beginPath();
-  ctx.arc(x, y, radius + 3, 0, Math.PI * 2);
-  ctx.strokeStyle = "rgba(56, 189, 248, 0.22)";
-  ctx.lineWidth = 3;
-  ctx.stroke();
-
-  // 2. Crisp tactical ring (no sci-fi rotating crosshairs or brackets)
-  ctx.beginPath();
-  ctx.arc(x, y, radius, 0, Math.PI * 2);
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 1.6;
-  ctx.stroke();
-
-  // 3. Small cardinal tick marks for precision orientation
-  const tickLen = 4;
-  ctx.beginPath();
-  ctx.moveTo(x, y - radius - tickLen);
-  ctx.lineTo(x, y - radius + 1);
-  ctx.moveTo(x, y + radius - 1);
-  ctx.lineTo(x, y + radius + tickLen);
-  ctx.moveTo(x - radius - tickLen, y);
-  ctx.lineTo(x - radius + 1, y);
-  ctx.moveTo(x + radius - 1, y);
-  ctx.lineTo(x + radius + tickLen, y);
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 1.4;
-  ctx.stroke();
-
-  ctx.restore();
+  // Clean display: zero circles, brackets or boxes around selected targets
 };
 
 const drawSelectedLocationBeacon = (
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
-  timeMs: number
+  _timeMs: number
 ) => {
   ctx.save();
-  const pulse = (timeMs % 1600) / 1600;
-  const rippleR = 8 + pulse * 20;
-  const rippleAlpha = Math.max(0, (1 - pulse) * 0.45);
-
-  // Soft subtle radar ping ripple
   ctx.beginPath();
-  ctx.arc(x, y, rippleR, 0, Math.PI * 2);
-  ctx.strokeStyle = `rgba(56, 189, 248, ${rippleAlpha})`;
-  ctx.lineWidth = 1.2;
-  ctx.stroke();
-
-  // Tactical beacon circle
-  ctx.beginPath();
-  ctx.arc(x, y, 7, 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(14, 165, 233, 0.25)";
+  ctx.arc(x, y, 4, 0, Math.PI * 2);
+  ctx.fillStyle = "#38bdf8";
   ctx.fill();
-  ctx.strokeStyle = "#38bdf8";
-  ctx.lineWidth = 1.8;
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 1.5;
   ctx.stroke();
-
-  // Center solid dot
-  ctx.beginPath();
-  ctx.arc(x, y, 2.5, 0, Math.PI * 2);
-  ctx.fillStyle = "#f8fafc";
-  ctx.fill();
-
   ctx.restore();
 };
 
@@ -1140,113 +1088,34 @@ const drawUserHomeBeacon = (
   map: maplibregl.Map,
   loc: { lat: number; lon: number },
   name: string | undefined,
-  timeMs: number,
+  _timeMs: number,
   width: number,
   height: number
 ) => {
   const pt = map.project([loc.lon, loc.lat]);
-  if (pt.x < -250 || pt.x > width + 250 || pt.y < -250 || pt.y > height + 250) {
+  if (pt.x < -60 || pt.x > width + 60 || pt.y < -60 || pt.y > height + 60) {
     return;
   }
 
   ctx.save();
-  const zoom = map.getZoom();
-
-  // 1. Concentric range rings: 15 km (danger perimeter) & 35 km (warning perimeter)
-  if (zoom >= 6.2) {
-    const mpp = metersPerPixel(loc.lat, zoom);
-    if (mpp > 0) {
-      const r15Px = 15_000 / mpp;
-      const r35Px = 35_000 / mpp;
-
-      // 15 km danger ring
-      if (r15Px < width * 2.0) {
-        ctx.beginPath();
-        ctx.arc(pt.x, pt.y, r15Px, 0, Math.PI * 2);
-        ctx.strokeStyle = "rgba(56, 189, 248, 0.28)";
-        ctx.lineWidth = 1.2;
-        ctx.setLineDash([4, 4]);
-        ctx.stroke();
-
-        if (zoom >= 7.8) {
-          ctx.setLineDash([]);
-          drawTextWithOutline(
-            ctx,
-            "15 км (сектор небезпеки)",
-            pt.x + 8,
-            pt.y - r15Px + 12,
-            "rgba(56, 189, 248, 0.85)",
-            "rgba(2, 6, 23, 0.9)",
-            "bold 9px Inter, system-ui, sans-serif"
-          );
-        }
-      }
-
-      // 35 km early warning ring
-      if (r35Px < width * 2.0 && zoom >= 6.8) {
-        ctx.beginPath();
-        ctx.arc(pt.x, pt.y, r35Px, 0, Math.PI * 2);
-        ctx.strokeStyle = "rgba(56, 189, 248, 0.16)";
-        ctx.lineWidth = 1.0;
-        ctx.setLineDash([2, 5]);
-        ctx.stroke();
-
-        if (zoom >= 8.2) {
-          ctx.setLineDash([]);
-          drawTextWithOutline(
-            ctx,
-            "35 км (раннє виявлення)",
-            pt.x + 8,
-            pt.y - r35Px + 12,
-            "rgba(56, 189, 248, 0.7)",
-            "rgba(2, 6, 23, 0.9)",
-            "bold 9px Inter, system-ui, sans-serif"
-          );
-        }
-      }
-    }
-  }
-
-  ctx.setLineDash([]);
-
-  // 2. Pulsing tactical radar ping ripple
-  const pulse = (timeMs % 2200) / 2200;
-  const rippleR = 8 + pulse * 26;
-  const rippleAlpha = Math.max(0, (1 - pulse) * 0.55);
-
   ctx.beginPath();
-  ctx.arc(pt.x, pt.y, rippleR, 0, Math.PI * 2);
-  ctx.strokeStyle = `rgba(14, 165, 233, ${rippleAlpha})`;
+  ctx.arc(pt.x, pt.y, 4, 0, Math.PI * 2);
+  ctx.fillStyle = "#38bdf8";
+  ctx.fill();
+  ctx.strokeStyle = "#ffffff";
   ctx.lineWidth = 1.5;
   ctx.stroke();
 
-  // 3. Tactical outer defense circle
-  ctx.beginPath();
-  ctx.arc(pt.x, pt.y, 8, 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(14, 165, 233, 0.28)";
-  ctx.fill();
-  ctx.strokeStyle = "#38bdf8";
-  ctx.lineWidth = 2.0;
-  ctx.stroke();
-
-  // 4. Center solid beacon dot
-  ctx.beginPath();
-  ctx.arc(pt.x, pt.y, 3, 0, Math.PI * 2);
-  ctx.fillStyle = "#ffffff";
-  ctx.fill();
-
-  // 5. Tactical Callout Label (e.g. "📍 МОЯ ЛОКАЦІЯ: Київ")
-  const label = name ? `📍 ${name}` : "📍 МОЯ ЛОКАЦІЯ";
+  const label = name ? `📍 ${name}` : "📍 Моя локація";
   drawTextWithOutline(
     ctx,
     label,
-    pt.x + 13,
+    pt.x + 9,
     pt.y + 4,
     "#38bdf8",
     "rgba(2, 6, 23, 0.95)",
     "bold 10px Inter, system-ui, sans-serif"
   );
-
   ctx.restore();
 };
 
@@ -1534,12 +1403,7 @@ const drawTacticalImpactMarker = (
   const pulse = Math.sin(now / 220) * 0.2 + 0.8;
   const radius = isImpact ? 14 : 13;
 
-  // 1. Pulsing outer shockwave ring
-  ctx.beginPath();
-  ctx.arc(x, y, radius * 1.5 * pulse, 0, Math.PI * 2);
-  ctx.strokeStyle = isImpact ? "rgba(239, 68, 68, 0.45)" : "rgba(14, 165, 233, 0.45)";
-  ctx.lineWidth = 1.4;
-  ctx.stroke();
+
 
   // 2. Core tactical badge
   ctx.beginPath();
@@ -2216,39 +2080,7 @@ export const MapView = ({
           }
         }
 
-        // 1.5 Animated shockwaves for fresh impact events (< 6s old)
-        for (const evt of impactsRef.current) {
-          const elapsedMs = Math.max(0, now - evt.timestamp);
-          if (elapsedMs < 6_000) {
-            const pt = map.project([evt.lon, evt.lat]);
-            if (pt.x >= -60 && pt.x <= width + 60 && pt.y >= -60 && pt.y <= height + 60) {
-              const isImpact = evt.type === "impact";
-              const pulsePhase = (now % 1200) / 1200;
-              const ringRadius = 8 + pulsePhase * 16;
-              const ringAlpha = Math.max(0, (1 - pulsePhase) * 0.65);
-              ctx.beginPath();
-              ctx.arc(pt.x, pt.y, ringRadius, 0, Math.PI * 2);
-              ctx.strokeStyle = isImpact ? `rgba(239, 68, 68, ${ringAlpha})` : `rgba(6, 182, 212, ${ringAlpha})`;
-              ctx.lineWidth = 1.4;
-              ctx.stroke();
-            }
-          }
-        }
 
-        // 2. Camera target tracking & selected lock halo
-        if (followingTargetIdRef.current) {
-          const follow = currentPackets.find((p) => p[0] === followingTargetIdRef.current);
-          if (follow) {
-            map.easeTo({ center: [follow[3], follow[2]], duration: 80, easing: (t) => t });
-          }
-        }
-
-        if (currentSelected) {
-          const selPt = map.project([currentSelected[3], currentSelected[2]]);
-          if (selPt.x >= -60 && selPt.x <= width + 60 && selPt.y >= -60 && selPt.y <= height + 60) {
-            drawTacticalSelectionHalo(ctx, selPt.x, selPt.y, now);
-          }
-        }
 
         // 2.2 Draw Air Targets (Shahed, Missile, Recon, KAB, FPV, Jet, Helicopter) & Trajectory Vectors
         const placedPillBoxes: PillRect[] = [];
@@ -2298,21 +2130,6 @@ export const MapView = ({
           const isSelected = Boolean(currentSelected && currentSelected[0] === id);
           const isHighThreat = type === "uav" || type === "munition" || type === "bomb" || type === "fpv";
           const color = TARGET_COLORS[type] ?? "#7dd3fc";
-
-          // UNCERTAINTY: Semi-transparent covariance / 1-sigma uncertainty area
-          if (zoom >= 7.5 && uncertaintyRadius && uncertaintyRadius > 80 && !isLowTier) {
-            const sigmaPx = Math.max(6, Math.min(50, (uncertaintyRadius / metersPerPixel(lat, zoom))));
-            ctx.save();
-            ctx.beginPath();
-            ctx.arc(targetX, targetY, sigmaPx, 0, Math.PI * 2);
-            ctx.fillStyle = isHighThreat ? "rgba(239, 68, 68, 0.07)" : "rgba(56, 189, 248, 0.07)";
-            ctx.strokeStyle = isHighThreat ? "rgba(239, 68, 68, 0.28)" : "rgba(56, 189, 248, 0.28)";
-            ctx.lineWidth = 1;
-            ctx.setLineDash([2, 3]);
-            ctx.fill();
-            ctx.stroke();
-            ctx.restore();
-          }
 
           // PREDICTED Forward flight trajectory vector (sleek, solid tactical directional line leading from silhouette nose)
           if (speed > 5) {
@@ -2382,21 +2199,8 @@ export const MapView = ({
             ? id.slice(5).toUpperCase()
             : "Ціль";
 
+          // Description is rendered ONLY when user explicitly clicks/taps on the target
           if (isSelected) {
-            drawTacticalSelectionHalo(ctx, targetX, targetY, now, color);
-            drawMilitaryCalloutPill(
-              ctx,
-              targetX,
-              targetY,
-              `🎯 ${shortName}`,
-              speedKmh,
-              altMsl,
-              color,
-              true,
-              true,
-              placedPillBoxes
-            );
-          } else if (zoom >= 8.0) {
             drawMilitaryCalloutPill(
               ctx,
               targetX,
@@ -2405,21 +2209,8 @@ export const MapView = ({
               speedKmh,
               altMsl,
               color,
-              isHighThreat,
               true,
-              placedPillBoxes
-            );
-          } else if (zoom >= 6.0 && isHighThreat) {
-            drawMilitaryCalloutPill(
-              ctx,
-              targetX,
-              targetY,
-              shortName,
-              speedKmh,
-              altMsl,
-              color,
-              isHighThreat,
-              false,
+              true,
               placedPillBoxes
             );
           }

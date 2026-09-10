@@ -210,32 +210,7 @@ export const App = () => {
     });
   }, [packets, tacticalFilters, threatOnly, filters]);
 
-  // Auto-Sentinel: Locks tracking reticle onto closest threat WITHOUT opening popup modal
-  useEffect(() => {
-    if (!tacticalFilters.autoTracking || !location || filteredPackets.length === 0) {
-      return;
-    }
 
-    let closest: TrackPacket | null = null;
-    let minD = Infinity;
-
-    for (const p of filteredPackets) {
-      const [, type, lat, lon] = p;
-      if (type === "uav" || type === "munition") {
-        const d = haversineMeters({ lat, lon }, { lat: location.lat, lon: location.lon });
-        if (d < minD) {
-          minD = d;
-          closest = p;
-        }
-      }
-    }
-
-    if (closest && minD <= tacticalFilters.dangerRadiusKm * 1000) {
-      if (!selectedTarget || selectedTarget[0] !== closest[0]) {
-        setSelectedTarget(closest);
-      }
-    }
-  }, [filteredPackets, location, tacticalFilters, selectedTarget]);
 
   const targetCounts = useMemo(() => {
     let uav = 0;
@@ -414,6 +389,7 @@ export const App = () => {
           setSelectedLocation(null);
         }}
         onSelectLocation={() => {
+          setSelectedTarget(null);
           setSelectedLocation(null);
           setInspectedTarget(null);
           setSelectedImpact(null);
