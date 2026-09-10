@@ -141,6 +141,28 @@ export const useTrustedLocation = () => {
     }
   }, []);
 
+  // Sync confirmed coordinates to Telegram Bot alert preferences
+  useEffect(() => {
+    if (!location) return;
+    const tgUserId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
+    if (!tgUserId) return;
+
+    const timer = setTimeout(() => {
+      void fetch("/api/alerts/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: tgUserId,
+          lat: location.lat,
+          lon: location.lon,
+          radiusKm: 35
+        })
+      }).catch(() => {});
+    }, 1500);
+
+    return () => clearTimeout(timer);
+  }, [location?.lat, location?.lon]);
+
   return useMemo(
     () => ({
       location,

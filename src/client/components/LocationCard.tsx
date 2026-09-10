@@ -20,7 +20,38 @@ export const LocationCard = ({
   onCenterLocation
 }: LocationCardProps) => {
   const [copied, setCopied] = useState(false);
+  const [subscribed, setSubscribed] = useState(false);
+  const [subscribing, setSubscribing] = useState(false);
   const intel = getLocationIntel(lat, lon, activeAlerts, packets, 65);
+
+  const handleSubscribeBot = async () => {
+    setSubscribing(true);
+    try {
+      const tgUserId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
+      const userId = tgUserId ? String(tgUserId) : localStorage.getItem("eye-radar-user-id");
+      const res = await fetch("/api/alerts/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          lat,
+          lon,
+          cityName: intel.landmarkDesc || intel.regionName,
+          radiusKm: 35
+        })
+      });
+      if (res.ok) {
+        setSubscribed(true);
+        window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success");
+      } else {
+        window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("error");
+      }
+    } catch {
+      window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("error");
+    } finally {
+      setSubscribing(false);
+    }
+  };
 
   const handleCopy = () => {
     const text = `📍 ${intel.landmarkDesc} [${lat.toFixed(5)}°N, ${lon.toFixed(5)}°E] | Тривога: ${
@@ -182,6 +213,16 @@ export const LocationCard = ({
             onClick={() => onCenterLocation(lat, lon)}
           >
             🎯 Центрувати огляд
+          </button>
+
+          <button
+            type="button"
+            className={`loc-action-btn ${subscribed ? "subscribed" : "secondary"}`}
+            onClick={handleSubscribeBot}
+            disabled={subscribing}
+            style={subscribed ? { backgroundColor: "#059669", borderColor: "#10b981", color: "#ffffff" } : {}}
+          >
+            {subscribed ? "🔔 Сповіщення в боті увімкнено!" : subscribing ? "⏳ Збереження..." : "🔔 Сповіщати про тривоги в боті"}
           </button>
 
           <button

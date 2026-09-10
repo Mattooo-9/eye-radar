@@ -4,8 +4,22 @@ import { AiBriefingService } from "../core/aiBriefing.js";
 import { StorageManager } from "../core/storage.js";
 import { ThreatEngine } from "../core/threatEngine.js";
 import type { AlertRegion, TrackState, UserAlertPreference } from "../domain/types.js";
+import type { AlertsInUaSource } from "../sources/alertsInUa.js";
 import type { SourceHealthTracker } from "../sources/sourceHealth.js";
 import { findCityInText, UKRAINE_CITIES } from "../sources/ukraineGeo.js";
+
+function findNearestOblast(lat: number, lon: number): { nameUk: string; oblast: string } {
+  let closest = UKRAINE_CITIES.kyiv;
+  let minD = Infinity;
+  for (const city of Object.values(UKRAINE_CITIES)) {
+    const d = (city.lat - lat) ** 2 + (city.lon - lon) ** 2;
+    if (d < minD) {
+      minD = d;
+      closest = city;
+    }
+  }
+  return { nameUk: closest.nameUk, oblast: closest.oblast || closest.nameUk };
+}
 
 export class EyeRadarBotManager {
   private bot: Telegraf | null = null;
@@ -15,6 +29,7 @@ export class EyeRadarBotManager {
   private healthTracker?: SourceHealthTracker;
   private trackCountProvider?: () => number;
   private tracksProvider?: () => TrackState[];
+  private alertsSource?: AlertsInUaSource;
 
   constructor() {
     if (!env.botToken || env.botToken === "YOUR_TELEGRAM_BOT_TOKEN") {
@@ -34,6 +49,10 @@ export class EyeRadarBotManager {
     this.healthTracker = tracker;
     this.trackCountProvider = trackCountProvider;
     this.tracksProvider = tracksProvider;
+  }
+
+  setAlertsSource(source: AlertsInUaSource): void {
+    this.alertsSource = source;
   }
 
   private setupHandlers(): void {
@@ -302,35 +321,137 @@ export class EyeRadarBotManager {
     });
   }
 
-  async broadcastThreatAlerts(tracks: TrackState[]): Promise<void> {
-    if (!this.bot || tracks.length === 0) {
-      return;
+  async subscribeUserLocation(
+    chatId: number,
+    lat: number,
+    lon: number,
+    cityName?: string,
+    radiusKm = 30
+  ): Promise<boolean> {
+    const nearest = findNearestOblast(lat, lon);
+    const resolvedCity = cityName || nearest.nameUk;
+    const existing = this.storage.getPreference(chatId);
+    const pref: UserAlertPreference = {
+      chatId,
+      lat,
+      lon,
+      radiusKm,
+      enabled: true,
+      cityName: resolvedCity,
+      lastAlertState: existing?.lastAlertState,
+      lastNotified: existing?.lastNotified
+    };
+    this.storage.savePreference(pref);
+
+    if (this.bot) {
+      try {
+        await this.bot.telegram.sendMessage(
+          chatId,
+          `📍 *Локацію для сповіщень підтверджено!*\n\n` +
+            `🎯 Сектор: *${resolvedCity}* (${nearest.oblast} обл.)\n` +
+            `🌐 Координати: \`${lat.toFixed(4)}, ${lon.toFixed(4)}\`\n` +
+            `📏 Радіус контролю: *${radiusKm} км*\n\n` +
+            `🔔 *Ви отримуватимете в цьому боті:*\n` +
+            `• Сигнали початку та відбою повітряної тривоги для вашого сектору\n` +
+            `• Попередження про пряме наближення Шахедів, ракет та КАБів у радіус ${radiusKm} км\n\n` +
+            `_Змінити локацію можна кліком на карті або командою /setlocation_`,
+          { parse_mode: "Markdown" }
+        );
+        return true;
+      } catch (err) {
+        console.warn(`Could not send confirmation to chat ${chatId}:`, err);
+      }
     }
+    return true;
+  }
+
+  async broadcastThreatAlerts(tracks: TrackState[]): Promise<void> {
+    if (!this.bot) return;
 
     const preferences = this.storage.getAllPreferences();
     if (preferences.length === 0) return;
 
     const now = Date.now();
+    const activeOblastNames = this.alertsSource ? this.alertsSource.getActiveAlertOblastNames() : [];
 
     for (const pref of preferences) {
       if (!pref.enabled) continue;
-      // Rate limit: max 1 alert per 8 minutes per user unless critical
-      if (pref.lastNotified && now - pref.lastNotified < 8 * 60_000) {
-        continue;
+
+      const nearest = findNearestOblast(pref.lat, pref.lon);
+      const userOblastKey = nearest.oblast.toLowerCase();
+      const isOblastAlarmed = activeOblastNames.some((o) => {
+        const lower = o.toLowerCase();
+        return (
+          lower.includes(userOblastKey) ||
+          userOblastKey.includes(lower.replace("область", "").trim())
+        );
+      });
+
+      // 1. Regional Air Raid Alarm state change (Start / All-Clear)
+      if (pref.lastAlertState === undefined) {
+        pref.lastAlertState = isOblastAlarmed;
+        this.storage.savePreference(pref);
+      } else if (isOblastAlarmed !== pref.lastAlertState) {
+        pref.lastAlertState = isOblastAlarmed;
+        this.storage.savePreference(pref);
+
+        try {
+          if (isOblastAlarmed) {
+            await this.bot.telegram.sendMessage(
+              pref.chatId,
+              `🚨 *ПОВІТРЯНА ТРИВОГА!*\n\n` +
+                `📍 Сектор: *${pref.cityName || nearest.nameUk}* (${nearest.oblast} область)\n` +
+                `⚠️ У вашому районі оголошено сигнал повітряної тривоги!\n` +
+                `Пройдіть в найближче укриття, дотримуйтесь правила двох стін!`,
+              { parse_mode: "Markdown" }
+            );
+          } else {
+            await this.bot.telegram.sendMessage(
+              pref.chatId,
+              `🟢 *ВІДБІЙ ПОВІТРЯНОЇ ТРИВОГИ!*\n\n` +
+                `📍 Сектор: *${pref.cityName || nearest.nameUk}* (${nearest.oblast} область)\n` +
+                `🛡️ Сигнал небезпеки скасовано. Загрозу минуло.`,
+              { parse_mode: "Markdown" }
+            );
+          }
+        } catch {
+          // Ignore delivery errors
+        }
       }
 
-      const threat = this.threatEngine.findHighestThreat(tracks, { lat: pref.lat, lon: pref.lon });
-      if (threat && (threat.threatLevel === "critical" || threat.threatLevel === "high")) {
-        const distanceKm = Math.round(threat.distanceMeters / 1000);
-        if (distanceKm <= pref.radiusKm) {
-          pref.lastNotified = now;
-          this.storage.savePreference(pref);
+      // 2. Direct aerial target approaching user's radius (Shahed / missile / KAB / FPV)
+      if (tracks.length > 0) {
+        // Rate limit threat proximity warning: max 1 per 6 minutes unless critical
+        if (pref.lastNotified && now - pref.lastNotified < 6 * 60_000) {
+          continue;
+        }
 
-          const msg = threat.warningMessage ?? `⚠️ УВАГА: Повітряна ціль на відстані ~${distanceKm} км курсом у ваш сектор! Перейдіть в укриття.`;
-          try {
-            await this.bot.telegram.sendMessage(pref.chatId, msg);
-          } catch {
-            // Ignore delivery errors (e.g. user blocked bot)
+        const threat = this.threatEngine.findHighestThreat(tracks, { lat: pref.lat, lon: pref.lon });
+        if (threat && (threat.threatLevel === "critical" || threat.threatLevel === "high")) {
+          const distanceKm = Math.round(threat.distanceMeters / 1000);
+          if (distanceKm <= pref.radiusKm) {
+            pref.lastNotified = now;
+            this.storage.savePreference(pref);
+
+            const matchedTrack = tracks.find((t) => t.id === threat.trackId);
+            const speedKmh = matchedTrack ? Math.round(matchedTrack.speed * 3.6) : undefined;
+            const headingDeg = matchedTrack ? Math.round(matchedTrack.heading) : undefined;
+            const targetName = matchedTrack?.model || matchedTrack?.type?.toUpperCase() || "ПОВІТРЯНА ЦІЛЬ";
+            const etaMin = threat.etaMinutes !== null && threat.etaMinutes !== undefined ? threat.etaMinutes : undefined;
+
+            const msg =
+              `⚠️ *УВАГА: НАБЛИЖЕННЯ ПОВІТРЯНОЇ ЦІЛІ!*\n\n` +
+              `🎯 Ціль: *${targetName}*\n` +
+              `📏 Відстань до вас: *~${distanceKm} км*\n` +
+              (speedKmh ? `🧭 Швидкість: *${speedKmh} км/год* | Курс: *${headingDeg}°*\n` : "") +
+              (etaMin ? `⏱️ Орієнтовний підліт (ETA): *~${etaMin} хв*\n\n` : "\n") +
+              `🚨 *Негайно перебувайте в укритті!*`;
+
+            try {
+              await this.bot.telegram.sendMessage(pref.chatId, msg, { parse_mode: "Markdown" });
+            } catch {
+              // Ignore delivery errors
+            }
           }
         }
       }

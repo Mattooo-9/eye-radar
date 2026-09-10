@@ -111,4 +111,7 @@ export interface UserAlertPreference {
   radiusKm: number;
   enabled: boolean;
   lastNotified?: number;
+  cityName?: string;
+  lastAlertState?: boolean;
 }
+

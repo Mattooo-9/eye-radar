@@ -226,6 +226,33 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "POST" && url.pathname === "/api/alerts/subscribe") {
+    try {
+      const raw = await readBody(req);
+      const parsed = JSON.parse(raw) as {
+        userId?: string | number;
+        lat?: number;
+        lon?: number;
+        cityName?: string;
+        radiusKm?: number;
+      };
+      const chatId = typeof parsed.userId === "number" ? parsed.userId : parseInt(String(parsed.userId || ""), 10);
+      const lat = typeof parsed.lat === "number" && !isNaN(parsed.lat) ? parsed.lat : 50.45;
+      const lon = typeof parsed.lon === "number" && !isNaN(parsed.lon) ? parsed.lon : 30.52;
+      const radiusKm = typeof parsed.radiusKm === "number" && !isNaN(parsed.radiusKm) ? Math.min(150, Math.max(5, parsed.radiusKm)) : 30;
+
+      if (!isNaN(chatId) && chatId > 0) {
+        await botManager.subscribeUserLocation(chatId, lat, lon, parsed.cityName, radiusKm);
+        json(res, 200, { ok: true, subscribed: true, chatId, lat, lon, radiusKm });
+      } else {
+        json(res, 400, { error: "Invalid Telegram user ID or chat ID" });
+      }
+    } catch {
+      json(res, 400, { error: "Invalid payload" });
+    }
+    return;
+  }
+
   if (req.method === "POST" && url.pathname === "/api/ingest/osint") {
     try {
       const raw = await readBody(req);
@@ -429,6 +456,7 @@ botManager.setHealthTracker(
   () => trackManager.snapshot().length,
   () => trackManager.snapshot()
 );
+botManager.setAlertsSource(alertsSource);
 
 server.on("upgrade", (req, socket, head) => {
   const url = new URL(req.url ?? "/", env.publicBaseUrl);

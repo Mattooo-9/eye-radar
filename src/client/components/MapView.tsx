@@ -1693,6 +1693,14 @@ const drawSatelliteReconLayer = (
   ctx.restore();
 };
 
+const TARGET_COLORS: Record<string, string> = {
+  uav: "#ef4444",
+  munition: "#f97316",
+  bomb: "#ef4444",
+  fpv: "#d946ef",
+  helicopter: "#10b981"
+};
+
 export const MapView = ({
   packets,
   mapStyleUrl,
@@ -2057,10 +2065,13 @@ export const MapView = ({
     }
   }, [packets, filters, impacts]);
 
+  const lastStarRenderRef = useRef<number>(0);
+
   // 6. Synchronized Canvas overlay render loop (locked 1:1 with MapLibre camera)
   useEffect(() => {
     let animId: number;
     let lastAudioCheck = 0;
+    let cachedCtx: CanvasRenderingContext2D | null = null;
 
     const render = (_time = performance.now(), _force = false) => {
       animId = requestAnimationFrame((t) => render(t, false));
@@ -2069,7 +2080,8 @@ export const MapView = ({
       const map = mapRef.current;
       const canvas = canvasRef.current;
       const container = mapContainerRef.current;
-      const ctx = canvas?.getContext("2d");
+      if (!cachedCtx || cachedCtx.canvas !== canvas) cachedCtx = canvas?.getContext("2d") ?? null;
+      const ctx = cachedCtx;
 
       if (map && canvas && ctx && container) {
         const ratio = Math.min(window.devicePixelRatio || 1, 2);
@@ -2094,14 +2106,15 @@ export const MapView = ({
         const currentFilters = filtersRef.current;
         const currentSelected = selectedTargetRef.current;
 
-        // A. Orbital Space Starfield (deep space perspective when zoomed out)
-        if (zoom <= 4.5) {
+        // A. Orbital Space Starfield — throttled to 100ms
+        if (zoom <= 4.5 && now - lastStarRenderRef.current > 100) {
+          lastStarRenderRef.current = now;
           ctx.save();
           for (let i = 0; i < 65; i++) {
             const sx = (i * 149.3 + 47) % width;
             const sy = (i * 211.7 + 83) % height;
             const twinkle = Math.sin(now / 350 + i) * 0.45 + 0.55;
-            ctx.fillStyle = `rgba(226, 232, 240, ${twinkle * 0.55})`;
+            ctx.fillStyle = `rgba(226, 232, 240, ${(twinkle * 0.55).toFixed(2)})`;
             ctx.fillRect(sx, sy, 1.5, 1.5);
           }
           ctx.restore();
@@ -2238,8 +2251,9 @@ export const MapView = ({
 
         // 2.2 Draw Air Targets (Shahed, Missile, Recon, KAB, FPV, Jet, Helicopter) & Trajectory Vectors
         const placedPillBoxes: PillRect[] = [];
+        const mapBearing = map.getBearing() || 0; // Hoisted: calculated once per animation frame
         for (const packet of currentPackets) {
-          const [id, type, lat, lon, heading, speed, , , , , altitude, packetModel] = packet;
+          const [id, type, lat, lon, heading, speed, timestamp, , , , altitude, packetModel] = packet;
 
           if (currentFilters) {
             if (type === "uav" && !currentFilters.uav) continue;
@@ -2250,7 +2264,10 @@ export const MapView = ({
             if (type === "helicopter" && (currentFilters.helicopter !== undefined ? !currentFilters.helicopter : !currentFilters.aircraft)) continue;
           }
 
-          const groundPoint = map.project([lon, lat]);
+          // Predictive Dead-Reckoning: smooth sub-second 60fps position interpolation
+          const elapsedSec = Math.max(0, Math.min(2.5, (now - (timestamp || now)) / 1000));
+          const curPos = speed > 2 && elapsedSec > 0.04 ? destinationPoint(lat, lon, heading, speed * elapsedSec) : { lat, lon };
+          const groundPoint = map.project([curPos.lon, curPos.lat]);
 
           if (
             groundPoint.x < -80 ||
@@ -2265,7 +2282,6 @@ export const MapView = ({
           const targetX = groundPoint.x;
           const targetY = groundPoint.y;
 
-          const mapBearing = map.getBearing() || 0;
           const screenHeadingDeg = (heading - mapBearing + 360) % 360;
           const headingRad = (screenHeadingDeg * Math.PI) / 180;
           const fwdX = Math.sin(headingRad);
@@ -2273,13 +2289,7 @@ export const MapView = ({
 
           const isSelected = Boolean(currentSelected && currentSelected[0] === id);
           const isHighThreat = type === "uav" || type === "munition" || type === "bomb" || type === "fpv";
-
-          let color = "#7dd3fc";
-          if (type === "uav") color = "#ef4444";
-          if (type === "munition") color = "#f97316";
-          if (type === "bomb") color = "#ef4444";
-          if (type === "fpv") color = "#d946ef";
-          if (type === "helicopter") color = "#10b981";
+          const color = TARGET_COLORS[type] ?? "#7dd3fc";
 
           // Forward flight trajectory vector (strictly leading forward out of silhouette nose)
           if (speed > 5) {

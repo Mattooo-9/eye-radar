@@ -84,7 +84,7 @@ export class TrackManager {
       speed: updatedSpeed,
       altitude: observation.altitude ?? previous.altitude,
       timestamp: observation.timestamp,
-      confidence: Number(updatedConfidence.toFixed(2)),
+      confidence: Math.round(updatedConfidence * 100) / 100,
       sources: mergedSources,
       covLat: filtered.covLat,
       covLon: filtered.covLon,
@@ -111,12 +111,9 @@ export class TrackManager {
       if (entry.state.speed > 2 && entry.state.heading !== undefined) {
         const dist = entry.state.speed * dt;
         const nextPos = destinationPoint(entry.state.lat, entry.state.lon, entry.state.heading, dist);
-        entry.state = {
-          ...entry.state,
-          lat: Number(nextPos.lat.toFixed(6)),
-          lon: Number(nextPos.lon.toFixed(6)),
-          timestamp: now
-        };
+        entry.state.lat = Math.round(nextPos.lat * 1_000_000) / 1_000_000;
+        entry.state.lon = Math.round(nextPos.lon * 1_000_000) / 1_000_000;
+        entry.state.timestamp = now;
       }
     }
   }
@@ -189,10 +186,10 @@ export class TrackManager {
     return this.snapshot().map((track) => [
       track.id,
       track.type,
-      Number(track.lat.toFixed(6)),
-      Number(track.lon.toFixed(6)),
-      Number(track.heading.toFixed(2)),
-      Number(track.speed.toFixed(2)),
+      Math.round(track.lat * 1_000_000) / 1_000_000,
+      Math.round(track.lon * 1_000_000) / 1_000_000,
+      Math.round(track.heading * 100) / 100,
+      Math.round(track.speed * 100) / 100,
       track.timestamp,
       track.confidence,
       track.uncertaintyRadius,

@@ -74,28 +74,7 @@ export class AlertsInUaSource {
         }
       }
     } catch {
-      // Fall through to cache/defaults if offline
-    }
-
-    // 3. Fallback only if both feeds failed
-    if (this.activeAlerts.size === 0) {
-      const defaultRegions = [
-        { id: "sumy", name: "Сумська область", active: true },
-        { id: "kharkiv", name: "Харківська область", active: true },
-        { id: "dnipro", name: "Дніпропетровська область", active: true },
-        { id: "zaporizhzhia", name: "Запорізька область", active: true },
-        { id: "chernihiv", name: "Чернігівська область", active: true }
-      ];
-
-      for (const r of defaultRegions) {
-        this.activeAlerts.set(r.id, {
-          id: r.id,
-          name: r.name,
-          active: r.active,
-          type: "oblast",
-          updatedAt: now
-        });
-      }
+      // Keep cached state on temporary network error
     }
 
     this.lastFetch = now;
