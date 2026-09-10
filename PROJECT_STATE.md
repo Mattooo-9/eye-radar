@@ -1,11 +1,11 @@
 # Eye Radar — Project State & Architectural Baseline
 
 **Last Updated:** 2026-09-10  
-**Baseline Git Commit:** `5f64e3f`  
+**Baseline Git Commit:** `b064869`  
 **Deployment Status:**
-- **Backend (Render):** `https://eye-radar.onrender.com/health` (Service ID: `srv-dagk9pgu01pc7388u35g`, Live, Healthy, 7 Sources Online, 240+ Active Tracks)
+- **Backend (Render):** `https://eye-radar.onrender.com/health` (Service ID: `srv-dagk9pgu01pc7388u35g`, Live, Healthy, Real Airborne Feeds Online, 145+ Active Tracks)
 - **Frontend (Vercel):** `https://eye-radar.vercel.app` (Production, Live)
-- **Telegram Bot:** `@EyeRadarUA_Bot` (Mini App embedded with cache-busting `?v=3.5.0&t=...`)
+- **Telegram Bot:** `@EyeRadarUA_Bot` (Mini App embedded with cache-busting `?v=4.0.0&t=...`)
 
 ---
 
@@ -13,7 +13,22 @@
 
 ### 1.1 Client (Frontend / Telegram Mini App)
 - **Stack:** Vite 7, React 19, TypeScript, Tailwind CSS, Lucide React, MapLibre GL 5.15.
-- **Rendering Engine:** Hybrid WebGL (MapLibre vector/satellite layers + GPU symbol sprites) + 60fps Canvas HUD overlay.
+- **Rendering Engine:** Hybrid WebGL (MapLibre vector/satellite layers + GPU symbol sprites) + 60fps / 30fps adaptive Canvas HUD overlay.
+- **Performance Tiers (`LOW`, `NORMAL`, `HIGH`):**
+  - Auto-detected on devices with `hardwareConcurrency < 4` or selectable via UI badge.
+  - `LOW` tier throttles render loop to 30 FPS, disables heavy canvas shadow filters, and uses aggressive viewport culling for smooth 60Hz UI on low-end mobile devices.
+- **Interactive LIVE Timeline Bar (`src/client/components/LiveTimelineBar.tsx`):**
+  - Modes: `● LIVE` (0s), `-1 хв` (60s), `-5 хв` (300s), `-10 хв` (600s), `-30 хв` (1800s), `-60 хв` (3600s).
+  - Historical playback banner with one-tap return to live stream.
+  - Historical position interpolation utilizing measured telemetry history.
+- **Target Kinematic States (Visual Separation on Map):**
+  - **MEASURED:** Amber waypoint dots for actual sensor hits from source feeds.
+  - **ESTIMATED:** IMM Kalman smoothed real-time position with directional tactical chevron.
+  - **PREDICTED:** Dashed future trajectory flight vector pointing to extrapolated destination.
+  - **UNCERTAINTY:** Semi-transparent 1-sigma covariance ellipse ($\sigma$) reflecting sensor accuracy and elapsed coasting time.
+- **Track Inspector & Diagnostics Modal (`src/client/components/TrackInspectorModal.tsx`):**
+  - One-tap tactical diagnostic dialog accessible from `TargetCard` ("🔬 Діагностика (Provenance)").
+  - Displays complete provenance chain, measured vs estimated coordinates/speed/altitude deltas in meters, IMM mode probabilities ($\mu_{CV}, \mu_{CT}$), and Mahalanobis gating score.
 - **Tactical Silhouettes & TTX:**
   - Strict physics separation:
     - **Shahed-136:** MD-550 piston engine (140–195 km/h, pusher propeller, low altitude 50–350 m, graphite delta).
@@ -28,7 +43,7 @@
   - No duplicated borders, no synthetic river borders, no country text labels.
   - Clean Google Satellite tiles with automatic overscaling (no "Zoom level not supported" watermarks).
 - **Event Visualization & TTLs:**
-  - **💥 Impacts (Прильоти):** TTL = 60 min with progressive alpha decay from 1.0 to 0.3.
+  - **💥 Impacts (Прильоти):** TTL = 60 min with progressive alpha decay from 1.0 to 0.25.
   - **🛡️ Interceptions (Збиття):** TTL = 10 min with progressive alpha decay.
 - **Mobile Telegram Mini App Adaptation:**
   - Safe-area insets (`safeAreaInset`, `contentSafeAreaInset`, `viewportStableHeight`).
@@ -42,12 +57,19 @@
 - **Evidence-based Target Classification Engine (`src/server/core/classificationEngine.ts`):**
   - Physics-based separation of Shahed-238 (turbojet) vs Shahed-136 (piston), recon UAVs, cruise missiles, KABs, FPVs.
   - Distinguishes measured speed/altitude vs model-derived estimates.
-- **Source Health Engine (`src/server/sources/sourceHealth.ts`):**
-  - Real-time $p_{50}, p_{95}, p_{99}$ latency tracking across all feeds (ADSB.lol, OpenSky, Airplanes.live, Alerts.in.ua, Open-Meteo, NASA FIRMS, Local SDR).
+- **Automated Source Health & Audit Engine (`src/server/sources/sourceHealth.ts`):**
+  - Tracks lifecycle states: `LIVE`, `DEGRADED`, `STALE`, `OFFLINE`.
+  - Strict isolation: a source is ONLY marked `LIVE` after a successful parse in the current session.
+  - Real-time $p_{50}, p_{95}, p_{99}$ latency tracking across feeds (ADSB.lol, OpenSky, Airplanes.live, Alerts.in.ua, Open-Meteo, NASA FIRMS, Local SDR, Public OSINT).
+  - Update frequency calculation (Hz) and `activeTracksHelped` counter.
   - Dynamic reliability weighting multiplier.
-- **Track Lifecycle Management (`src/server/core/trackManager.ts`):**
+- **Track Manager & Diagnostics (`src/server/core/trackManager.ts`):**
   - States: `TENTATIVE` → `CONFIRMED` → `COASTING` → `STALE` → `EXPIRED`.
-  - Zero object spread during tick mutation for maximum V8 throughput.
+  - Maintains `provenanceChain`, `measuredHistory` ring buffers, and delta sequence tracking.
+  - `GET /api/tracks/:id/diagnostic`: delivers instant, comprehensive telemetry diagnostic report.
+- **Synthetic Isolation:**
+  - Synthetic simulation is disabled by default in production (`simulationEnabled = false`).
+  - Real airborne tracks originate strictly from authorized live feeds.
 - **Telegram Bot (`src/server/bot/telegramBot.ts`):**
   - Mini App launcher button, `/start`, `/status`, `/subscribe` for alerts with user coordinates and customizable danger radius.
 
@@ -56,7 +78,9 @@
 ## 2. Test & Quality Metrics
 
 - **TypeScript Check:** `npm run check` — 0 errors.
-- **Vitest Unit & Benchmark Test Suite:** `npm test` — 20 tests passing across 8 test suites:
+- **Vitest Unit & Benchmark Test Suite:** `npm test` — 27 tests passing across 10 test suites:
+  - `sourceAudit.test.ts` (Automated source audit, lifecycle transitions, p50/p95/p99 latency, tracks helped)
+  - `provenance.test.ts` (Provenance chain tracking, measured vs estimated telemetry, track diagnostics, synthetic isolation)
   - `threatEngine.test.ts` (Threat scoring & zone proximity)
   - `locationIntel.test.ts` (Oblast/raion geocoding & danger zones)
   - `osintParser.test.ts` (Cascade OSINT regex & message parsing)
@@ -69,5 +93,5 @@
 ---
 
 ## 3. Production Verification
-- Render Backend: Live at `https://eye-radar.onrender.com/health` (240+ live tracks, 7 sources online with $p_{50}/p_{95}/p_{99}$ metrics).
-- Vercel Frontend: Live at `https://eye-radar.vercel.app`.
+- **Render Backend:** Live at `https://eye-radar.onrender.com/health` (145+ live tracks, healthy multi-source status, `/api/audit`, `/api/tracks`, `/api/tracks/:id/diagnostic`).
+- **Vercel Frontend:** Live at `https://eye-radar.vercel.app` (React 19 Mini App with Live Timeline bar, Performance Tiers, and Track Inspector).
