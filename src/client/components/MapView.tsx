@@ -1495,6 +1495,42 @@ const syncUkraineBorders = (map: maplibregl.Map, showFrontline = true) => {
       });
     }
 
+    // Ukraine Oblast Administrative Boundaries (24 oblasts + Crimea)
+    if (!map.getSource("ukraine-oblasts")) {
+      map.addSource("ukraine-oblasts", {
+        type: "geojson",
+        data: "/ukraine-oblasts.geojson"
+      });
+    }
+
+    if (!map.getLayer("ukraine-oblasts-glow")) {
+      map.addLayer({
+        id: "ukraine-oblasts-glow",
+        type: "line",
+        source: "ukraine-oblasts",
+        paint: {
+          "line-color": "#0284c7",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 4, 1.8, 8, 3.2, 12, 4.8],
+          "line-blur": ["interpolate", ["linear"], ["zoom"], 4, 1.0, 8, 2.0, 12, 3.0],
+          "line-opacity": 0.35
+        }
+      });
+    }
+
+    if (!map.getLayer("ukraine-oblasts-line")) {
+      map.addLayer({
+        id: "ukraine-oblasts-line",
+        type: "line",
+        source: "ukraine-oblasts",
+        paint: {
+          "line-color": "#7dd3fc",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 4, 1.0, 8, 1.6, 12, 2.2],
+          "line-dasharray": [4, 3],
+          "line-opacity": 0.70
+        }
+      });
+    }
+
     // Tactical Line of Contact / Frontline (ЛБЗ)
     if (!map.getSource("ukraine-frontline")) {
       map.addSource("ukraine-frontline", {

@@ -13,6 +13,8 @@ export class RadarHub {
   private currentSeq = 0;
   private heartbeatTimer?: NodeJS.Timeout;
 
+  private initialSnapshotProvider?: () => CompactTrackPacket[];
+
   constructor(private readonly wss: WebSocketServer) {
     this.wss.on("connection", (socket) => {
       this.sessions.set(socket, {
@@ -21,6 +23,16 @@ export class RadarHub {
         anomalyFlags: [],
         lastHeartbeat: Date.now()
       });
+
+      // Send initial track snapshot immediately so client doesn't wait with empty map
+      if (this.initialSnapshotProvider) {
+        try {
+          const packets = this.initialSnapshotProvider();
+          if (packets && packets.length > 0) {
+            socket.send(JSON.stringify([0, Date.now(), packets, this.currentSeq]));
+          }
+        } catch {}
+      }
 
       socket.on("message", (data) => this.onMessage(socket, data));
       socket.on("close", () => {
@@ -33,6 +45,10 @@ export class RadarHub {
       this.sendHeartbeat();
     }, 5_000);
     this.heartbeatTimer.unref();
+  }
+
+  setInitialSnapshotProvider(provider: () => CompactTrackPacket[]): void {
+    this.initialSnapshotProvider = provider;
   }
 
   getClientCount(): number {

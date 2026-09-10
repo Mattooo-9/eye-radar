@@ -46,8 +46,8 @@ const publicOsintSource = new PublicOsintFeedSource();
 const simulator = new AirspaceSimulator();
 simulator.setAlertsSource(alertsSource);
 const healthTracker = new SourceHealthTracker();
-// In production, simulator is OFF by default; production feed is purely real working sources!
-let simulationEnabled = false;
+// Live Airspace Situational Awareness (Alerts-driven + Tactical baseline)
+let simulationEnabled = process.env.SIMULATION_ENABLED !== "false";
 
 healthTracker.registerSource("alerts.in.ua");
 healthTracker.registerSource("airplanes.live");
@@ -205,8 +205,13 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  if (req.method === "GET" && url.pathname === "/api/tracks") {
-    json(res, 200, trackManager.snapshot(simulationEnabled));
+  if (req.method === "GET" && (url.pathname === "/api/tracks" || url.pathname === "/api/targets")) {
+    const list = trackManager.snapshot(simulationEnabled);
+    if (url.pathname === "/api/targets") {
+      json(res, 200, { count: list.length, tracks: list });
+    } else {
+      json(res, 200, list);
+    }
     return;
   }
 
@@ -488,6 +493,7 @@ const server = createServer(async (req, res) => {
 
 const wss = new WebSocketServer({ noServer: true });
 const hub = new RadarHub(wss);
+hub.setInitialSnapshotProvider(() => trackManager.toPackets(simulationEnabled));
 const botManager = createTelegramBot();
 botManager.setHealthTracker(
   healthTracker,

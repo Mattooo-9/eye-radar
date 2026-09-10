@@ -19,6 +19,7 @@ interface DynamicTrack {
   model: string;
   callsign: string;
   assignedRegion?: string;
+  isBaseline?: boolean;
 }
 
 interface RegionCorridor {
@@ -607,6 +608,137 @@ const REGION_CORRIDORS: RegionCorridor[] = [
   }
 ];
 
+const BASELINE_TACTICAL_CORRIDORS: RegionCorridor[] = [
+  // 1. Sumy border sector - Tactical Reconnaissance UAV
+  {
+    regionKeyword: "сум",
+    type: "uav",
+    minLat: 50.8,
+    maxLat: 51.5,
+    minLon: 34.0,
+    maxLon: 35.1,
+    headingMin: 215,
+    headingMax: 245,
+    speedKmhMin: 105,
+    speedKmhMax: 125,
+    altitudeMin: 1500,
+    altitudeMax: 2200,
+    model: "Supercam S350 Recon"
+  },
+  // 2. Kharkiv border sector / Kupyansk - Recon UAV
+  {
+    regionKeyword: "харків",
+    type: "uav",
+    minLat: 49.8,
+    maxLat: 50.3,
+    minLon: 36.5,
+    maxLon: 37.6,
+    headingMin: 200,
+    headingMax: 235,
+    speedKmhMin: 90,
+    speedKmhMax: 110,
+    altitudeMin: 1400,
+    altitudeMax: 1900,
+    model: "ZALA 421-16E Recon"
+  },
+  // 3. Zaporizhzhia frontline - Scout UAV
+  {
+    regionKeyword: "запоріж",
+    type: "uav",
+    minLat: 47.4,
+    maxLat: 47.9,
+    minLon: 35.3,
+    maxLon: 36.5,
+    headingMin: 320,
+    headingMax: 355,
+    speedKmhMin: 95,
+    speedKmhMax: 115,
+    altitudeMin: 1800,
+    altitudeMax: 2400,
+    model: "Orlan-30 Scout UAV"
+  },
+  // 4. Kherson / Dnipro delta - FPV Strike Group
+  {
+    regionKeyword: "херсон",
+    type: "fpv",
+    minLat: 46.55,
+    maxLat: 46.85,
+    minLon: 32.5,
+    maxLon: 33.2,
+    headingMin: 310,
+    headingMax: 345,
+    speedKmhMin: 85,
+    speedKmhMax: 115,
+    altitudeMin: 35,
+    altitudeMax: 75,
+    model: "FPV-дрон (Ударний)"
+  },
+  // 5. Central Ukraine Air Defense Combat Air Patrol (CAP)
+  {
+    regionKeyword: "вінниць",
+    type: "aircraft",
+    minLat: 49.1,
+    maxLat: 49.8,
+    minLon: 28.1,
+    maxLon: 29.5,
+    headingMin: 60,
+    headingMax: 120,
+    speedKmhMin: 620,
+    speedKmhMax: 690,
+    altitudeMin: 3800,
+    altitudeMax: 5200,
+    model: "MiG-29 Fighter (CAP)"
+  },
+  // 6. Typical Shahed Ingress Vector - North-East
+  {
+    regionKeyword: "полтав",
+    type: "uav",
+    minLat: 49.6,
+    maxLat: 50.2,
+    minLon: 33.8,
+    maxLon: 35.0,
+    headingMin: 220,
+    headingMax: 250,
+    speedKmhMin: 180,
+    speedKmhMax: 192,
+    altitudeMin: 150,
+    altitudeMax: 240,
+    model: "Shahed-136"
+  },
+  // 7. Typical Shahed Jet Ingress Vector - South/East
+  {
+    regionKeyword: "дніпро",
+    type: "uav",
+    minLat: 48.2,
+    maxLat: 48.7,
+    minLon: 34.8,
+    maxLon: 36.2,
+    headingMin: 290,
+    headingMax: 320,
+    speedKmhMin: 490,
+    speedKmhMax: 535,
+    altitudeMin: 400,
+    altitudeMax: 700,
+    model: "Shahed-238 (Jet)"
+  },
+  // 8. Chernihiv border patrol sector
+  {
+    regionKeyword: "чернігів",
+    type: "uav",
+    minLat: 51.3,
+    maxLat: 51.9,
+    minLon: 31.4,
+    maxLon: 32.6,
+    headingMin: 210,
+    headingMax: 240,
+    speedKmhMin: 100,
+    speedKmhMax: 120,
+    altitudeMin: 1600,
+    altitudeMax: 2200,
+    model: "Supercam S350 Recon"
+  }
+];
+
 export class AirspaceSimulator {
   private tracks = new Map<string, DynamicTrack>();
   private alertsSource?: AlertsInUaSource;
@@ -615,7 +747,7 @@ export class AirspaceSimulator {
   private sequence = 100;
 
   constructor() {
-    // Strictly live alert-correlated threats only; zero permanent hanging static dummy patrols
+    // Alert-driven + continuous situational awareness simulator
   }
 
   setAlertsSource(source: AlertsInUaSource): void {
@@ -627,6 +759,76 @@ export class AirspaceSimulator {
     return `tr-${prefix}-${this.sequence}`;
   }
 
+  private spawnTrackFromCorridor(corridor: RegionCorridor, now: number, isBaseline: boolean): void {
+    const lat = corridor.minLat + Math.random() * (corridor.maxLat - corridor.minLat);
+    const lon = corridor.minLon + Math.random() * (corridor.maxLon - corridor.minLon);
+    const heading = corridor.headingMin + Math.random() * (corridor.headingMax - corridor.headingMin);
+    const speedKmh = corridor.speedKmhMin + Math.random() * (corridor.speedKmhMax - corridor.speedKmhMin);
+    const altitudeM = corridor.altitudeMin + Math.random() * (corridor.altitudeMax - corridor.altitudeMin);
+
+    const prefix =
+      corridor.type === "aircraft"
+        ? "jet"
+        : corridor.type === "uav"
+        ? (corridor.model.includes("238") ? "shd2" : "shd")
+        : corridor.type === "bomb"
+        ? "kab"
+        : corridor.type === "fpv"
+        ? "fpv"
+        : "kr";
+    const id = this.nextId(prefix);
+
+    let callsign = `UA-${Math.floor(100 + Math.random() * 899)}`;
+    if (corridor.type === "aircraft") {
+      callsign = `CAP-GHOST-${Math.floor(10 + Math.random() * 89)}`;
+    } else if (corridor.model.includes("238")) {
+      callsign = `SHD-238-${Math.floor(100 + Math.random() * 899)}`;
+    } else if (corridor.model.includes("Supercam")) {
+      callsign = `SCAM-${Math.floor(100 + Math.random() * 899)}`;
+    } else if (corridor.model.includes("ZALA")) {
+      callsign = `ZALA-${Math.floor(100 + Math.random() * 899)}`;
+    } else if (corridor.model.includes("Orlan")) {
+      callsign = `ORLAN-${Math.floor(100 + Math.random() * 899)}`;
+    } else if (corridor.type === "fpv") {
+      callsign = `FPV-${Math.floor(100 + Math.random() * 899)}`;
+    } else if (corridor.type === "bomb") {
+      callsign = `KAB-${Math.floor(10 + Math.random() * 89)}`;
+    } else if (corridor.type === "munition") {
+      callsign = `MSL-${Math.floor(10 + Math.random() * 89)}`;
+    } else {
+      callsign = `SHD-136-${Math.floor(100 + Math.random() * 899)}`;
+    }
+
+    const lifetime = isBaseline
+      ? (corridor.type === "aircraft" ? 400 + Math.random() * 200 : 260 + Math.random() * 180)
+      : (corridor.type === "bomb"
+          ? 100 + Math.random() * 60
+          : corridor.type === "fpv"
+          ? 140 + Math.random() * 60
+          : corridor.type === "uav"
+          ? 180 + Math.random() * 120
+          : 120 + Math.random() * 90);
+
+    this.tracks.set(id, {
+      id,
+      type: corridor.type,
+      lat,
+      lon,
+      heading,
+      speedMs: speedKmh / 3.6,
+      altitudeM: Math.round(altitudeM),
+      turnRateDegPerSec: 0,
+      targetHeading: heading,
+      nextManeuverTime: now + 20_000 + Math.random() * 30_000,
+      spawnTime: now,
+      maxLifetimeSec: lifetime,
+      model: corridor.model,
+      callsign,
+      assignedRegion: corridor.regionKeyword,
+      isBaseline
+    });
+  }
+
   generateStep(now = Date.now()): Observation[] {
     const dt = Math.max(0.5, Math.min(4, (now - this.lastTick) / 1000));
     this.lastTick = now;
@@ -634,34 +836,37 @@ export class AirspaceSimulator {
     // Get real active alarms from alerts.in.ua
     const activeOblasts = this.alertsSource ? this.alertsSource.getActiveAlertOblastNames() : [];
 
-    // 1. Remove expired tracks (with impact/interception event) or tracks whose alarm has cleared
+    // 1. Remove expired tracks (with impact/interception event)
     for (const [id, track] of this.tracks.entries()) {
       if (track.maxLifetimeSec < 900000) {
         const ageSec = (now - track.spawnTime) / 1000;
 
-        // If target reached terminal destination: record impact or interception & DELETE IMMEDIATELY
+        // If target reached terminal destination: record impact or interception & DELETE
         if (ageSec >= track.maxLifetimeSec) {
-          const isIntercept = Math.random() < 0.78;
-          const regionName = formatOblastTitle(track.assignedRegion);
-          impactManager.createAndRecord(
-            isIntercept ? "intercept" : "impact",
-            track.lat,
-            track.lon,
-            track.model,
-            track.type,
-            regionName,
-            isIntercept
-              ? `Успішне перехоплення мобільною вогневою групою / підрозділом ППО: ${track.model}`
-              : `Зафіксовано влучання / детонацію боєприпасу: ${track.model}`
-          );
+          if (track.type === "uav" || track.type === "munition" || track.type === "bomb" || track.type === "fpv") {
+            const isIntercept = Math.random() < 0.78;
+            const regionName = formatOblastTitle(track.assignedRegion);
+            impactManager.createAndRecord(
+              isIntercept ? "intercept" : "impact",
+              track.lat,
+              track.lon,
+              track.model,
+              track.type,
+              regionName,
+              isIntercept
+                ? `Успішне перехоплення мобільною вогневою групою / підрозділом ППО: ${track.model}`
+                : `Зафіксовано влучання / детонацію боєприпасу: ${track.model}`
+            );
+          }
           this.tracks.delete(id);
           continue;
         }
 
-        // If assigned region is no longer alarmed or alarms cleared across Ukraine: DELETE IMMEDIATELY
+        // If alert-driven track and assigned region alarm has cleared: DELETE
         if (
+          !track.isBaseline &&
           track.assignedRegion &&
-          (activeOblasts.length === 0 || !activeOblasts.some((o) => o.toLowerCase().includes(track.assignedRegion!)))
+          (activeOblasts.length > 0 && !activeOblasts.some((o) => o.toLowerCase().includes(track.assignedRegion!)))
         ) {
           this.tracks.delete(id);
           continue;
@@ -669,76 +874,35 @@ export class AirspaceSimulator {
       }
     }
 
-    // 2. Synchronize threats strictly with currently alarmed Ukrainian oblasts
-    if (now - this.lastSpawnCheck > 15_000) {
+    // 2. Synchronize threats strictly with currently alarmed Ukrainian oblasts + baseline corridors
+    if (now - this.lastSpawnCheck > 10_000 || this.tracks.size === 0) {
       this.lastSpawnCheck = now;
 
-      // Find which corridors match active alarmed oblasts
-      const matchingCorridors = REGION_CORRIDORS.filter((corridor) =>
-        activeOblasts.some((oblast) => oblast.toLowerCase().includes(corridor.regionKeyword))
-      );
+      // A. Alert-correlated corridors (when sirens are active)
+      if (activeOblasts.length > 0) {
+        const matchingCorridors = REGION_CORRIDORS.filter((corridor) =>
+          activeOblasts.some((oblast) => oblast.toLowerCase().includes(corridor.regionKeyword))
+        );
 
-      for (const corridor of matchingCorridors) {
-        // Count active threats in this corridor
+        for (const corridor of matchingCorridors) {
+          const activeInCorridor = [...this.tracks.values()].filter(
+            (t) => !t.isBaseline && t.assignedRegion === corridor.regionKeyword
+          ).length;
+
+          if (activeInCorridor < 2) {
+            this.spawnTrackFromCorridor(corridor, now, false);
+          }
+        }
+      }
+
+      // B. Baseline Tactical Corridors (continuous border/frontline situational awareness)
+      for (const corridor of BASELINE_TACTICAL_CORRIDORS) {
         const activeInCorridor = [...this.tracks.values()].filter(
-          (t) => t.assignedRegion === corridor.regionKeyword
+          (t) => t.isBaseline && t.assignedRegion === corridor.regionKeyword
         ).length;
 
-        // Maintain 1-2 real threats in each alarmed oblast
-        if (activeInCorridor < 2) {
-          const lat = corridor.minLat + Math.random() * (corridor.maxLat - corridor.minLat);
-          const lon = corridor.minLon + Math.random() * (corridor.maxLon - corridor.minLon);
-          const heading = corridor.headingMin + Math.random() * (corridor.headingMax - corridor.headingMin);
-          const speedKmh = corridor.speedKmhMin + Math.random() * (corridor.speedKmhMax - corridor.speedKmhMin);
-          const altitudeM = corridor.altitudeMin + Math.random() * (corridor.altitudeMax - corridor.altitudeMin);
-
-          const prefix =
-            corridor.type === "uav"
-              ? "shd"
-              : corridor.type === "bomb"
-              ? "kab"
-              : corridor.type === "fpv"
-              ? "fpv"
-              : "kr";
-          const id = this.nextId(prefix);
-
-          this.tracks.set(id, {
-            id,
-            type: corridor.type,
-            lat,
-            lon,
-            heading,
-            speedMs: speedKmh / 3.6,
-            altitudeM: Math.round(altitudeM),
-            turnRateDegPerSec: 0,
-            targetHeading: heading,
-            nextManeuverTime: now + 20_000 + Math.random() * 30_000,
-            spawnTime: now,
-            maxLifetimeSec:
-              corridor.type === "bomb"
-                ? 100 + Math.random() * 60
-                : corridor.type === "fpv"
-                ? 140 + Math.random() * 60
-                : corridor.type === "uav"
-                ? 180 + Math.random() * 120
-                : 120 + Math.random() * 90,
-            model: corridor.model,
-            callsign:
-              corridor.type === "uav"
-                ? (corridor.model.includes("238")
-                  ? `SHD-238-${Math.floor(100 + Math.random() * 899)}`
-                  : corridor.model.includes("Supercam")
-                  ? `SCAM-${Math.floor(100 + Math.random() * 899)}`
-                  : corridor.model.includes("Orlan")
-                  ? `ORLAN-${Math.floor(100 + Math.random() * 899)}`
-                  : `SHD-136-${Math.floor(100 + Math.random() * 899)}`)
-                : corridor.type === "bomb"
-                ? `KAB-${Math.floor(10 + Math.random() * 89)}`
-                : corridor.type === "fpv"
-                ? `FPV-${Math.floor(100 + Math.random() * 899)}`
-                : `MSL-${Math.floor(10 + Math.random() * 89)}`,
-            assignedRegion: corridor.regionKeyword
-          });
+        if (activeInCorridor < 1) {
+          this.spawnTrackFromCorridor(corridor, now, true);
         }
       }
     }
