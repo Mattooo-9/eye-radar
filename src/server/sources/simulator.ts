@@ -528,21 +528,17 @@ export class AirspaceSimulator {
       track.lat = nextPos.lat;
       track.lon = nextPos.lon;
 
-      const noiseDist = 12 + Math.random() * 25;
-      const noiseAng = Math.random() * 360;
-      const noisyPos = destinationPoint(track.lat, track.lon, noiseAng, noiseDist);
-
       observations.push({
         id: track.id,
         type: track.type,
-        lat: Number(noisyPos.lat.toFixed(5)),
-        lon: Number(noisyPos.lon.toFixed(5)),
+        lat: Number(track.lat.toFixed(6)),
+        lon: Number(track.lon.toFixed(6)),
         heading: Math.round(track.heading),
         speed: Math.round(track.speedMs),
         altitude: track.altitudeM,
         timestamp: now,
         source: "sdr",
-        confidence: 0.96,
+        confidence: 0.98,
         meta: {
           callsign: track.callsign,
           model: track.model

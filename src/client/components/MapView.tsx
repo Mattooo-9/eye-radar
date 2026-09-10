@@ -99,67 +99,55 @@ const drawImpactEvent = (
 ) => {
   const isImpact = event.type === "impact";
   const elapsedMs = Math.max(0, now - event.timestamp);
-  const pulsePhase = (now % 1800) / 1800;
+
+  // Drop events older than 5 minutes from the live map to prevent clutter
+  if (elapsedMs > 5 * 60 * 1000) return;
 
   ctx.save();
 
-  // 1. Expanding animated tactical shockwave ring
-  const ringRadius = 14 + pulsePhase * 36;
-  const ringAlpha = Math.max(0, (1 - pulsePhase) * 0.9);
+  // 1. Brief subtle shockwave ring ONLY for brand new events (< 6 seconds old)
+  if (elapsedMs < 6_000) {
+    const pulsePhase = (now % 1200) / 1200;
+    const ringRadius = 8 + pulsePhase * 14;
+    const ringAlpha = Math.max(0, (1 - pulsePhase) * 0.65);
 
-  ctx.beginPath();
-  ctx.arc(x, y, ringRadius, 0, Math.PI * 2);
-  ctx.strokeStyle = isImpact ? `rgba(239, 68, 68, ${ringAlpha})` : `rgba(6, 182, 212, ${ringAlpha})`;
-  ctx.lineWidth = 2.5;
-  ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(x, y, ringRadius, 0, Math.PI * 2);
+    ctx.strokeStyle = isImpact ? `rgba(239, 68, 68, ${ringAlpha})` : `rgba(6, 182, 212, ${ringAlpha})`;
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+  }
 
-  // Secondary delayed shockwave ring
-  const secondPhase = ((now + 900) % 1800) / 1800;
-  const secondRadius = 14 + secondPhase * 36;
-  const secondAlpha = Math.max(0, (1 - secondPhase) * 0.65);
-  ctx.beginPath();
-  ctx.arc(x, y, secondRadius, 0, Math.PI * 2);
-  ctx.strokeStyle = isImpact ? `rgba(248, 113, 113, ${secondAlpha})` : `rgba(56, 189, 248, ${secondAlpha})`;
-  ctx.lineWidth = 1.8;
-  ctx.stroke();
-
-  // 2. Inner glow & core icon
-  ctx.beginPath();
-  ctx.arc(x, y, 15, 0, Math.PI * 2);
-  ctx.fillStyle = isImpact ? "rgba(220, 38, 38, 0.45)" : "rgba(8, 145, 178, 0.45)";
-  ctx.fill();
-  ctx.strokeStyle = isImpact ? "#ef4444" : "#06b6d4";
-  ctx.lineWidth = 2;
-  ctx.stroke();
-
-  // Draw icon
-  ctx.font = "15px sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(isImpact ? "💥" : "🛡️", x, y);
-
-  // 3. Label Pill
+  // 2. Compact military tactical badge (clean, unbloated, high-contrast)
   const minAgo = Math.max(1, Math.round(elapsedMs / 60000));
   const timeText = elapsedMs < 60000 ? "< 1 хв тому" : minAgo < 60 ? `${minAgo} хв тому` : `${Math.floor(minAgo / 60)} год тому`;
   const label = isImpact ? `💥 ПРИЛІТ (${timeText})` : `🛡️ ЗБИТТЯ (${timeText})`;
 
-  ctx.font = "bold 10px Inter, system-ui, sans-serif";
+  ctx.font = "bold 9px Inter, system-ui, -apple-system, sans-serif";
   const textWidth = ctx.measureText(label).width;
   const pillW = textWidth + 12;
-  const pillH = 18;
+  const pillH = 17;
   const pillX = x - pillW / 2;
-  const pillY = y + 18;
+  const pillY = y - pillH / 2;
 
-  ctx.fillStyle = isImpact ? "rgba(153, 27, 27, 0.94)" : "rgba(21, 94, 117, 0.94)";
-  ctx.strokeStyle = isImpact ? "#f87171" : "#38bdf8";
-  ctx.lineWidth = 1;
+  // Drop shadow
+  ctx.shadowColor = "rgba(0, 0, 0, 0.75)";
+  ctx.shadowBlur = 4;
+  ctx.shadowOffsetY = 1;
+
+  ctx.fillStyle = isImpact ? "rgba(127, 29, 29, 0.95)" : "rgba(14, 116, 144, 0.95)";
+  ctx.strokeStyle = isImpact ? "#ef4444" : "#38bdf8";
+  ctx.lineWidth = 1.2;
   ctx.beginPath();
   ctx.roundRect(pillX, pillY, pillW, pillH, 4);
   ctx.fill();
   ctx.stroke();
 
+  ctx.shadowColor = "transparent";
   ctx.fillStyle = "#ffffff";
-  ctx.fillText(label, x, pillY + pillH / 2);
+  ctx.textBaseline = "middle";
+  ctx.textAlign = "center";
+  ctx.fillText(label, x, y + 0.5);
 
   ctx.restore();
 };
@@ -182,49 +170,55 @@ const drawUavSilhouette = (
   const isRecon = model?.includes("Recon") || model?.includes("Supercam") || model?.includes("Orlan");
 
   if (isRecon) {
-    // 1. High-Aspect-Ratio Reconnaissance UAV (Supercam S350 / Orlan-10)
-    ctx.fillStyle = "#38bdf8";
-    // Fuselage
+    // 1. High-Aspect Reconnaissance UAV (Supercam S350 / Orlan-10)
+    ctx.shadowColor = "rgba(0, 0, 0, 0.75)";
+    ctx.shadowBlur = 4;
+
+    ctx.fillStyle = "#1e293b"; // Dark composite body
     ctx.beginPath();
-    ctx.ellipse(0, 0, size * 0.16, size * 0.75, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, size * 0.14, size * 0.72, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = "#f8fafc";
+
+    ctx.strokeStyle = "#38bdf8";
     ctx.lineWidth = 1.2;
     ctx.stroke();
 
-    // High-aspect long straight wings
+    // High-aspect straight glider wings
     ctx.beginPath();
-    ctx.rect(-size * 0.95, -size * 0.12, size * 1.9, size * 0.22);
+    ctx.rect(-size * 0.95, -size * 0.1, size * 1.9, size * 0.2);
     ctx.fill();
     ctx.stroke();
 
-    // V-tail / T-tail
+    // V-tail
     ctx.beginPath();
-    ctx.moveTo(-size * 0.35, size * 0.65);
-    ctx.lineTo(0, size * 0.52);
-    ctx.lineTo(size * 0.35, size * 0.65);
+    ctx.moveTo(-size * 0.32, size * 0.62);
+    ctx.lineTo(0, size * 0.48);
+    ctx.lineTo(size * 0.32, size * 0.62);
     ctx.stroke();
 
     // Optical gimbal camera pod at nose
-    ctx.fillStyle = "#ffffff";
+    ctx.fillStyle = "#38bdf8";
     ctx.beginPath();
-    ctx.arc(0, -size * 0.68, 2.5, 0, Math.PI * 2);
+    ctx.arc(0, -size * 0.65, 2.2, 0, Math.PI * 2);
     ctx.fill();
   } else if (isJet) {
-    // 2. Shahed-238 Turbojet Powered Delta Wing (Black radar-absorbent coating + thermal exhaust)
-    ctx.fillStyle = "#0f172a"; // Stealth dark RAM coating
+    // 2. Shahed-238 Turbojet Powered Delta Wing (Matte stealth black + thermal exhaust)
+    ctx.shadowColor = "rgba(0, 0, 0, 0.85)";
+    ctx.shadowBlur = 5;
+
+    ctx.fillStyle = "#09090b"; // Stealth RAM coating
     ctx.beginPath();
     ctx.moveTo(0, -size * 0.95);
-    ctx.lineTo(size * 0.76, size * 0.52);
+    ctx.lineTo(size * 0.76, size * 0.5);
     ctx.lineTo(size * 0.76, size * 0.68); // Winglet fin
     ctx.lineTo(size * 0.64, size * 0.68);
     ctx.lineTo(size * 0.18, size * 0.48);
-    ctx.lineTo(size * 0.12, size * 0.65); // Jet exhaust nozzle
+    ctx.lineTo(size * 0.12, size * 0.65); // Jet nozzle
     ctx.lineTo(-size * 0.12, size * 0.65);
     ctx.lineTo(-size * 0.18, size * 0.48);
     ctx.lineTo(-size * 0.64, size * 0.68);
     ctx.lineTo(-size * 0.76, size * 0.68);
-    ctx.lineTo(-size * 0.76, size * 0.52);
+    ctx.lineTo(-size * 0.76, size * 0.5);
     ctx.closePath();
     ctx.fill();
 
@@ -233,13 +227,13 @@ const drawUavSilhouette = (
     ctx.lineWidth = 1.4;
     ctx.stroke();
 
-    // Jet engine dorsal air intake scoop
-    ctx.fillStyle = "#f97316";
-    ctx.fillRect(-size * 0.08, -size * 0.1, size * 0.16, size * 0.25);
+    // Dorsal air intake scoop
+    ctx.fillStyle = "#ea580c";
+    ctx.fillRect(-size * 0.08, -size * 0.12, size * 0.16, size * 0.24);
 
-    // Turbojet exhaust heat plume
-    const jetPlumeLen = size * (0.35 + Math.sin(timeMs / 18) * 0.12);
-    ctx.fillStyle = "rgba(239, 68, 68, 0.85)";
+    // Turbojet afterburner flame plume
+    const jetPlumeLen = size * (0.35 + Math.sin(timeMs / 18) * 0.1);
+    ctx.fillStyle = "rgba(239, 68, 68, 0.9)";
     ctx.beginPath();
     ctx.moveTo(-size * 0.1, size * 0.65);
     ctx.lineTo(0, size * 0.65 + jetPlumeLen);
@@ -247,42 +241,82 @@ const drawUavSilhouette = (
     ctx.closePath();
     ctx.fill();
   } else {
-    // 3. Classic Shahed-136 Piston Delta Wing
-    ctx.fillStyle = color;
+    // 3. Real Military Shahed-136 Kamikaze Delta Wing (Aerospace-grade realistic illustration)
+    ctx.shadowColor = "rgba(0, 0, 0, 0.85)";
+    ctx.shadowBlur = 6;
+    ctx.shadowOffsetY = 1;
+
+    // Delta wing base shape
+    ctx.fillStyle = "#1e293b"; // Dark graphite composite RAM airframe
     ctx.beginPath();
-    ctx.moveTo(0, -size * 0.9);
-    ctx.lineTo(size * 0.72, size * 0.5);
-    ctx.lineTo(size * 0.72, size * 0.65); // Wingtip vertical stabilizer
-    ctx.lineTo(size * 0.62, size * 0.65);
-    ctx.lineTo(size * 0.15, size * 0.45);
-    ctx.lineTo(0, size * 0.58); // Central pusher propeller mount
-    ctx.lineTo(-size * 0.15, size * 0.45);
-    ctx.lineTo(-size * 0.62, size * 0.65);
-    ctx.lineTo(-size * 0.72, size * 0.65);
-    ctx.lineTo(-size * 0.72, size * 0.5);
+    ctx.moveTo(0, -size * 0.95); // Nose radome
+    ctx.lineTo(size * 0.76, size * 0.48); // Right wingtip
+    ctx.lineTo(size * 0.76, size * 0.65); // Right winglet trailing edge
+    ctx.lineTo(size * 0.62, size * 0.65); // Right winglet base
+    ctx.lineTo(size * 0.16, size * 0.45); // Right wing root trailing edge
+    ctx.lineTo(size * 0.12, size * 0.58); // Propeller mount starboard
+    ctx.lineTo(-size * 0.12, size * 0.58); // Propeller mount port
+    ctx.lineTo(-size * 0.16, size * 0.45); // Left wing root trailing edge
+    ctx.lineTo(-size * 0.62, size * 0.65); // Left winglet base
+    ctx.lineTo(-size * 0.76, size * 0.65); // Left winglet trailing edge
+    ctx.lineTo(-size * 0.76, size * 0.48); // Left wingtip
     ctx.closePath();
     ctx.fill();
 
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.95)";
-    ctx.lineWidth = 1.3;
+    // Threat danger outline (red)
+    ctx.strokeStyle = "#ef4444";
+    ctx.lineWidth = 1.4;
     ctx.stroke();
 
-    // Wingtip vertical stabilizer fins
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(-size * 0.72, size * 0.42, 2.5, size * 0.22);
-    ctx.fillRect(size * 0.72 - 2.5, size * 0.42, 2.5, size * 0.22);
+    // Central fuselage spine fairing
+    ctx.fillStyle = "#334155";
+    ctx.beginPath();
+    ctx.ellipse(0, -size * 0.1, size * 0.14, size * 0.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(239, 68, 68, 0.6)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
 
-    // Rear pusher propeller disk
-    const propAngle = (timeMs / 12) % 360;
+    // Wing structural panel lines
+    ctx.strokeStyle = "rgba(148, 163, 184, 0.35)";
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(0, -size * 0.5);
+    ctx.lineTo(size * 0.6, size * 0.42);
+    ctx.moveTo(0, -size * 0.5);
+    ctx.lineTo(-size * 0.6, size * 0.42);
+    ctx.stroke();
+
+    // Wingtip vertical stabilizer fins (with high-visibility tactical chevrons)
+    ctx.fillStyle = "#f8fafc";
+    ctx.fillRect(-size * 0.76, size * 0.42, 2.5, size * 0.22);
+    ctx.fillRect(size * 0.76 - 2.5, size * 0.42, 2.5, size * 0.22);
+    ctx.fillStyle = "#ef4444";
+    ctx.fillRect(-size * 0.76, size * 0.42, 2.5, size * 0.08);
+    ctx.fillRect(size * 0.76 - 2.5, size * 0.42, 2.5, size * 0.08);
+
+    // Nose optical sensor / guidance radome
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.arc(0, -size * 0.85, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Rear MD-550 pusher propeller disc (spinning)
+    const propAngle = (timeMs / 10) % 360;
     ctx.save();
     ctx.translate(0, size * 0.58);
     ctx.rotate((propAngle * Math.PI) / 180);
-    ctx.strokeStyle = "rgba(254, 202, 202, 0.75)";
-    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = "rgba(254, 202, 202, 0.85)";
+    ctx.lineWidth = 1.6;
     ctx.beginPath();
-    ctx.moveTo(-size * 0.25, 0);
-    ctx.lineTo(size * 0.25, 0);
+    ctx.moveTo(-size * 0.24, 0);
+    ctx.lineTo(size * 0.24, 0);
     ctx.stroke();
+    // Central propeller hub
+    ctx.fillStyle = "#f59e0b";
+    ctx.beginPath();
+    ctx.arc(0, 0, 2, 0, Math.PI * 2);
+    ctx.fill();
     ctx.restore();
   }
 
@@ -821,18 +855,18 @@ const drawMilitaryCalloutPill = (
   ctx.fill();
   ctx.stroke();
 
-  // Subtle lead connector line from target to pill
-  ctx.strokeStyle = isThreat ? "rgba(239, 68, 68, 0.5)" : "rgba(56, 189, 248, 0.4)";
+  // Subtle lead connector line from target to pill (starting outside silhouette boundary)
+  ctx.strokeStyle = isThreat ? "rgba(239, 68, 68, 0.45)" : "rgba(56, 189, 248, 0.35)";
   ctx.lineWidth = 0.9;
   ctx.beginPath();
   if (px > targetX) {
-    ctx.moveTo(targetX + 4, targetY);
+    ctx.moveTo(targetX + 16, targetY);
     ctx.lineTo(px, py + 9);
   } else if (px + pillW < targetX) {
-    ctx.moveTo(targetX - 4, targetY);
+    ctx.moveTo(targetX - 16, targetY);
     ctx.lineTo(px + pillW, py + 9);
   } else {
-    ctx.moveTo(targetX, targetY > py ? targetY - 4 : targetY + 4);
+    ctx.moveTo(targetX, targetY > py ? targetY - 16 : targetY + 16);
     ctx.lineTo(px + pillW / 2, py + (targetY > py ? pillH : 0));
   }
   ctx.stroke();
@@ -851,79 +885,6 @@ const drawMilitaryCalloutPill = (
   ctx.restore();
 };
 
-const drawTacticalGlassBadge = (
-  ctx: CanvasRenderingContext2D,
-  airX: number,
-  airY: number,
-  displayId: string,
-  speedKmh: number,
-  speedKnots: number,
-  altMsl: string,
-  altFt: number,
-  heading: number,
-  landmark: string,
-  isThreat: boolean
-) => {
-  ctx.save();
-  const ratio = window.devicePixelRatio || 1;
-  const screenW = ctx.canvas.width / ratio;
-  const screenH = ctx.canvas.height / ratio;
-
-  const panelW = 196;
-  const panelH = 74;
-  const panelX = airX + 22 + panelW > screenW - 12 ? airX - panelW - 20 : airX + 22;
-  const panelY = Math.max(12, Math.min(screenH - panelH - 12, airY - 37));
-
-  // Background glass fill
-  ctx.fillStyle = "rgba(11, 18, 32, 0.95)";
-  ctx.strokeStyle = isThreat ? "rgba(239, 68, 68, 0.9)" : "rgba(56, 189, 248, 0.85)";
-  ctx.lineWidth = 1.4;
-
-  ctx.beginPath();
-  ctx.roundRect(panelX, panelY, panelW, panelH, 6);
-  ctx.fill();
-  ctx.stroke();
-
-  // Top header highlight bar
-  ctx.fillStyle = isThreat ? "rgba(239, 68, 68, 0.35)" : "rgba(56, 189, 248, 0.28)";
-  ctx.beginPath();
-  ctx.roundRect(panelX, panelY, panelW, 19, [6, 6, 0, 0]);
-  ctx.fill();
-
-  // Lead pointer line from air target to glass badge
-  ctx.strokeStyle = isThreat ? "rgba(239, 68, 68, 0.75)" : "rgba(56, 189, 248, 0.7)";
-  ctx.lineWidth = 1.2;
-  ctx.beginPath();
-  if (panelX < airX) {
-    ctx.moveTo(airX - 8, airY);
-    ctx.lineTo(panelX + panelW, panelY + 14);
-  } else {
-    ctx.moveTo(airX + 8, airY);
-    ctx.lineTo(panelX, panelY + 14);
-  }
-  ctx.stroke();
-
-  // Title
-  ctx.font = "bold 10px Inter, monospace";
-  ctx.fillStyle = isThreat ? "#fca5a5" : "#bae6fd";
-  ctx.fillText(displayId, panelX + 8, panelY + 14);
-
-  // Flight Telemetry & Altitude Corridor
-  ctx.font = "9px Inter, monospace";
-  ctx.fillStyle = "#f8fafc";
-  ctx.fillText(`V: ${speedKmh} км/год (${speedKnots} kts)`, panelX + 8, panelY + 33);
-
-  const altColor = isThreat ? "#f87171" : "#7dd3fc";
-  ctx.fillStyle = altColor;
-  ctx.fillText(`H: ${altMsl} (${altFt} ft) • CRS: ${Math.round(heading % 360)}°`, panelX + 8, panelY + 47);
-
-  // Landmark proximity
-  ctx.fillStyle = "rgba(148, 163, 184, 0.95)";
-  const truncatedLandmark = landmark.length > 27 ? landmark.slice(0, 26) + "…" : landmark;
-  ctx.fillText(`📍 ${truncatedLandmark}`, panelX + 8, panelY + 63);
-
-  ctx.restore();
-};
 
 const syncWeatherLayer = async (map: maplibregl.Map, visible: boolean) => {
   try {
@@ -1625,15 +1586,15 @@ export const MapView = ({
             continue;
           }
 
-          // Geometrical scale strictly calibrated for clutter-free rendering at all scales
+          // Geometrical scale strictly calibrated: 13px at regional view, max 19px at close tactical view
           const scale =
-            zoom < 6.5
-              ? 15.0
+            zoom < 6.0
+              ? 13.0
               : zoom < 8.5
-              ? 17.0 + (zoom - 6.5) * 2.0
-              : zoom < 12.0
-              ? 21.0 + (zoom - 8.5) * 2.8
-              : Math.min(68, 31.0 + (zoom - 12.0) * 5.5);
+              ? 15.0
+              : zoom < 11.5
+              ? 17.0
+              : 19.0;
 
           // Subpixel-locked target coordinates directly anchored to geographic ground coordinates
           const targetX = groundPoint.x;
@@ -1666,73 +1627,41 @@ export const MapView = ({
             continue;
           }
 
-          // 1. EXACT GROUND NADIR ANCHOR PINPOINT (Ground Zero)
+          // Subtle ground nadir reference point
           ctx.save();
-          const groundPulse = Math.sin(now / 240) * 0.3 + 0.7;
-          ctx.beginPath();
-          ctx.arc(targetX, targetY, zoom >= 10 ? 6.5 : 3.5, 0, Math.PI * 2);
-          ctx.strokeStyle = isHighThreat ? `rgba(239, 68, 68, ${groundPulse})` : `rgba(56, 189, 248, ${groundPulse})`;
-          ctx.lineWidth = 1.3;
-          ctx.stroke();
-
           ctx.beginPath();
           ctx.arc(targetX, targetY, 2, 0, Math.PI * 2);
           ctx.fillStyle = isHighThreat ? "#ef4444" : "#38bdf8";
           ctx.fill();
-
-          // Ground crosshair cardinal ticks
-          const tick = zoom >= 10 ? 5 : 3;
-          ctx.beginPath();
-          ctx.moveTo(targetX - tick - 2, targetY);
-          ctx.lineTo(targetX - 2, targetY);
-          ctx.moveTo(targetX + 2, targetY);
-          ctx.lineTo(targetX + tick + 2, targetY);
-          ctx.moveTo(targetX, targetY - tick - 2);
-          ctx.lineTo(targetX, targetY - 2);
-          ctx.moveTo(targetX, targetY + 2);
-          ctx.lineTo(targetX, targetY + tick + 2);
-          ctx.stroke();
           ctx.restore();
 
-          // Ultra-precise ground targeting reticle pinned directly to terrain
-          if (zoom >= 10.5) {
-            drawGroundReticle(ctx, targetX, targetY, isHighThreat, now);
-          }
-
-          // Forward flight trajectory vector (aligned colinearly with silhouette nose)
+          // Forward flight trajectory vector (strictly leading forward out of silhouette nose)
           if (speed > 5) {
-            const vectorLen = zoom < 6.5 ? 26 : zoom < 9 ? 38 : 54;
-            const tipX = targetX + fwdX * vectorLen;
-            const tipY = targetY + fwdY * vectorLen;
+            const noseDist = scale * 0.95;
+            const vectorLen = zoom < 6.5 ? 18 : zoom < 9 ? 24 : 32;
+            const startX = targetX + fwdX * noseDist;
+            const startY = targetY + fwdY * noseDist;
+            const tipX = targetX + fwdX * (noseDist + vectorLen);
+            const tipY = targetY + fwdY * (noseDist + vectorLen);
 
             ctx.save();
             ctx.strokeStyle = color;
-            ctx.lineWidth = zoom >= 10 ? 1.8 : 1.3;
-            ctx.setLineDash([4, 3]);
+            ctx.lineWidth = 1.3;
+            ctx.setLineDash([3, 3]);
             ctx.beginPath();
-            ctx.moveTo(targetX, targetY);
+            ctx.moveTo(startX, startY);
             ctx.lineTo(tipX, tipY);
             ctx.stroke();
 
-            // Waypoint tick dot at tip
+            // Small waypoint tick dot at tip
             ctx.beginPath();
-            ctx.arc(tipX, tipY, 2.2, 0, Math.PI * 2);
+            ctx.arc(tipX, tipY, 2, 0, Math.PI * 2);
             ctx.fillStyle = color;
             ctx.fill();
-
-            // Estimated 2-minute distance crosshair tick
-            const midX = targetX + fwdX * (vectorLen * 0.55);
-            const midY = targetY + fwdY * (vectorLen * 0.55);
-            const tickNormX = -fwdY * 3.5;
-            const tickNormY = fwdX * 3.5;
-            ctx.beginPath();
-            ctx.moveTo(midX - tickNormX, midY - tickNormY);
-            ctx.lineTo(midX + tickNormX, midY + tickNormY);
-            ctx.stroke();
             ctx.restore();
           }
 
-          // 2. Draw Military Silhouette strictly pointing in flight direction
+          // Draw Military Silhouette strictly pointing in flight direction
           if (type === "uav") {
             drawUavSilhouette(ctx, targetX, targetY, scale, screenHeadingDeg, color, now, packetModel);
           } else if (type === "munition") {
@@ -1743,7 +1672,7 @@ export const MapView = ({
             drawAircraftSilhouette(ctx, targetX, targetY, scale, screenHeadingDeg, color, now);
           }
 
-          // Target Tag & Telemetry: Crisp Military Pill or Selected Tactical Glass HUD Badge
+          // Target Tag & Telemetry: Crisp, non-colliding military pill
           const effectiveAltM =
             altitude !== undefined && altitude !== null
               ? altitude
@@ -1757,46 +1686,33 @@ export const MapView = ({
           const speedKmh = Math.round(speed * 3.6);
           const altMsl = effectiveAltM >= 1000 ? `${(effectiveAltM / 1000).toFixed(1)} км` : `${Math.round(effectiveAltM)} м`;
 
+          const shortName = packetModel
+            ? packetModel.replace(" Cruise Missile", "").replace(" Fighting Falcon", "").replace(" Fulcrum", "").replace(" (Jet)", "-Jet")
+            : type === "uav"
+            ? "Shahed-136"
+            : type === "munition"
+            ? "Х-101"
+            : type === "helicopter"
+            ? "Ка-52"
+            : id.startsWith("adsb-")
+            ? id.slice(5).toUpperCase()
+            : "Су-34М";
+
           if (isSelected) {
-            const modelName = packetModel
-              ? `🎯 ${packetModel.toUpperCase()}`
-              : type === "uav"
-              ? "🔴 SHAHED-136 (БПЛА)"
-              : type === "munition"
-              ? "🟠 Х-101 / КАЛІБР"
-              : type === "helicopter"
-              ? "🟢 КА-52 / ВЕРТОЛЬОТ"
-              : id.startsWith("adsb-")
-              ? `FLIGHT ${id.slice(5).toUpperCase()}`
-              : "🔵 СУ-34М (АВІАЦІЯ)";
-            const speedKnots = Math.round(speed * 1.94384);
-            const altFt = Math.round(effectiveAltM * 3.28084);
-            const landmark = findNearestLandmark(lat, lon);
-            drawTacticalGlassBadge(
+            drawLockReticle(ctx, targetX, targetY, (now / 40) % 360);
+            drawMilitaryCalloutPill(
               ctx,
               targetX,
               targetY,
-              modelName,
+              `🎯 ${shortName}`,
               speedKmh,
-              speedKnots,
               altMsl,
-              altFt,
-              heading,
-              landmark,
-              isHighThreat
+              color,
+              true,
+              true,
+              placedPillBoxes
             );
-          } else if (zoom >= 6.8 || (zoom >= 4.8 && isHighThreat)) {
-            const shortName = packetModel
-              ? packetModel.replace(" Cruise Missile", "").replace(" Fighting Falcon", "").replace(" Fulcrum", "")
-              : type === "uav"
-              ? "Shahed-136"
-              : type === "munition"
-              ? "Х-101"
-              : type === "helicopter"
-              ? "Ка-52"
-              : id.startsWith("adsb-")
-              ? id.slice(5).toUpperCase()
-              : "Су-34М";
+          } else if (zoom >= 8.5) {
             drawMilitaryCalloutPill(
               ctx,
               targetX,
@@ -1806,60 +1722,22 @@ export const MapView = ({
               altMsl,
               color,
               isHighThreat,
-              zoom >= 7.5,
+              true,
               placedPillBoxes
             );
-          }
-
-          // Selected target Lock Reticle & 15-minute Intercept Vector
-          if (currentSelected && currentSelected[0] === id) {
-            drawLockReticle(ctx, targetX, targetY, (now / 40) % 360);
-
-            if (speed > 5) {
-              ctx.save();
-              ctx.setLineDash([5, 5]);
-              ctx.strokeStyle = "#38bdf8";
-              ctx.lineWidth = 2;
-              ctx.beginPath();
-              ctx.moveTo(targetX, targetY);
-
-              const waypoints = [300, 600, 900];
-              const wpCoords: Array<{ x: number; y: number; min: number }> = [];
-
-              const headingRadGeo = (heading * Math.PI) / 180;
-              const latRadGeo = (lat * Math.PI) / 180;
-              const cosLatGeo = Math.cos(latRadGeo);
-              const mLat = 111139;
-              const mLon = mLat * (cosLatGeo > 0.05 ? cosLatGeo : 0.05);
-              const vx = Math.sin(headingRadGeo) * speed;
-              const vy = Math.cos(headingRadGeo) * speed;
-
-              for (const sec of waypoints) {
-                const wpLat = lat + (vy * sec) / mLat;
-                const wpLon = lon + (vx * sec) / mLon;
-                const wpProj = map.project([wpLon, wpLat]);
-                ctx.lineTo(wpProj.x, wpProj.y);
-                wpCoords.push({ x: wpProj.x, y: wpProj.y, min: sec / 60 });
-              }
-              ctx.stroke();
-              ctx.restore();
-
-              for (const wp of wpCoords) {
-                ctx.beginPath();
-                ctx.arc(wp.x, wp.y, 4, 0, Math.PI * 2);
-                ctx.fillStyle = "#38bdf8";
-                ctx.fill();
-                drawTextWithOutline(
-                  ctx,
-                  `+${wp.min}хв`,
-                  wp.x + 6,
-                  wp.y + 3,
-                  "#e0f2fe",
-                  "rgba(0, 0, 0, 0.9)",
-                  "bold 10px monospace"
-                );
-              }
-            }
+          } else if (zoom >= 7.0 && isHighThreat) {
+            drawMilitaryCalloutPill(
+              ctx,
+              targetX,
+              targetY,
+              shortName,
+              speedKmh,
+              altMsl,
+              color,
+              isHighThreat,
+              false,
+              placedPillBoxes
+            );
           }
         }
 

@@ -1,11 +1,19 @@
-﻿import type { ImpactEvent, TrackType } from "../domain/types.js";
+import type { ImpactEvent, TrackType } from "../domain/types.js";
 
 export class ImpactManager {
   private events: ImpactEvent[] = [];
-  private readonly maxEvents = 50;
-  private readonly retentionMs = 6 * 3600 * 1000; // 6 hours
+  private readonly maxEvents = 8;
+  private readonly retentionMs = 5 * 60 * 1000; // 5 minutes live display window
 
   recordEvent(event: ImpactEvent): void {
+    // Avoid dropping duplicate badges directly on top of recent nearby events
+    const isDuplicate = this.events.some(
+      (e) =>
+        Math.hypot(e.lat - event.lat, e.lon - event.lon) < 0.12 &&
+        Math.abs(e.timestamp - event.timestamp) < 5 * 60 * 1000
+    );
+    if (isDuplicate) return;
+
     this.events.unshift(event);
     if (this.events.length > this.maxEvents) {
       this.events = this.events.slice(0, this.maxEvents);
