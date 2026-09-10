@@ -1,6 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { TrustedLocation } from "../location/useTrustedLocation";
 
+export interface ImpactEvent {
+  id: string;
+  type: "impact" | "intercept";
+  lat: number;
+  lon: number;
+  timestamp: number;
+  targetModel: string;
+  targetType: string;
+  region: string;
+  details?: string;
+}
+
 export type TrackPacket = [
   id: string,
   type: string,
@@ -12,7 +24,9 @@ export type TrackPacket = [
   confidence?: number,
   uncertaintyRadius?: number,
   threatLevel?: string,
-  altitude?: number
+  altitude?: number,
+  model?: string,
+  callsign?: string
 ];
 
 interface ConfigResponse {
@@ -34,6 +48,8 @@ interface TargetApiResponse {
     uncertaintyRadius?: number;
     threatLevel?: string;
     altitude?: number;
+    model?: string;
+    callsign?: string;
   }>;
 }
 
@@ -44,6 +60,7 @@ export const useWsRadar = (
   flags: string[]
 ) => {
   const [packets, setPackets] = useState<TrackPacket[]>([]);
+  const [impacts, setImpacts] = useState<ImpactEvent[]>([]);
   const [connectionState, setConnectionState] = useState<"idle" | "connecting" | "open" | "closed">(
     "idle"
   );
@@ -81,10 +98,14 @@ export const useWsRadar = (
     const pollFallback = async () => {
       if (unmounted) return;
       try {
-        const res = await fetch("/api/targets", { signal: AbortSignal.timeout(3000) });
-        if (res.ok) {
-          const data = (await res.json()) as TargetApiResponse;
-          if (Array.isArray(data.tracks) && data.tracks.length > 0) {
+        const [targetsRes, impactsRes] = await Promise.all([
+          fetch("/api/targets", { signal: AbortSignal.timeout(3000) }),
+          fetch("/api/impacts", { signal: AbortSignal.timeout(3000) })
+        ]);
+
+        if (targetsRes.ok) {
+          const data = (await targetsRes.json()) as TargetApiResponse;
+          if (Array.isArray(data.tracks)) {
             const converted: TrackPacket[] = data.tracks.map((t) => [
               t.id,
               t.type,
@@ -96,9 +117,18 @@ export const useWsRadar = (
               t.confidence,
               t.uncertaintyRadius,
               t.threatLevel,
-              t.altitude
+              t.altitude,
+              t.model,
+              t.callsign
             ]);
             setPackets(converted);
+          }
+        }
+
+        if (impactsRes.ok) {
+          const impactData = (await impactsRes.json()) as { events?: ImpactEvent[] };
+          if (Array.isArray(impactData.events)) {
+            setImpacts(impactData.events);
           }
         }
       } catch {}
@@ -143,9 +173,14 @@ export const useWsRadar = (
         socket.onmessage = (event) => {
           if (unmounted) return;
           try {
-            const [kind, _stamp, payload] = JSON.parse(event.data) as [number, number, TrackPacket[]];
+            const parsed = JSON.parse(event.data);
+            const kind = parsed[0];
+            const payload = parsed[2];
+
             if (kind === 0 && Array.isArray(payload)) {
               setPackets(payload);
+            } else if (kind === 2 && Array.isArray(payload)) {
+              setImpacts(payload);
             }
           } catch {}
         };
@@ -199,9 +234,10 @@ export const useWsRadar = (
   return useMemo(
     () => ({
       packets,
+      impacts,
       connectionState,
       mapStyleUrl
     }),
-    [connectionState, mapStyleUrl, packets]
+    [connectionState, impacts, mapStyleUrl, packets]
   );
 };

@@ -17,7 +17,19 @@ export type SourceKind =
 
 export type ThreatLevel = "low" | "medium" | "high" | "critical";
 
-// Compact packet: [id, type, lat, lon, heading, speed, timestamp, confidence, uncertaintyRadius, threatLevel, altitude]
+export interface ImpactEvent {
+  id: string;
+  type: "impact" | "intercept"; // "приліт" | "збиття"
+  lat: number;
+  lon: number;
+  timestamp: number;
+  targetModel: string;
+  targetType: TrackType;
+  region: string;
+  details?: string;
+}
+
+// Compact packet: [id, type, lat, lon, heading, speed, timestamp, confidence, uncertaintyRadius, threatLevel, altitude, model, callsign]
 export type CompactTrackPacket = [
   id: string,
   type: TrackType,
@@ -29,7 +41,9 @@ export type CompactTrackPacket = [
   confidence?: number,
   uncertaintyRadius?: number,
   threatLevel?: ThreatLevel,
-  altitude?: number
+  altitude?: number,
+  model?: string,
+  callsign?: string
 ];
 
 export interface Observation {
@@ -62,6 +76,8 @@ export interface TrackState {
   uncertaintyRadius?: number;
   threatLevel?: ThreatLevel;
   lastUpdated?: number;
+  model?: string;
+  callsign?: string;
 }
 
 export interface UserLocation {

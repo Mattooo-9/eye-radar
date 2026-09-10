@@ -1,6 +1,7 @@
 import { destinationPoint } from "../domain/geo.js";
 import type { Observation, TrackType } from "../domain/types.js";
 import type { AlertsInUaSource } from "./alertsInUa.js";
+import { impactManager } from "../core/impactManager.js";
 
 interface DynamicTrack {
   id: string;
@@ -40,17 +41,32 @@ const REGION_CORRIDORS: RegionCorridor[] = [
   {
     regionKeyword: "київ",
     type: "uav",
-    minLat: 50.6,
-    maxLat: 51.2,
-    minLon: 30.5,
-    maxLon: 31.4,
-    headingMin: 205,
-    headingMax: 235,
-    speedKmhMin: 178,
-    speedKmhMax: 190,
+    minLat: 50.5,
+    maxLat: 51.1,
+    minLon: 30.3,
+    maxLon: 31.2,
+    headingMin: 210,
+    headingMax: 240,
+    speedKmhMin: 180,
+    speedKmhMax: 192,
     altitudeMin: 140,
-    altitudeMax: 240,
+    altitudeMax: 220,
     model: "Shahed-136"
+  },
+  {
+    regionKeyword: "київ",
+    type: "uav",
+    minLat: 50.8,
+    maxLat: 51.3,
+    minLon: 30.6,
+    maxLon: 31.4,
+    headingMin: 215,
+    headingMax: 245,
+    speedKmhMin: 490,
+    speedKmhMax: 530,
+    altitudeMin: 350,
+    altitudeMax: 500,
+    model: "Shahed-238 (Jet)"
   },
   {
     regionKeyword: "чернігів",
@@ -76,10 +92,25 @@ const REGION_CORRIDORS: RegionCorridor[] = [
     maxLon: 35.1,
     headingMin: 215,
     headingMax: 245,
-    speedKmhMin: 176,
-    speedKmhMax: 188,
-    altitudeMin: 160,
-    altitudeMax: 260,
+    speedKmhMin: 100,
+    speedKmhMax: 120,
+    altitudeMin: 1400,
+    altitudeMax: 2200,
+    model: "Supercam S350 Recon"
+  },
+  {
+    regionKeyword: "сум",
+    type: "uav",
+    minLat: 50.8,
+    maxLat: 51.6,
+    minLon: 34.0,
+    maxLon: 35.0,
+    headingMin: 220,
+    headingMax: 250,
+    speedKmhMin: 178,
+    speedKmhMax: 190,
+    altitudeMin: 150,
+    altitudeMax: 240,
     model: "Shahed-136"
   },
   {
@@ -93,19 +124,34 @@ const REGION_CORRIDORS: RegionCorridor[] = [
     headingMax: 230,
     speedKmhMin: 178,
     speedKmhMax: 190,
-    altitudeMin: 180,
-    altitudeMax: 280,
+    altitudeMin: 160,
+    altitudeMax: 250,
     model: "Shahed-136"
+  },
+  {
+    regionKeyword: "харків",
+    type: "munition",
+    minLat: 50.0,
+    maxLat: 50.3,
+    minLon: 36.5,
+    maxLon: 37.2,
+    headingMin: 210,
+    headingMax: 235,
+    speedKmhMin: 850,
+    speedKmhMax: 890,
+    altitudeMin: 60,
+    altitudeMax: 120,
+    model: "Kh-101 Cruise Missile"
   },
   {
     regionKeyword: "дніпро",
     type: "uav",
-    minLat: 48.1,
+    minLat: 48.2,
     maxLat: 48.7,
     minLon: 34.8,
-    maxLon: 36.2,
-    headingMin: 305,
-    headingMax: 335,
+    maxLon: 36.0,
+    headingMin: 310,
+    headingMax: 340,
     speedKmhMin: 180,
     speedKmhMax: 194,
     altitudeMin: 150,
@@ -115,47 +161,17 @@ const REGION_CORRIDORS: RegionCorridor[] = [
   {
     regionKeyword: "запоріж",
     type: "uav",
-    minLat: 47.3,
+    minLat: 47.4,
     maxLat: 47.9,
     minLon: 35.3,
-    maxLon: 36.5,
+    maxLon: 36.4,
     headingMin: 320,
     headingMax: 350,
-    speedKmhMin: 182,
-    speedKmhMax: 195,
-    altitudeMin: 160,
-    altitudeMax: 250,
-    model: "Shahed-136"
-  },
-  {
-    regionKeyword: "одес",
-    type: "uav",
-    minLat: 46.1,
-    maxLat: 46.7,
-    minLon: 30.5,
-    maxLon: 31.4,
-    headingMin: 315,
-    headingMax: 345,
-    speedKmhMin: 180,
-    speedKmhMax: 192,
-    altitudeMin: 120,
-    altitudeMax: 200,
-    model: "Shahed-136"
-  },
-  {
-    regionKeyword: "миколаїв",
-    type: "uav",
-    minLat: 46.7,
-    maxLat: 47.3,
-    minLon: 31.6,
-    maxLon: 32.6,
-    headingMin: 325,
-    headingMax: 355,
-    speedKmhMin: 178,
-    speedKmhMax: 190,
-    altitudeMin: 140,
-    altitudeMax: 220,
-    model: "Shahed-136"
+    speedKmhMin: 95,
+    speedKmhMax: 115,
+    altitudeMin: 1500,
+    altitudeMax: 2400,
+    model: "Orlan-10 Recon"
   },
   {
     regionKeyword: "донець",
@@ -197,7 +213,7 @@ export class AirspaceSimulator {
   private sequence = 100;
 
   constructor() {
-    this.spawnDefensivePatrols();
+    // Strictly live alert-correlated threats only; zero permanent hanging static dummy patrols
   }
 
   setAlertsSource(source: AlertsInUaSource): void {
@@ -209,77 +225,6 @@ export class AirspaceSimulator {
     return `tr-${prefix}-${this.sequence}`;
   }
 
-  private spawnDefensivePatrols(): void {
-    // Ukrainian Air Force Air Defense Patrol (CAP Interceptors)
-    this.tracks.set("patrol-f16", {
-      id: "patrol-f16",
-      type: "aircraft",
-      lat: 49.80,
-      lon: 29.50,
-      heading: 105,
-      speedMs: 720 / 3.6,
-      altitudeM: 5200,
-      turnRateDegPerSec: 0,
-      targetHeading: 105,
-      nextManeuverTime: Date.now() + 60_000,
-      spawnTime: Date.now(),
-      maxLifetimeSec: 999999,
-      model: "F-16AM Fighting Falcon",
-      callsign: "PSU-F16"
-    });
-
-    this.tracks.set("patrol-mig29", {
-      id: "patrol-mig29",
-      type: "aircraft",
-      lat: 49.30,
-      lon: 34.80,
-      heading: 45,
-      speedMs: 750 / 3.6,
-      altitudeM: 4800,
-      turnRateDegPerSec: 0,
-      targetHeading: 45,
-      nextManeuverTime: Date.now() + 60_000,
-      spawnTime: Date.now(),
-      maxLifetimeSec: 999999,
-      model: "MiG-29MU1 Fulcrum",
-      callsign: "GHOST-29"
-    });
-
-    this.tracks.set("patrol-tb2", {
-      id: "patrol-tb2",
-      type: "uav",
-      lat: 50.60,
-      lon: 24.80,
-      heading: 30,
-      speedMs: 140 / 3.6,
-      altitudeM: 3800,
-      turnRateDegPerSec: 0,
-      targetHeading: 30,
-      nextManeuverTime: Date.now() + 60_000,
-      spawnTime: Date.now(),
-      maxLifetimeSec: 999999,
-      model: "Bayraktar TB2 Recon",
-      callsign: "BAYRAKTAR-03"
-    });
-
-    this.tracks.set("patrol-helo", {
-      id: "patrol-helo",
-      type: "helicopter",
-      lat: 50.25,
-      lon: 30.50,
-      heading: 160,
-      speedMs: 220 / 3.6,
-      altitudeM: 260,
-      turnRateDegPerSec: 0,
-      targetHeading: 160,
-      nextManeuverTime: Date.now() + 60_000,
-      spawnTime: Date.now(),
-      maxLifetimeSec: 999999,
-      model: "Mil Mi-8MSB",
-      callsign: "SAR-HELO-08"
-    });
-  }
-
   generateStep(now = Date.now()): Observation[] {
     const dt = Math.max(0.5, Math.min(4, (now - this.lastTick) / 1000));
     this.lastTick = now;
@@ -287,24 +232,36 @@ export class AirspaceSimulator {
     // Get real active alarms from alerts.in.ua
     const activeOblasts = this.alertsSource ? this.alertsSource.getActiveAlertOblastNames() : [];
 
-    // 1. Remove expired tracks or tracks whose alarm has cleared
+    // 1. Remove expired tracks (with impact/interception event) or tracks whose alarm has cleared
     for (const [id, track] of this.tracks.entries()) {
       if (track.maxLifetimeSec < 900000) {
         const ageSec = (now - track.spawnTime) / 1000;
+
+        // If target reached terminal destination: record impact or interception & DELETE IMMEDIATELY
         if (ageSec >= track.maxLifetimeSec) {
+          const isIntercept = Math.random() < 0.78;
+          impactManager.createAndRecord(
+            isIntercept ? "intercept" : "impact",
+            track.lat,
+            track.lon,
+            track.model,
+            track.type,
+            track.assignedRegion ?? "Україна",
+            isIntercept
+              ? `Успішне перехоплення мобільною вогневою групою / ППО: ${track.model}`
+              : `Зафіксовано влучання / детонацію боєприпасу: ${track.model}`
+          );
           this.tracks.delete(id);
           continue;
         }
 
-        // If assigned region is no longer alarmed, clear it gracefully
+        // If assigned region is no longer alarmed or alarms cleared across Ukraine: DELETE IMMEDIATELY
         if (
           track.assignedRegion &&
-          activeOblasts.length > 0 &&
-          !activeOblasts.some((o) => o.toLowerCase().includes(track.assignedRegion!))
+          (activeOblasts.length === 0 || !activeOblasts.some((o) => o.toLowerCase().includes(track.assignedRegion!)))
         ) {
-          if (ageSec > 90) {
-            this.tracks.delete(id);
-          }
+          this.tracks.delete(id);
+          continue;
         }
       }
     }
@@ -347,7 +304,7 @@ export class AirspaceSimulator {
             targetHeading: heading,
             nextManeuverTime: now + 20_000 + Math.random() * 30_000,
             spawnTime: now,
-            maxLifetimeSec: corridor.type === "uav" ? 480 + Math.random() * 240 : 360 + Math.random() * 120,
+            maxLifetimeSec: corridor.type === "uav" ? 180 + Math.random() * 120 : 120 + Math.random() * 90,
             model: corridor.model,
             callsign: corridor.type === "uav" ? `SHD-${Math.floor(100 + Math.random() * 899)}` : `MSL-${Math.floor(10 + Math.random() * 89)}`,
             assignedRegion: corridor.regionKeyword

@@ -16,6 +16,7 @@ import { FirmsThermalSource } from "./sources/firmsThermal.js";
 import { OpenMeteoWindSource } from "./sources/openMeteoWind.js";
 import { AirspaceSimulator } from "./sources/simulator.js";
 import { SourceHealthTracker } from "./sources/sourceHealth.js";
+import { impactManager } from "./core/impactManager.js";
 import { RadarHub } from "./ws/hub.js";
 
 const DIST_CLIENT = resolve(process.cwd(), "dist/client");
@@ -295,6 +296,19 @@ const server = createServer(async (req, res) => {
         }
       };
 
+      if (reportType.includes("explosion") || reportType.includes("munition") || (parsed.comment && (parsed.comment.includes("вибух") || parsed.comment.includes("приліт")))) {
+        impactManager.createAndRecord(
+          "impact",
+          lat,
+          lon,
+          isMunition ? "Крилата/Балістична ракета" : "БПЛА-камікадзе",
+          isMunition ? "munition" : "uav",
+          "За рапортом очевидця",
+          parsed.comment || "Громадянський акустичний рапорт про вибух / приліт"
+        );
+        hub.broadcastImpacts(impactManager.getRecentEvents());
+      }
+
       ingestBatch([observation], hub);
 
       json(res, 200, {
@@ -305,6 +319,15 @@ const server = createServer(async (req, res) => {
     } catch {
       json(res, 400, { error: "Invalid report payload" });
     }
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/impacts") {
+    const events = impactManager.getRecentEvents();
+    json(res, 200, {
+      count: events.length,
+      events
+    });
     return;
   }
 
@@ -386,6 +409,7 @@ server.on("upgrade", (req, socket, head) => {
   wss.handleUpgrade(req, socket, head, (ws) => {
     wss.emit("connection", ws, req);
     ws.send(JSON.stringify([0, Date.now(), trackManager.toPackets()]));
+    ws.send(JSON.stringify([2, Date.now(), impactManager.getRecentEvents()]));
   });
 });
 
@@ -459,6 +483,10 @@ setInterval(async () => {
 
   const packets = trackManager.toPackets();
   hub.broadcastTracks(packets);
+
+  if (cycleCounter % 3 === 0) {
+    hub.broadcastImpacts(impactManager.getRecentEvents());
+  }
 
   // Broadcast personal threat alerts to bot subscribers
   void botManager.broadcastThreatAlerts(trackManager.snapshot());

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { WebSocketServer, type RawData, type WebSocket } from "ws";
 import { applyDynamicJitter } from "../core/jitter.js";
-import type { ClientSession, CompactTrackPacket, UserLocation } from "../domain/types.js";
+import type { ClientSession, CompactTrackPacket, ImpactEvent, UserLocation } from "../domain/types.js";
 
 type IncomingClientMessage = [
   kind: number,
@@ -40,6 +40,15 @@ export class RadarHub {
 
       const payload = JSON.stringify([0, Date.now(), applyDynamicJitter(packets, session.location)]);
       socket.send(payload, { binary: false });
+    }
+  }
+
+  broadcastImpacts(impacts: ImpactEvent[]): void {
+    const payload = JSON.stringify([2, Date.now(), impacts]);
+    for (const socket of this.sessions.keys()) {
+      if (socket.readyState === socket.OPEN) {
+        socket.send(payload, { binary: false });
+      }
     }
   }
 

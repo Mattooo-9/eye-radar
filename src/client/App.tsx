@@ -2,17 +2,16 @@ import { useEffect, useMemo, useState } from "react";
 import type { Map } from "maplibre-gl";
 import { AiBriefingModal } from "./components/AiBriefingModal";
 import { CitizenReportModal } from "./components/CitizenReportModal";
-import { CitySelector, LOCATIONS } from "./components/CitySelector";
-import { ManualLocationPrompt } from "./components/ManualLocationPrompt";
+import { LOCATIONS } from "./components/CitySelector";
 import { MapView, type VisionMode } from "./components/MapView";
-import { OrbitalControls } from "./components/OrbitalControls";
-import { OrbitalHud } from "./components/OrbitalHud";
-import { type FilterState, StatusPanel } from "./components/StatusPanel";
+import { type FilterState } from "./components/StatusPanel";
 import { TacticalParamsModal, type TacticalFilters } from "./components/TacticalParamsModal";
+import { TacticalTopBar } from "./components/TacticalTopBar";
+import { TacticalMenuModal } from "./components/TacticalMenuModal";
+import { ImpactCard } from "./components/ImpactCard";
 import { TargetCard } from "./components/TargetCard";
 import { LocationCard } from "./components/LocationCard";
-import { ThreatBanner } from "./components/ThreatBanner";
-import { type TrackPacket, useWsRadar } from "./hooks/useWsRadar";
+import { type ImpactEvent, type TrackPacket, useWsRadar } from "./hooks/useWsRadar";
 import { haversineMeters } from "./lib/geo";
 import { soundEngine } from "./lib/sound";
 import { useTrustedLocation } from "./location/useTrustedLocation";
@@ -45,7 +44,7 @@ export const App = () => {
     resetToGps
   } = useTrustedLocation();
   const [isPickingLocation, setIsPickingLocation] = useState(false);
-  const { packets, connectionState, mapStyleUrl } = useWsRadar(
+  const { packets, impacts, connectionState, mapStyleUrl } = useWsRadar(
     userId,
     location,
     trustScore,
@@ -56,9 +55,11 @@ export const App = () => {
   const [visionMode, setVisionMode] = useState<VisionMode>("satellite");
   const [selectedTarget, setSelectedTarget] = useState<TrackPacket | null>(null);
   const [inspectedTarget, setInspectedTarget] = useState<TrackPacket | null>(null);
+  const [selectedImpact, setSelectedImpact] = useState<ImpactEvent | null>(null);
   const [selectedLocation, setSelectedLocation] = useState<{ lat: number; lon: number } | null>(null);
+  const [tacticalMenuOpen, setTacticalMenuOpen] = useState(false);
+  const [threatOnly, setThreatOnly] = useState(false);
   const [briefingOpen, setBriefingOpen] = useState(false);
-  const [paramsOpen, setParamsOpen] = useState(false);
   const [selectedCityName, setSelectedCityName] = useState<string>("");
   const [activeAlerts, setActiveAlerts] = useState<string[]>([]);
   const [showWeather, setShowWeather] = useState(true);
@@ -149,13 +150,13 @@ export const App = () => {
         return false;
       }
 
-      if (tacticalFilters.threatOnly && type !== "uav" && type !== "munition") {
+      if ((tacticalFilters.threatOnly || threatOnly) && type !== "uav" && type !== "munition") {
         return false;
       }
 
       return true;
     });
-  }, [packets, tacticalFilters]);
+  }, [packets, tacticalFilters, threatOnly]);
 
   // Auto-Sentinel: Locks tracking reticle onto closest threat WITHOUT opening popup modal
   useEffect(() => {
@@ -284,29 +285,25 @@ export const App = () => {
 
   return (
     <main className="app-shell">
-      <OrbitalHud
-        map={mapInstance}
-        trackCount={filteredPackets.length}
-        onOpenBriefing={() => setBriefingOpen(true)}
+      {/* 1. Sleek, ultra-compact tactical top bar (44px height) */}
+      <TacticalTopBar
+        threatCount={filteredPackets.length}
+        activeAlertsCount={activeAlerts.length}
+        onOpenMenu={() => setTacticalMenuOpen(true)}
         onOpenReport={() => setReportOpen(true)}
+        onOpenAlerts={() => setAlertsModalOpen(true)}
       />
 
-      <ThreatBanner
-        packets={filteredPackets}
-        location={location}
-        onSelectTarget={(target) => {
-          setSelectedTarget(target);
-          setInspectedTarget(target);
-        }}
-      />
-
+      {/* 2. Full-screen map (edge to edge, clean, zero watermarks) */}
       <MapView
         packets={filteredPackets}
+        impacts={impacts}
         mapStyleUrl={mapStyleUrl}
         location={location}
         filters={filters}
         visionMode={visionMode}
         selectedTarget={selectedTarget}
+        selectedImpact={selectedImpact}
         selectedLocation={selectedLocation}
         isPickingLocation={isPickingLocation}
         showDayNight={true}
@@ -319,41 +316,115 @@ export const App = () => {
         onSelectTarget={(target) => {
           setSelectedTarget(target);
           setInspectedTarget(target);
+          setSelectedImpact(null);
+          setSelectedLocation(null);
+        }}
+        onSelectImpact={(event) => {
+          setSelectedImpact(event);
+          setInspectedTarget(null);
           setSelectedLocation(null);
         }}
         onSelectLocation={(lat, lon) => {
           setSelectedLocation({ lat, lon });
           setInspectedTarget(null);
+          setSelectedImpact(null);
         }}
       />
 
-      <div className="top-controls">
-        <CitySelector
-          onSelectCity={handleSelectCity}
-          onFitAllTargets={handleFitAllTargets}
-          isManual={isManual}
-          isPickingLocation={isPickingLocation}
-          onTogglePickLocation={() => setIsPickingLocation((prev) => !prev)}
-          onResetGps={resetToGps}
-        />
-      </div>
+      {/* 3. The Unified Tactical Options Drawer / Dropdown */}
+      <TacticalMenuModal
+        isOpen={tacticalMenuOpen}
+        onClose={() => setTacticalMenuOpen(false)}
+        map={mapInstance}
+        visionMode={visionMode}
+        onSelectVision={(mode) => setVisionMode(mode)}
+        showWeather={showWeather}
+        onToggleWeather={() => setShowWeather((prev) => !prev)}
+        showSatellites={showSatellites}
+        onToggleSatellites={() => setShowSatellites((prev) => !prev)}
+        soundEnabled={filters.sound !== false}
+        onToggleSound={() => handleToggleFilter("sound")}
+        filters={filters}
+        onToggleFilter={handleToggleFilter}
+        threatOnly={threatOnly}
+        onToggleThreatOnly={() => setThreatOnly((prev) => !prev)}
+        uavCount={targetCounts.uav}
+        munitionCount={targetCounts.munition}
+        aircraftCount={targetCounts.aircraft}
+        heloCount={targetCounts.helo}
+        totalTrackCount={filteredPackets.length}
+        onFitAllTargets={handleFitAllTargets}
+        location={location}
+        isManual={isManual}
+        isPickingLocation={isPickingLocation}
+        onTogglePickLocation={() => setIsPickingLocation((prev) => !prev)}
+        onResetGps={resetToGps}
+        onSelectCity={handleSelectCity}
+        impacts={impacts}
+        onFlyToCoord={(lat, lon) => {
+          mapInstance?.flyTo({ center: [lon, lat], zoom: 12.5, duration: 1200 });
+        }}
+        onOpenBriefing={() => setBriefingOpen(true)}
+        onOpenReport={() => setReportOpen(true)}
+        activeAlerts={activeAlerts}
+      />
 
-      {activeAlerts.length > 0 && (
-        <div
-          className="active-alerts-ticker"
-          onClick={() => {
-            window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.("light");
-            setAlertsModalOpen((prev) => !prev);
+      {/* 4. Active Target Flyout Card */}
+      {inspectedTarget && (
+        <TargetCard
+          packet={inspectedTarget}
+          location={location}
+          onClose={() => setInspectedTarget(null)}
+          onFollowTarget={(id) => setFollowedTargetId(id)}
+          onZoomTarget={(lat, lon) => {
+            setFollowedTargetId(null);
+            mapInstance?.flyTo({
+              center: [lon, lat],
+              zoom: 17.5,
+              pitch: 0,
+              bearing: 0,
+              duration: 1200
+            });
           }}
-          title="Натисніть для перегляду списку областей з тривогою"
-          style={{ cursor: "pointer" }}
-        >
-          <span className="ticker-icon">🚨</span>
-          <span className="ticker-label">ТРИВОГА ({activeAlerts.length} рег.) ▼:</span>
-          <span className="ticker-regions">{activeAlerts.join(", ")}</span>
-        </div>
+        />
       )}
 
+      {/* 5. Active Impact / Detonation Flyout Card */}
+      {selectedImpact && (
+        <ImpactCard
+          event={selectedImpact}
+          onClose={() => setSelectedImpact(null)}
+          onCenter={(lat, lon) => {
+            mapInstance?.flyTo({
+              center: [lon, lat],
+              zoom: 14.0,
+              duration: 1200
+            });
+          }}
+        />
+      )}
+
+      {/* 6. Selected Custom Location Card */}
+      {selectedLocation && !inspectedTarget && !selectedImpact && (
+        <LocationCard
+          lat={selectedLocation.lat}
+          lon={selectedLocation.lon}
+          activeAlerts={activeAlerts}
+          packets={filteredPackets}
+          onClose={() => setSelectedLocation(null)}
+          onCenterLocation={(lat, lon) => {
+            mapInstance?.flyTo({
+              center: [lon, lat],
+              zoom: 11.0,
+              pitch: 0,
+              bearing: 0,
+              duration: 1200
+            });
+          }}
+        />
+      )}
+
+      {/* 7. Active Alerts Modal (when clicking alarm pill) */}
       {alertsModalOpen && (
         <div className="alerts-modal-overlay" onClick={() => setAlertsModalOpen(false)}>
           <div className="alerts-modal-card" onClick={(e) => e.stopPropagation()}>
@@ -394,86 +465,11 @@ export const App = () => {
         </div>
       )}
 
-      <OrbitalControls
-        map={mapInstance}
-        visionMode={visionMode}
-        showWeather={showWeather}
-        onToggleWeather={() => setShowWeather((prev) => !prev)}
-        showSatellites={showSatellites}
-        onToggleSatellites={() => setShowSatellites((prev) => !prev)}
-        onCycleVision={handleCycleVision}
-        onFlyToUser={handleFlyToUser}
-        onOpenParams={() => setParamsOpen(true)}
-      />
-
-      <StatusPanel
-        trackCount={filteredPackets.length}
-        connectionState={connectionState}
-        trustScore={trustScore}
-        flags={flags}
-        filters={filters}
-        onToggleFilter={handleToggleFilter}
-        uavCount={targetCounts.uav}
-        munitionCount={targetCounts.munition}
-        aircraftCount={targetCounts.aircraft}
-        heloCount={targetCounts.helo}
-        onFitAllTargets={handleFitAllTargets}
-        packets={filteredPackets}
-        location={location}
-        onSelectTarget={(p) => setInspectedTarget(p)}
-        onResetGps={resetToGps}
-      />
-
-      {inspectedTarget && (
-        <TargetCard
-          packet={inspectedTarget}
-          location={location}
-          onClose={() => setInspectedTarget(null)}
-          onFollowTarget={(id) => setFollowedTargetId(id)}
-          onZoomTarget={(lat, lon) => {
-            setFollowedTargetId(null);
-            mapInstance?.flyTo({
-              center: [lon, lat],
-              zoom: 17.5,
-              pitch: 0,
-              bearing: 0,
-              duration: 1200
-            });
-          }}
-        />
-      )}
-
-      {selectedLocation && !inspectedTarget && (
-        <LocationCard
-          lat={selectedLocation.lat}
-          lon={selectedLocation.lon}
-          activeAlerts={activeAlerts}
-          packets={filteredPackets}
-          onClose={() => setSelectedLocation(null)}
-          onCenterLocation={(lat, lon) => {
-            mapInstance?.flyTo({
-              center: [lon, lat],
-              zoom: 11.0,
-              pitch: 0,
-              bearing: 0,
-              duration: 1200
-            });
-          }}
-        />
-      )}
-
+      {/* Modals */}
       <AiBriefingModal
         isOpen={briefingOpen}
         cityName={selectedCityName}
         onClose={() => setBriefingOpen(false)}
-      />
-
-      <TacticalParamsModal
-        isOpen={paramsOpen}
-        onClose={() => setParamsOpen(false)}
-        filters={tacticalFilters}
-        onChangeFilters={setTacticalFilters}
-        location={location}
       />
 
       <CitizenReportModal

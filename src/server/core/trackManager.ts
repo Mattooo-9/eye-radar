@@ -9,7 +9,7 @@ interface InternalTrack {
   lastMeasurementTime: number;
 }
 
-const STALE_AFTER_MS = 45_000; // 45 seconds without measurement = target lost / pruned
+const STALE_AFTER_MS = 15_000; // 15 seconds without fresh measurement = target pruned immediately
 
 export class TrackManager {
   private readonly tracks = new Map<string, InternalTrack>();
@@ -40,7 +40,9 @@ export class TrackManager {
         covLat: filtered.covLat,
         covLon: filtered.covLon,
         uncertaintyRadius: filtered.uncertaintyRadiusMeters,
-        lastUpdated: now
+        lastUpdated: now,
+        model: typeof observation.meta?.model === "string" ? observation.meta.model : undefined,
+        callsign: typeof observation.meta?.callsign === "string" ? observation.meta.callsign : undefined
       };
 
       this.tracks.set(targetId, { state, filter, lastMeasurementTime: now });
@@ -80,33 +82,37 @@ export class TrackManager {
       covLat: filtered.covLat,
       covLon: filtered.covLon,
       uncertaintyRadius: Math.round(filtered.uncertaintyRadiusMeters),
-      lastUpdated: now
+      lastUpdated: now,
+      model: typeof observation.meta?.model === "string" ? observation.meta.model : previous.model,
+      callsign: typeof observation.meta?.callsign === "string" ? observation.meta.callsign : previous.callsign
     };
 
     return existing.state;
   }
 
+  removeTrack(id: string): boolean {
+    return this.tracks.delete(id);
+  }
+
   tick(now = Date.now()): void {
     for (const [id, entry] of this.tracks.entries()) {
-      const ageMs = now - entry.lastMeasurementTime;
-
-      // 1. Hard purge if no fresh measurements arrived within 45s
-      if (ageMs > STALE_AFTER_MS) {
-        this.tracks.delete(id);
+      const dt = Math.max(0, (now - entry.state.timestamp) / 1000);
+      if (dt <= 0.1) {
         continue;
       }
 
-      // 2. Smooth Kalman dead-reckoning extrapolation (strictly bounded to 20s max)
-      if (ageMs >= 1500 && ageMs <= 20_000) {
-        const predicted = entry.filter.predict(now);
-        if (predicted) {
-          entry.state.lat = predicted.lat;
-          entry.state.lon = predicted.lon;
-          entry.state.covLat = predicted.covLat;
-          entry.state.covLon = predicted.covLon;
-          entry.state.uncertaintyRadius = Math.round(predicted.uncertaintyRadiusMeters);
-          entry.state.lastUpdated = now;
-        }
+      // Smooth extrapolation between observations
+      const extrapolated = entry.filter.predict(now);
+      if (extrapolated) {
+        entry.state = {
+          ...entry.state,
+          lat: Number(extrapolated.lat.toFixed(6)),
+          lon: Number(extrapolated.lon.toFixed(6)),
+          uncertaintyRadius: Math.round(extrapolated.uncertaintyRadiusMeters),
+          covLat: extrapolated.covLat,
+          covLon: extrapolated.covLon,
+          timestamp: now
+        };
       }
     }
   }
@@ -135,7 +141,9 @@ export class TrackManager {
       track.confidence,
       track.uncertaintyRadius,
       track.threatLevel,
-      track.altitude
+      track.altitude,
+      track.model,
+      track.callsign
     ]);
   }
 }

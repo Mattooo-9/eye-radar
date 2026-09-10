@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import maplibregl, { type Map } from "maplibre-gl";
-import type { TrackPacket } from "../hooks/useWsRadar";
+import type { ImpactEvent, TrackPacket } from "../hooks/useWsRadar";
 import type { TrustedLocation } from "../location/useTrustedLocation";
 import { destinationPoint, haversineMeters } from "../lib/geo";
 import { soundEngine } from "../lib/sound";
@@ -33,6 +33,9 @@ interface MapViewProps {
   onSelectTarget?: (packet: TrackPacket) => void;
   onSelectLocation?: (lat: number, lon: number) => void;
   onPickLocation?: (lat: number, lon: number) => void;
+  impacts?: ImpactEvent[];
+  selectedImpact?: ImpactEvent | null;
+  onSelectImpact?: (event: ImpactEvent) => void;
 }
 
 const SATELLITE_STYLE = {
@@ -87,6 +90,80 @@ const drawTextWithOutline = (
   ctx.restore();
 };
 
+const drawImpactEvent = (
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  event: ImpactEvent,
+  now: number
+) => {
+  const isImpact = event.type === "impact";
+  const elapsedMs = Math.max(0, now - event.timestamp);
+  const pulsePhase = (now % 1800) / 1800;
+
+  ctx.save();
+
+  // 1. Expanding animated tactical shockwave ring
+  const ringRadius = 14 + pulsePhase * 36;
+  const ringAlpha = Math.max(0, (1 - pulsePhase) * 0.9);
+
+  ctx.beginPath();
+  ctx.arc(x, y, ringRadius, 0, Math.PI * 2);
+  ctx.strokeStyle = isImpact ? `rgba(239, 68, 68, ${ringAlpha})` : `rgba(6, 182, 212, ${ringAlpha})`;
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+
+  // Secondary delayed shockwave ring
+  const secondPhase = ((now + 900) % 1800) / 1800;
+  const secondRadius = 14 + secondPhase * 36;
+  const secondAlpha = Math.max(0, (1 - secondPhase) * 0.65);
+  ctx.beginPath();
+  ctx.arc(x, y, secondRadius, 0, Math.PI * 2);
+  ctx.strokeStyle = isImpact ? `rgba(248, 113, 113, ${secondAlpha})` : `rgba(56, 189, 248, ${secondAlpha})`;
+  ctx.lineWidth = 1.8;
+  ctx.stroke();
+
+  // 2. Inner glow & core icon
+  ctx.beginPath();
+  ctx.arc(x, y, 15, 0, Math.PI * 2);
+  ctx.fillStyle = isImpact ? "rgba(220, 38, 38, 0.45)" : "rgba(8, 145, 178, 0.45)";
+  ctx.fill();
+  ctx.strokeStyle = isImpact ? "#ef4444" : "#06b6d4";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Draw icon
+  ctx.font = "15px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(isImpact ? "💥" : "🛡️", x, y);
+
+  // 3. Label Pill
+  const minAgo = Math.max(1, Math.round(elapsedMs / 60000));
+  const timeText = minAgo < 60 ? `${minAgo}м тому` : `${Math.floor(minAgo / 60)}г тому`;
+  const label = isImpact ? `💥 ПРИЛІТ (${timeText})` : `🛡️ ЗБИТТЯ (${timeText})`;
+
+  ctx.font = "bold 10px Inter, system-ui, sans-serif";
+  const textWidth = ctx.measureText(label).width;
+  const pillW = textWidth + 12;
+  const pillH = 18;
+  const pillX = x - pillW / 2;
+  const pillY = y + 18;
+
+  ctx.fillStyle = isImpact ? "rgba(153, 27, 27, 0.94)" : "rgba(21, 94, 117, 0.94)";
+  ctx.strokeStyle = isImpact ? "#f87171" : "#38bdf8";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(pillX, pillY, pillW, pillH, 4);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(label, x, pillY + pillH / 2);
+
+  ctx.restore();
+};
+
 const drawUavSilhouette = (
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -94,49 +171,120 @@ const drawUavSilhouette = (
   size: number,
   rotation: number,
   color: string,
-  timeMs: number
+  timeMs: number,
+  model?: string
 ) => {
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate((rotation * Math.PI) / 180);
 
-  // Shahed-136 delta wing with swept leading edge & straight trailing edge
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.moveTo(0, -size * 0.9);
-  ctx.lineTo(size * 0.72, size * 0.5);
-  ctx.lineTo(size * 0.72, size * 0.65); // Wingtip vertical stabilizer
-  ctx.lineTo(size * 0.62, size * 0.65);
-  ctx.lineTo(size * 0.15, size * 0.45);
-  ctx.lineTo(0, size * 0.58); // Central pusher propeller mount
-  ctx.lineTo(-size * 0.15, size * 0.45);
-  ctx.lineTo(-size * 0.62, size * 0.65);
-  ctx.lineTo(-size * 0.72, size * 0.65);
-  ctx.lineTo(-size * 0.72, size * 0.5);
-  ctx.closePath();
-  ctx.fill();
+  const isJet = model?.includes("238") || model?.includes("Jet");
+  const isRecon = model?.includes("Recon") || model?.includes("Supercam") || model?.includes("Orlan");
 
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.95)";
-  ctx.lineWidth = 1.3;
-  ctx.stroke();
+  if (isRecon) {
+    // 1. High-Aspect-Ratio Reconnaissance UAV (Supercam S350 / Orlan-10)
+    ctx.fillStyle = "#38bdf8";
+    // Fuselage
+    ctx.beginPath();
+    ctx.ellipse(0, 0, size * 0.16, size * 0.75, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#f8fafc";
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
 
-  // Wingtip vertical stabilizer fins
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(-size * 0.72, size * 0.42, 2.5, size * 0.22);
-  ctx.fillRect(size * 0.72 - 2.5, size * 0.42, 2.5, size * 0.22);
+    // High-aspect long straight wings
+    ctx.beginPath();
+    ctx.rect(-size * 0.95, -size * 0.12, size * 1.9, size * 0.22);
+    ctx.fill();
+    ctx.stroke();
 
-  // Rear pusher propeller disk
-  const propAngle = (timeMs / 12) % 360;
-  ctx.save();
-  ctx.translate(0, size * 0.58);
-  ctx.rotate((propAngle * Math.PI) / 180);
-  ctx.strokeStyle = "rgba(254, 202, 202, 0.75)";
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(-size * 0.25, 0);
-  ctx.lineTo(size * 0.25, 0);
-  ctx.stroke();
-  ctx.restore();
+    // V-tail / T-tail
+    ctx.beginPath();
+    ctx.moveTo(-size * 0.35, size * 0.65);
+    ctx.lineTo(0, size * 0.52);
+    ctx.lineTo(size * 0.35, size * 0.65);
+    ctx.stroke();
+
+    // Optical gimbal camera pod at nose
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.arc(0, -size * 0.68, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (isJet) {
+    // 2. Shahed-238 Turbojet Powered Delta Wing (Black radar-absorbent coating + thermal exhaust)
+    ctx.fillStyle = "#0f172a"; // Stealth dark RAM coating
+    ctx.beginPath();
+    ctx.moveTo(0, -size * 0.95);
+    ctx.lineTo(size * 0.76, size * 0.52);
+    ctx.lineTo(size * 0.76, size * 0.68); // Winglet fin
+    ctx.lineTo(size * 0.64, size * 0.68);
+    ctx.lineTo(size * 0.18, size * 0.48);
+    ctx.lineTo(size * 0.12, size * 0.65); // Jet exhaust nozzle
+    ctx.lineTo(-size * 0.12, size * 0.65);
+    ctx.lineTo(-size * 0.18, size * 0.48);
+    ctx.lineTo(-size * 0.64, size * 0.68);
+    ctx.lineTo(-size * 0.76, size * 0.68);
+    ctx.lineTo(-size * 0.76, size * 0.52);
+    ctx.closePath();
+    ctx.fill();
+
+    // Glowing thermal warning border
+    ctx.strokeStyle = "#f59e0b";
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+
+    // Jet engine dorsal air intake scoop
+    ctx.fillStyle = "#f97316";
+    ctx.fillRect(-size * 0.08, -size * 0.1, size * 0.16, size * 0.25);
+
+    // Turbojet exhaust heat plume
+    const jetPlumeLen = size * (0.35 + Math.sin(timeMs / 18) * 0.12);
+    ctx.fillStyle = "rgba(239, 68, 68, 0.85)";
+    ctx.beginPath();
+    ctx.moveTo(-size * 0.1, size * 0.65);
+    ctx.lineTo(0, size * 0.65 + jetPlumeLen);
+    ctx.lineTo(size * 0.1, size * 0.65);
+    ctx.closePath();
+    ctx.fill();
+  } else {
+    // 3. Classic Shahed-136 Piston Delta Wing
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(0, -size * 0.9);
+    ctx.lineTo(size * 0.72, size * 0.5);
+    ctx.lineTo(size * 0.72, size * 0.65); // Wingtip vertical stabilizer
+    ctx.lineTo(size * 0.62, size * 0.65);
+    ctx.lineTo(size * 0.15, size * 0.45);
+    ctx.lineTo(0, size * 0.58); // Central pusher propeller mount
+    ctx.lineTo(-size * 0.15, size * 0.45);
+    ctx.lineTo(-size * 0.62, size * 0.65);
+    ctx.lineTo(-size * 0.72, size * 0.65);
+    ctx.lineTo(-size * 0.72, size * 0.5);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.95)";
+    ctx.lineWidth = 1.3;
+    ctx.stroke();
+
+    // Wingtip vertical stabilizer fins
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(-size * 0.72, size * 0.42, 2.5, size * 0.22);
+    ctx.fillRect(size * 0.72 - 2.5, size * 0.42, 2.5, size * 0.22);
+
+    // Rear pusher propeller disk
+    const propAngle = (timeMs / 12) % 360;
+    ctx.save();
+    ctx.translate(0, size * 0.58);
+    ctx.rotate((propAngle * Math.PI) / 180);
+    ctx.strokeStyle = "rgba(254, 202, 202, 0.75)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(-size * 0.25, 0);
+    ctx.lineTo(size * 0.25, 0);
+    ctx.stroke();
+    ctx.restore();
+  }
 
   ctx.restore();
 };
@@ -1033,7 +1181,10 @@ export const MapView = ({
   onMapReady,
   onSelectTarget,
   onSelectLocation,
-  onPickLocation
+  onPickLocation,
+  impacts = [],
+  selectedImpact,
+  onSelectImpact
 }: MapViewProps) => {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -1043,6 +1194,12 @@ export const MapView = ({
   // Stable references to eliminate component re-render teardowns
   const packetsRef = useRef(packets);
   packetsRef.current = packets;
+
+  const impactsRef = useRef(impacts);
+  impactsRef.current = impacts;
+
+  const onSelectImpactRef = useRef(onSelectImpact);
+  onSelectImpactRef.current = onSelectImpact;
 
   const filtersRef = useRef(filters);
   filtersRef.current = filters;
@@ -1158,6 +1315,17 @@ export const MapView = ({
       const clickX = e.point.x;
       const clickY = e.point.y;
       const currentZoom = map.getZoom();
+
+      // Check click on recent Impact/Interception events first
+      for (const evt of impactsRef.current) {
+        const pt = map.project([evt.lon, evt.lat]);
+        const dist = Math.hypot(pt.x - clickX, pt.y - clickY);
+        if (dist < 32) {
+          onSelectImpactRef.current?.(evt);
+          window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.("medium");
+          return;
+        }
+      }
 
       let closest: TrackPacket | null = null;
       let minDistance = 38;
@@ -1412,10 +1580,18 @@ export const MapView = ({
           }
         }
 
+        // 1.5 Draw Recent Impacts & Air-Defense Interceptions with animated shockwaves
+        for (const evt of impactsRef.current) {
+          const pt = map.project([evt.lon, evt.lat]);
+          if (pt.x >= -60 && pt.x <= width + 60 && pt.y >= -60 && pt.y <= height + 60) {
+            drawImpactEvent(ctx, pt.x, pt.y, evt, now);
+          }
+        }
+
         // 2. Draw Air Targets with exact military silhouettes & forward trajectories
         const placedPillBoxes: PillRect[] = [];
         for (const packet of currentPackets) {
-          const [id, type, lat, lon, heading, speed, timestamp, , , , altitude] = packet;
+          const [id, type, lat, lon, heading, speed, timestamp, , , , altitude, packetModel, packetCallsign] = packet;
 
           if (currentFilters) {
             if (type === "uav" && !currentFilters.uav) continue;
@@ -1550,7 +1726,7 @@ export const MapView = ({
           }
 
           if (type === "uav") {
-            drawUavSilhouette(ctx, targetX, targetY, scale, screenHeadingDeg, color, now);
+            drawUavSilhouette(ctx, targetX, targetY, scale, screenHeadingDeg, color, now, packetModel);
           } else if (type === "munition") {
             drawMissileSilhouette(ctx, targetX, targetY, scale, screenHeadingDeg, color);
           } else if (type === "helicopter") {
@@ -1582,16 +1758,17 @@ export const MapView = ({
           const altMsl = effectiveAltM >= 1000 ? `${(effectiveAltM / 1000).toFixed(1)} км` : `${Math.round(effectiveAltM)} м`;
 
           if (isSelected) {
-            const modelName =
-              type === "uav"
-                ? "🔴 SHAHED-136 (БПЛА)"
-                : type === "munition"
-                ? "🟠 Х-101 / КАЛІБР"
-                : type === "helicopter"
-                ? "🟢 КА-52 / ВЕРТОЛЬОТ"
-                : id.startsWith("adsb-")
-                ? `FLIGHT ${id.slice(5).toUpperCase()}`
-                : "🔵 СУ-34М (АВІАЦІЯ)";
+            const modelName = packetModel
+              ? `🎯 ${packetModel.toUpperCase()}`
+              : type === "uav"
+              ? "🔴 SHAHED-136 (БПЛА)"
+              : type === "munition"
+              ? "🟠 Х-101 / КАЛІБР"
+              : type === "helicopter"
+              ? "🟢 КА-52 / ВЕРТОЛЬОТ"
+              : id.startsWith("adsb-")
+              ? `FLIGHT ${id.slice(5).toUpperCase()}`
+              : "🔵 СУ-34М (АВІАЦІЯ)";
             const speedKnots = Math.round(speed * 1.94384);
             const altFt = Math.round(effectiveAltM * 3.28084);
             const landmark = findNearestLandmark(predLat, predLon);
@@ -1609,16 +1786,17 @@ export const MapView = ({
               isHighThreat
             );
           } else if (isHighThreat || zoom >= 6.8 || (zoom >= 4.8 && !id.startsWith("adsb-"))) {
-            const shortName =
-              type === "uav"
-                ? "Shahed-136"
-                : type === "munition"
-                ? "Х-101"
-                : type === "helicopter"
-                ? "Ка-52"
-                : id.startsWith("adsb-")
-                ? id.slice(5).toUpperCase()
-                : "Су-34М";
+            const shortName = packetModel
+              ? packetModel.replace(" Cruise Missile", "").replace(" Fighting Falcon", "").replace(" Fulcrum", "")
+              : type === "uav"
+              ? "Shahed-136"
+              : type === "munition"
+              ? "Х-101"
+              : type === "helicopter"
+              ? "Ка-52"
+              : id.startsWith("adsb-")
+              ? id.slice(5).toUpperCase()
+              : "Су-34М";
             drawMilitaryCalloutPill(
               ctx,
               targetX,
