@@ -205,6 +205,11 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && url.pathname === "/api/tracks") {
+    json(res, 200, trackManager.snapshot(simulationEnabled));
+    return;
+  }
+
   if (req.method === "GET" && url.pathname === "/api/config") {
     json(res, 200, {
       wsUrl: `${env.publicBaseUrl.replace(/^http/, "ws")}${env.wsPath}`,
