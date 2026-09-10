@@ -38,20 +38,23 @@ interface MapViewProps {
 const SATELLITE_STYLE = {
   version: 8 as const,
   sources: {
-    "esri-satellite": {
+    "satellite-tiles": {
       type: "raster" as const,
       tiles: [
-        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+        "https://mt0.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+        "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+        "https://mt2.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+        "https://mt3.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
       ],
       tileSize: 256,
-      maxzoom: 18
+      maxzoom: 20
     }
   },
   layers: [
     {
-      id: "esri-satellite-layer",
+      id: "satellite-tiles-layer",
       type: "raster" as const,
-      source: "esri-satellite",
+      source: "satellite-tiles",
       paint: {
         "raster-opacity": 1.0,
         "raster-fade-duration": 0
@@ -807,7 +810,7 @@ const syncUkraineBorders = (map: maplibregl.Map) => {
     if (!map.getSource("ukraine-borders")) {
       map.addSource("ukraine-borders", {
         type: "geojson",
-        data: getUkraineBordersGeoJSON() as any
+        data: "/ukraine-official-borders.geojson"
       });
     }
 
@@ -1502,19 +1505,6 @@ export const MapView = ({
           // Subtle uncertainty cone ONLY on selected targets or high zoom (never blocking whole regions)
           if ((isSelected || zoom >= 11) && speed > 5) {
             drawUncertaintyCone(ctx, targetX, targetY, screenHeadingDeg, Math.min(36, vDist * 0.8));
-          }
-
-          if (type === "uav") {
-            const pulseRadius = (Math.sin(now / 200) * 0.5 + 0.5) * 10 + 6;
-            ctx.beginPath();
-            ctx.arc(targetX, targetY, pulseRadius, 0, Math.PI * 2);
-            ctx.strokeStyle = "rgba(239, 68, 68, 0.45)";
-            ctx.lineWidth = 1.3;
-            ctx.stroke();
-          }
-
-          if (type === "munition") {
-            drawMissileFlame(ctx, targetX, targetY, screenHeadingDeg, now);
           }
 
           if (type === "uav") {
