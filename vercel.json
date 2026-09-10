@@ -21,7 +21,7 @@
       "destination": "/index.html"
     },
     {
-      "source": "/((?!api/|health|ws|avatar\\.jpg).*)",
+      "source": "/((?!api/|health|ws|avatar\\.jpg|assets/|.*\\.(?:geojson|json|js|css|svg|png|jpg|jpeg|ico|webmanifest)).*)",
       "destination": "/index.html"
     }
   ],

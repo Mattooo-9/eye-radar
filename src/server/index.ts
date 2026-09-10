@@ -25,6 +25,7 @@ const MIME_TYPES: Record<string, string> = {
   ".js": "application/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".json": "application/json; charset=utf-8",
+  ".geojson": "application/geo+json; charset=utf-8",
   ".svg": "image/svg+xml",
   ".png": "image/png",
   ".jpg": "image/jpeg"
@@ -411,7 +412,7 @@ const server = createServer(async (req, res) => {
 
   if (
     (req.method === "GET" || req.method === "HEAD") &&
-    (url.pathname === "/" || url.pathname.startsWith(env.webAppPath) || url.pathname.startsWith("/assets") || url.pathname === "/avatar.jpg" || url.pathname === "/favicon.ico")
+    (url.pathname === "/" || url.pathname.startsWith(env.webAppPath) || url.pathname.startsWith("/assets") || url.pathname === "/avatar.jpg" || url.pathname === "/favicon.ico" || url.pathname.endsWith(".geojson") || url.pathname.endsWith(".json"))
   ) {
     await serveClient(req, res);
     return;

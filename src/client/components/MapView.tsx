@@ -8,7 +8,7 @@ import { getSubsolarPoint, getTerminatorCoordinates, getLocalSolarStatus } from 
 import { findNearestLandmark } from "../lib/landmarks";
 import { getLiveWeatherRadarTileUrl } from "../lib/weatherRadar";
 import { calculateSatellitePositions, type SatelliteTrack } from "../lib/satelliteRecon";
-import { getUkraineBordersGeoJSON } from "../lib/ukraineBorders";
+import { getUkraineBordersGeoJSON, getFrontlineGeoJSON } from "../lib/ukraineBorders";
 import { drawNightCityLights } from "../lib/nightCityLights";
 import type { FilterState } from "./StatusPanel";
 
@@ -1211,7 +1211,7 @@ const syncUkraineBorders = (map: maplibregl.Map, showFrontline = true) => {
     if (!map.getSource("ukraine-borders")) {
       map.addSource("ukraine-borders", {
         type: "geojson",
-        data: "/ukraine-official-borders.geojson"
+        data: getUkraineBordersGeoJSON()
       });
     }
 
@@ -1281,7 +1281,7 @@ const syncUkraineBorders = (map: maplibregl.Map, showFrontline = true) => {
     if (!map.getSource("ukraine-frontline")) {
       map.addSource("ukraine-frontline", {
         type: "geojson",
-        data: "/ukraine-frontline.geojson"
+        data: getFrontlineGeoJSON()
       });
     }
 
