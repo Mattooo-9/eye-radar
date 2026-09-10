@@ -20,7 +20,21 @@ export const TargetCard = ({
   onFollowTarget,
   onZoomTarget
 }: TargetCardProps) => {
-  const [id, type, lat, lon, heading, speed, timestamp, confidence, , threatLevel, altitude] = packet;
+  const [
+    id,
+    type,
+    lat,
+    lon,
+    heading,
+    speed,
+    timestamp,
+    confidence,
+    ,
+    threatLevel,
+    altitude,
+    packetModel,
+    packetCallsign
+  ] = packet;
   const [copied, setCopied] = useState(false);
 
   const speedKmh = Math.round(speed * 3.6);
@@ -39,7 +53,7 @@ export const TargetCard = ({
       ? 65
       : 190;
 
-  const spec = getTargetSpecification(type, id, speedKmh, effectiveAltM);
+  const spec = getTargetSpecification(type, id, speedKmh, effectiveAltM, packetModel, packetCallsign);
   const altAnalysis = getAltitudeAnalysis(effectiveAltM);
   const headingDesc = getHeadingVectorDescription(lat, lon, heading);
   const nearestLandmark = findNearestLandmark(lat, lon);
@@ -66,7 +80,7 @@ export const TargetCard = ({
   const timeSecAgo = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
 
   const handleCopyCoords = () => {
-    const text = `${spec.modelName} | ${lat.toFixed(5)}°N, ${lon.toFixed(5)}°E | H:${effectiveAltM}m | V:${speedKmh}km/h | ${nearestLandmark}`;
+    const text = `${spec.modelName}${packetCallsign ? ` [${packetCallsign}]` : ""} | ${lat.toFixed(5)}°N, ${lon.toFixed(5)}°E | H:${effectiveAltM}m | V:${speedKmh}km/h | ${nearestLandmark}`;
     void navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -91,7 +105,7 @@ export const TargetCard = ({
             </div>
             <h3 className="target-model-title">{spec.modelName}</h3>
             <span className="target-category-sub">{spec.categoryName}</span>
-            <div className="target-id-chip">ID: {id}</div>
+            <div className="target-id-chip">ID: {id}{packetCallsign ? ` • Позивний: ${packetCallsign}` : ""}</div>
           </div>
           <button className="close-btn" onClick={onClose} title="Закрити картку">✕</button>
         </div>

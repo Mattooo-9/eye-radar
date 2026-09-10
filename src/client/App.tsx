@@ -395,25 +395,30 @@ export const App = () => {
         activeAlerts={activeAlerts}
       />
 
-      {/* 4. Active Target Flyout Card */}
-      {inspectedTarget && (
-        <TargetCard
-          packet={inspectedTarget}
-          location={location}
-          onClose={() => setInspectedTarget(null)}
-          onFollowTarget={(id) => setFollowedTargetId(id)}
-          onZoomTarget={(lat, lon) => {
-            setFollowedTargetId(null);
-            mapInstance?.flyTo({
-              center: [lon, lat],
-              zoom: 17.5,
-              pitch: 0,
-              bearing: 0,
-              duration: 1200
-            });
-          }}
-        />
-      )}
+      {/* 4. Active Target Flyout Card (dynamically updated with live telemetry) */}
+      {(() => {
+        const liveTarget = inspectedTarget
+          ? filteredPackets.find((p) => p[0] === inspectedTarget[0]) ?? inspectedTarget
+          : null;
+        return liveTarget ? (
+          <TargetCard
+            packet={liveTarget}
+            location={location}
+            onClose={() => setInspectedTarget(null)}
+            onFollowTarget={(id) => setFollowedTargetId(id)}
+            onZoomTarget={(lat, lon) => {
+              setFollowedTargetId(null);
+              mapInstance?.flyTo({
+                center: [lon, lat],
+                zoom: 17.5,
+                pitch: 0,
+                bearing: 0,
+                duration: 1200
+              });
+            }}
+          />
+        ) : null;
+      })()}
 
       {/* 5. Active Impact / Detonation Flyout Card */}
       {selectedImpact && (

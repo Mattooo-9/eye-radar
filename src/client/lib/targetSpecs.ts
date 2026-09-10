@@ -92,14 +92,39 @@ export function getTargetSpecification(
   type: string,
   id: string,
   speedKmh: number,
-  altitudeM: number = 180
+  altitudeM: number = 180,
+  packetModel?: string,
+  packetCallsign?: string
 ): TargetSpecification {
   const altAnalysis = getAltitudeAnalysis(altitudeM);
 
   if (type === "uav") {
-    if (speedKmh < 140) {
+    if (packetModel && packetModel.toLowerCase().includes("238")) {
       return {
-        modelName: "ZALA 421 / Supercam S350 / Орлан-10",
+        modelName: packetModel,
+        categoryName: "Швидкісний реактивний дрон-камікадзе",
+        threatLevel: "CRITICAL",
+        color: "#ef4444",
+        warhead: "50 кг (Високобризантна термобарична або осколково-фугасна)",
+        maxRange: "1 000 – 1 800 км",
+        typicalSpeed: "480 – 580 км/год (турбореактивний двигун)",
+        altitudeCorridor: "300 – 1 200 м",
+        altitudeCategory: altAnalysis.corridorCategory,
+        guidance: "CRPA антена «Комета-М» + інерціальний блок + оптична/тепловізійна ГСН",
+        engine: "Малогабаритний турбореактивний двигун Toloue-10 / TJ100",
+        rcs: "~0.08 м² (радіопоглинаюче чорне покриття)",
+        tacticalRole: "Швидкісний прорив ешелонованої оборони ППО та ураження пріоритетних цілей",
+        airDefenseCounters: "ЗРК малої/середньої дальності (IRIS-T, NASAMS, Бук-М1), винищувачі F-16",
+        soundProfile: "Високочастотний реактивний свист газотурбінного двигуна"
+      };
+    }
+
+    if (
+      (packetModel && (packetModel.includes("Orlan") || packetModel.includes("Supercam") || packetModel.includes("ZALA"))) ||
+      (!packetModel && speedKmh < 140)
+    ) {
+      return {
+        modelName: packetModel || "ZALA 421 / Supercam S350 / Орлан-10",
         categoryName: "Оперативно-тактичний розвідувальний БПЛА",
         threatLevel: "HIGH",
         color: "#eab308",
@@ -118,7 +143,7 @@ export function getTargetSpecification(
     }
 
     return {
-      modelName: "Shahed-136 (Герань-2) / Shahed-131",
+      modelName: packetModel || "Shahed-136 (Герань-2) / Shahed-131",
       categoryName: "Ударний баражуючий дрон-камікадзе далекої дії",
       threatLevel: "CRITICAL",
       color: "#ef4444",
@@ -138,7 +163,7 @@ export function getTargetSpecification(
 
   if (type === "bomb") {
     return {
-      modelName: "КАБ-500 / КАБ-1500 (УМПК) / УМПБ Д-30СН",
+      modelName: packetModel || "КАБ-500 / КАБ-1500 (УМПК) / УМПБ Д-30СН",
       categoryName: "Керована плануюча авіаційна бомба з крилами УМПК",
       threatLevel: "CRITICAL",
       color: "#ef4444",
@@ -158,7 +183,7 @@ export function getTargetSpecification(
 
   if (type === "fpv") {
     return {
-      modelName: "Ударний тактичний FPV-дрон камікадзе (7-10 дюймів)",
+      modelName: packetModel || "Ударний тактичний FPV-дрон камікадзе (7-10 дюймів)",
       categoryName: "Високоманеврений ударний тактичний квадрокоптер",
       threatLevel: "HIGH",
       color: "#d946ef",
@@ -177,9 +202,9 @@ export function getTargetSpecification(
   }
 
   if (type === "munition") {
-    if (speedKmh > 1400) {
+    if (packetModel && (packetModel.includes("Кинжал") || packetModel.includes("Іскандер-М") || speedKmh > 1400)) {
       return {
-        modelName: "Х-47М2 «Кинджал» / 9-А-7660 (Іскандер-М)",
+        modelName: packetModel || "Х-47М2 «Кинджал» / 9-А-7660 (Іскандер-М)",
         categoryName: "Аеробалістична гіперзвукова ракета",
         threatLevel: "CRITICAL",
         color: "#f97316",
@@ -198,7 +223,7 @@ export function getTargetSpecification(
     }
 
     return {
-      modelName: "Х-101 / 3М-14 «Калібр» / Іскандер-К (Р-500)",
+      modelName: packetModel || "Х-101 / 3М-14 «Калібр» / Іскандер-К (Р-500)",
       categoryName: "Стратегічна низьковисотна крилата ракета",
       threatLevel: "CRITICAL",
       color: "#f97316",
@@ -218,7 +243,7 @@ export function getTargetSpecification(
 
   if (type === "helicopter") {
     return {
-      modelName: "Ка-52 «Алігатор» / Мі-28Н «Нічний мисливець»",
+      modelName: packetModel || "Ка-52 «Алігатор» / Мі-28Н «Нічний мисливець»",
       categoryName: "Ударний розвідувально-бойовий гелікоптер",
       threatLevel: "HIGH",
       color: "#10b981",
@@ -237,9 +262,10 @@ export function getTargetSpecification(
   }
 
   if (type === "aircraft") {
-    if (id.startsWith("adsb-")) {
+    if (id.startsWith("adsb-") || packetCallsign || (packetModel && !packetModel.includes("Су-"))) {
+      const displayModel = packetModel || `Цивільний авіалайнер (${id.slice(5).toUpperCase()})`;
       return {
-        modelName: `Цивільний авіалайнер (${id.slice(5).toUpperCase()})`,
+        modelName: packetCallsign ? `${displayModel} [${packetCallsign}]` : displayModel,
         categoryName: "Міжнародний транзитний авіарейс (ADS-B)",
         threatLevel: "LOW",
         color: "#38bdf8",
@@ -258,7 +284,7 @@ export function getTargetSpecification(
     }
 
     return {
-      modelName: "Су-34М / Су-35С (Носій КАБ з УМПК)",
+      modelName: packetModel || "Су-34М / Су-35С (Носій КАБ з УМПК)",
       categoryName: "Фронтовий тактичний надзвуковий винищувач-бомбардувальник",
       threatLevel: "CRITICAL",
       color: "#38bdf8",
