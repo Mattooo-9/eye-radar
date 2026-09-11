@@ -1,4 +1,4 @@
-﻿import React from "react";
+import React from "react";
 import type { ImpactEvent } from "../hooks/useWsRadar";
 
 interface ImpactCardProps {
@@ -19,7 +19,6 @@ export const ImpactCard: React.FC<ImpactCardProps> = ({ event, onClose, onCenter
     <div className={`impact-card ${isImpact ? "impact-card-red" : "impact-card-cyan"}`}>
       <div className="impact-card-header">
         <div className="impact-card-title-group">
-          <span className="impact-card-icon">{isImpact ? "💥" : "🛡️"}</span>
           <div>
             <div className="impact-card-headline">
               {isImpact ? "ЗАФІКСОВАНО ПРИЛІТ / ВИБУХ" : "УСПІШНЕ ПЕРЕХОПЛЕННЯ ППО"}
@@ -61,7 +60,7 @@ export const ImpactCard: React.FC<ImpactCardProps> = ({ event, onClose, onCenter
           className="impact-focus-btn"
           onClick={() => onCenter(event.lat, event.lon)}
         >
-          🎯 Сфокусувати епіцентр
+          Сфокусувати епіцентр
         </button>
       </div>
     </div>

@@ -11,6 +11,8 @@ import { calculateSatellitePositions, type SatelliteTrack } from "../lib/satelli
 import { getFrontlineGeoJSON } from "../lib/ukraineBorders";
 import { drawNightCityLights } from "../lib/nightCityLights";
 import type { FilterState } from "./StatusPanel";
+import FpsCounter from "./FpsCounter";
+import { SpatialIndex } from "../lib/spatialIndex.js";
 
 export type VisionMode = "satellite" | "nvg" | "flir" | "tactical";
 
@@ -91,6 +93,21 @@ const SATELLITE_STYLE = {
   ]
 };
 
+const SATELLITE_STYLE_LOW = {
+  ...SATELLITE_STYLE,
+  sources: {
+    ...SATELLITE_STYLE.sources,
+    "satellite-tiles": {
+      ...SATELLITE_STYLE.sources["satellite-tiles"],
+      maxzoom: 12
+    },
+    "road-tiles": {
+      ...SATELLITE_STYLE.sources["road-tiles"],
+      maxzoom: 12
+    }
+  }
+};
+
 const metersPerPixel = (latitude: number, zoom: number): number =>
   (156543.03392 * Math.cos((latitude * Math.PI) / 180)) / 2 ** zoom;
 
@@ -135,23 +152,10 @@ const drawImpactEvent = (
   ctx.save();
   ctx.globalAlpha = visualAlpha;
 
-  // 1. Brief subtle shockwave ring ONLY for brand new events (< 6 seconds old)
-  if (elapsedMs < 6_000) {
-    const pulsePhase = (now % 1200) / 1200;
-    const ringRadius = 8 + pulsePhase * 14;
-    const ringAlpha = Math.max(0, (1 - pulsePhase) * 0.65);
-
-    ctx.beginPath();
-    ctx.arc(x, y, ringRadius, 0, Math.PI * 2);
-    ctx.strokeStyle = isImpact ? `rgba(239, 68, 68, ${ringAlpha})` : `rgba(6, 182, 212, ${ringAlpha})`;
-    ctx.lineWidth = 1.4;
-    ctx.stroke();
-  }
-
   // 2. Compact military tactical badge (clean, unbloated, high-contrast)
   const minAgo = Math.max(1, Math.round(elapsedMs / 60000));
   const timeText = elapsedMs < 60000 ? "< 1 хв тому" : minAgo < 60 ? `${minAgo} хв тому` : `${Math.floor(minAgo / 60)} год тому`;
-  const label = isImpact ? `💥 ПРИЛІТ (${timeText})` : `🛡️ ЗБИТТЯ (${timeText})`;
+  const label = isImpact ? `ПРИЛІТ (${timeText})` : `ЗБИТТЯ (${timeText})`;
 
   ctx.font = "bold 9px Inter, system-ui, -apple-system, sans-serif";
   const textWidth = ctx.measureText(label).width;
@@ -1106,7 +1110,7 @@ const drawUserHomeBeacon = (
   ctx.lineWidth = 1.5;
   ctx.stroke();
 
-  const label = name ? `📍 ${name}` : "📍 Моя локація";
+  const label = name ? name : "Моя локація";
   drawTextWithOutline(
     ctx,
     label,
@@ -1147,12 +1151,12 @@ const drawMilitaryCalloutPill = (
   const screenH = ctx.canvas.height / ratio;
 
   const text = showAlt
-    ? `${modelName} • ${speedKmh} км/год • ${altStr}`
-    : `${modelName} • ${speedKmh} км/год`;
+    ? `${modelName} ${speedKmh} км/год ${altStr}`
+    : `${modelName} ${speedKmh} км/год`;
 
   ctx.font = "bold 10px Inter, -apple-system, system-ui, sans-serif";
   const metrics = ctx.measureText(text);
-  const pillW = Math.max(85, Math.ceil(metrics.width) + 18);
+  const pillW = Math.max(70, Math.ceil(metrics.width) + 16);
   const pillH = 18;
 
   // Anti-collision candidate slots prioritizing screen interior to prevent clipping
@@ -1217,11 +1221,11 @@ const drawMilitaryCalloutPill = (
   ctx.strokeStyle = isThreat ? "rgba(239, 68, 68, 0.88)" : "rgba(56, 189, 248, 0.78)";
   ctx.lineWidth = 1.1;
   ctx.beginPath();
-  ctx.roundRect(px, py, pillW, pillH, 9);
+  ctx.roundRect(px, py, pillW, pillH, 4);
   ctx.fill();
   ctx.stroke();
 
-  // Subtle lead connector line from target to pill (starting outside silhouette boundary)
+  // Subtle lead connector line from target to pill
   ctx.strokeStyle = isThreat ? "rgba(239, 68, 68, 0.45)" : "rgba(56, 189, 248, 0.35)";
   ctx.lineWidth = 0.9;
   ctx.beginPath();
@@ -1237,16 +1241,10 @@ const drawMilitaryCalloutPill = (
   }
   ctx.stroke();
 
-  // Status indicator dot
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.arc(px + 7.5, py + 9, 2.5, 0, Math.PI * 2);
-  ctx.fill();
-
   // Crisp high-contrast typography
   ctx.fillStyle = "#f8fafc";
   ctx.textBaseline = "middle";
-  ctx.fillText(text, px + 14, py + 9.5);
+  ctx.fillText(text, px + 8, py + 9.5);
 
   ctx.restore();
 };
@@ -1395,40 +1393,39 @@ const drawTacticalImpactMarker = (
   y: number,
   isImpact: boolean,
   label: string,
-  now: number,
+  _now: number,
   opacity = 1.0
 ) => {
   ctx.save();
   ctx.globalAlpha = Math.max(0.15, Math.min(1.0, opacity));
-  const pulse = Math.sin(now / 220) * 0.2 + 0.8;
-  const radius = isImpact ? 14 : 13;
+  const radius = isImpact ? 11 : 10;
 
-
-
-  // 2. Core tactical badge
+  // 1. Core tactical badge
   ctx.beginPath();
   ctx.arc(x, y, radius, 0, Math.PI * 2);
   ctx.fillStyle = isImpact ? "rgba(220, 38, 38, 0.95)" : "rgba(14, 116, 144, 0.95)";
   ctx.fill();
   ctx.strokeStyle = isImpact ? "#fca5a5" : "#bae6fd";
-  ctx.lineWidth = 2.0;
+  ctx.lineWidth = 1.5;
   ctx.stroke();
 
-  // 3. Central emoji symbol
-  ctx.font = "bold 11px system-ui, sans-serif";
+  // 2. Central text symbol (no emojis)
+  ctx.font = "bold 8px Inter, system-ui, sans-serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(isImpact ? "💥" : "🛡️", x, y);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(isImpact ? "!" : "ППО", x, y);
 
-  // 4. Tactical label with contrast halo
-  ctx.font = "bold 10px Inter, -apple-system, system-ui, sans-serif";
+  // 3. Tactical label without emoji
+  const cleanLabel = label.replace(/[💥🛡️]/gu, "").trim();
+  ctx.font = "bold 9px Inter, -apple-system, system-ui, sans-serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
   ctx.fillStyle = "#ffffff";
   ctx.strokeStyle = "#020617";
   ctx.lineWidth = 3;
-  ctx.strokeText(label, x, y + radius + 4);
-  ctx.fillText(label, x, y + radius + 4);
+  ctx.strokeText(cleanLabel, x, y + radius + 4);
+  ctx.fillText(cleanLabel, x, y + radius + 4);
 
   ctx.restore();
 };
@@ -1437,7 +1434,7 @@ const drawSatelliteReconLayer = (
   ctx: CanvasRenderingContext2D,
   map: maplibregl.Map,
   satellites: SatelliteTrack[],
-  now: number,
+  _now: number,
   width: number,
   height: number
 ) => {
@@ -1450,80 +1447,30 @@ const drawSatelliteReconLayer = (
       continue;
     }
 
-    // 1. Orbital ground track swath
-    const swathRadiusPx = Math.min(100, (sat.swathWidthKm / 12) * Math.max(1, map.getZoom() * 0.7));
-    const pulse = Math.sin(now / 240) * 0.2 + 0.8;
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(satPt.x, satPt.y, swathRadiusPx, 0, Math.PI * 2);
-    ctx.fillStyle = sat.type === "sar_radar"
-      ? `rgba(168, 85, 247, ${0.08 * pulse})`
-      : sat.type === "elint"
-      ? `rgba(234, 179, 8, ${0.08 * pulse})`
-      : `rgba(56, 189, 248, ${0.08 * pulse})`;
-    ctx.fill();
-    ctx.strokeStyle = sat.type === "sar_radar"
-      ? `rgba(168, 85, 247, ${0.45 * pulse})`
-      : sat.type === "elint"
-      ? `rgba(234, 179, 8, ${0.45 * pulse})`
-      : `rgba(56, 189, 248, ${0.45 * pulse})`;
-    ctx.lineWidth = 1.2;
-    ctx.setLineDash([3, 3]);
-    ctx.stroke();
-    ctx.restore();
-
-    // 2. Satellite craft icon
+    // Sleek minimal satellite diamond marker (no circles, no boxes)
     ctx.save();
     ctx.translate(satPt.x, satPt.y);
-    ctx.rotate((sat.heading * Math.PI) / 180);
-
-    // Central satellite payload bus
-    ctx.fillStyle = "#f8fafc";
-    ctx.fillRect(-3.5, -5, 7, 10);
-    ctx.strokeStyle = "#38bdf8";
-    ctx.lineWidth = 1;
-    ctx.strokeRect(-3.5, -5, 7, 10);
-
-    // Solar panels
-    ctx.fillStyle = "#0284c7";
-    ctx.fillRect(-15, -3, 11, 6);
-    ctx.fillRect(4, -3, 11, 6);
-    ctx.strokeStyle = "#93c5fd";
-    ctx.lineWidth = 0.8;
-    ctx.strokeRect(-15, -3, 11, 6);
-    ctx.strokeRect(4, -3, 11, 6);
-
-    // Sensor dish/lens indicator
-    ctx.beginPath();
-    ctx.arc(0, -6, 2, 0, Math.PI * 2);
     ctx.fillStyle = sat.type === "sar_radar" ? "#c084fc" : "#38bdf8";
+    ctx.beginPath();
+    ctx.moveTo(0, -4);
+    ctx.lineTo(4, 0);
+    ctx.lineTo(0, 4);
+    ctx.lineTo(-4, 0);
+    ctx.closePath();
     ctx.fill();
     ctx.restore();
 
-    // 3. Telemetry badge
-    const typeLabel = sat.type === "sar_radar" ? "РАДАР-SAR" : sat.type === "elint" ? "РТР-ELINT" : "ОПТИКА-HD";
+    // Clean telemetry text without emojis
+    const typeLabel = sat.type === "sar_radar" ? "SAR" : sat.type === "elint" ? "ELINT" : "HD";
     drawTextWithOutline(
       ctx,
-      `🛰️ ${sat.name} [${typeLabel}] • ${sat.altitudeKm} км`,
-      satPt.x + 16,
+      `${sat.name} [${typeLabel}] ${sat.altitudeKm} км`,
+      satPt.x + 8,
       satPt.y - 4,
       sat.inRangeOfUkraine ? "#f43f5e" : "#38bdf8",
       "rgba(0, 0, 0, 0.95)",
       "9px Inter, monospace"
     );
-
-    if (sat.inRangeOfUkraine) {
-      drawTextWithOutline(
-        ctx,
-        `⚠️ ЗОНА СКАНУВАННЯ УКРАЇНИ (${sat.swathWidthKm} км)`,
-        satPt.x + 16,
-        satPt.y + 9,
-        "#fbbf24",
-        "rgba(0, 0, 0, 0.95)",
-        "8px Inter, monospace"
-      );
-    }
   }
   ctx.restore();
 };
@@ -1570,6 +1517,20 @@ export const MapView = ({
   // Stable references to eliminate component re-render teardowns
   const packetsRef = useRef(packets);
   packetsRef.current = packets;
+
+  const spatialIndexRef = useRef<SpatialIndex<TrackPacket>>(new SpatialIndex<TrackPacket>(16));
+
+  useEffect(() => {
+    const items = packets.map((p) => ({
+      minX: p[3],
+      minY: p[2],
+      maxX: p[3],
+      maxY: p[2],
+      item: p
+    }));
+    spatialIndexRef.current.clear();
+    spatialIndexRef.current.load(items);
+  }, [packets]);
 
   const timelineOffsetRef = useRef(timelineOffsetSec);
   timelineOffsetRef.current = timelineOffsetSec;
@@ -1821,7 +1782,7 @@ export const MapView = ({
     map.on("load", () => {
       resizeCanvasSafe();
       applyImmediateSolarLighting(map);
-      syncWeatherLayer(map, showWeatherRef.current !== false);
+      if (performanceTierRef.current !== "LOW") { syncWeatherLayer(map, showWeatherRef.current !== false); }
       syncUkraineBorders(map, showFrontlineRef.current !== false);
       const scaleControl = new maplibregl.ScaleControl({ maxWidth: 110, unit: "metric" });
       map.addControl(scaleControl, "bottom-right");
@@ -1870,27 +1831,37 @@ export const MapView = ({
     const map = mapRef.current;
     if (!map) return;
     const isSat = visionMode !== "tactical";
-    const targetStyle = isSat ? SATELLITE_STYLE : mapStyleUrl;
+    const targetStyle = isSat
+      ? performanceTier === "LOW"
+        ? SATELLITE_STYLE_LOW
+        : SATELLITE_STYLE
+      : mapStyleUrl;
     if (currentStyleRef.current !== targetStyle) {
       currentStyleRef.current = targetStyle;
       map.setStyle(targetStyle);
       map.once("styledata", () => {
         syncUkraineBorders(map, showFrontlineRef.current !== false);
-        syncWeatherLayer(map, showWeatherRef.current !== false);
+        if (performanceTierRef.current !== "LOW") {
+          syncWeatherLayer(map, showWeatherRef.current !== false);
+        }
       });
     }
-  }, [mapStyleUrl, visionMode]);
+  }, [mapStyleUrl, performanceTier, visionMode]);
 
   // 3. Live Weather Radar synchronization with RainViewer
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
+    if (performanceTier === "LOW") {
+      syncWeatherLayer(map, false);
+      return;
+    }
     if (map.isStyleLoaded()) {
       syncWeatherLayer(map, showWeather !== false);
     } else {
       map.once("styledata", () => syncWeatherLayer(map, showWeather !== false));
     }
-  }, [showWeather, visionMode]);
+  }, [performanceTier, showWeather, visionMode]);
 
   // 4. Tactical Frontline layer visibility synchronization
   useEffect(() => {
@@ -1968,6 +1939,14 @@ export const MapView = ({
         ctx.clearRect(0, 0, width, height);
 
         const now = Date.now();
+        // FPS throttling for LOW performance tier (~30 fps)
+        const delta = now - lastFrameTimeRef.current;
+        if (performanceTierRef.current === "LOW" && delta < 33) {
+          // Skip this frame but keep the animation loop alive
+          requestAnimationFrame(render);
+          return;
+        }
+        lastFrameTimeRef.current = now;
         const zoom = map.getZoom();
         const currentLoc = locationRef.current;
         const currentPackets = packetsRef.current;
@@ -2089,7 +2068,39 @@ export const MapView = ({
         const isLowTier = performanceTierRef.current === "LOW";
         const cullingThreshold = isLowTier ? 30 : 80;
 
-        for (const packet of currentPackets) {
+        let visiblePackets: TrackPacket[];
+        try {
+          const bounds = map.getBounds();
+          const pad = 0.5; // ~50 km geo padding
+          visiblePackets = spatialIndexRef.current.search({
+            minX: bounds.getWest() - pad,
+            minY: bounds.getSouth() - pad,
+            maxX: bounds.getEast() + pad,
+            maxY: bounds.getNorth() + pad
+          });
+        } catch {
+          visiblePackets = currentPackets;
+        }
+
+        // 2.2 Draw Air Targets: Pass 1 — Collect visible targets and trajectory vectors
+        const trajectoryBatches: Record<string, Array<{ startX: number; startY: number; tipX: number; tipY: number }>> = {};
+        interface RenderItem {
+          id: string;
+          type: string;
+          targetX: number;
+          targetY: number;
+          scale: number;
+          screenHeadingDeg: number;
+          color: string;
+          packetModel?: string;
+          speedKmh: number;
+          isSelected: boolean;
+          shortName: string;
+          altMsl: string;
+        }
+        const renderItems: RenderItem[] = [];
+
+        for (const packet of visiblePackets) {
           const [id, type, lat, lon, heading, speed, timestamp, confidence, uncertaintyRadius, , altitude, packetModel] = packet;
 
           if (currentFilters) {
@@ -2101,13 +2112,23 @@ export const MapView = ({
             if (type === "helicopter" && (currentFilters.helicopter !== undefined ? !currentFilters.helicopter : !currentFilters.aircraft)) continue;
           }
 
-          // Predictive Dead-Reckoning vs Historical Timeline Playback
-          const elapsedSec = Math.max(0, Math.min(2.5, (now - (timestamp || now)) / 1000));
-          const curPos =
-            offsetSec > 0
-              ? (speed > 2 ? destinationPoint(lat, lon, (heading + 180) % 360, speed * offsetSec) : { lat, lon })
-              : (speed > 2 && elapsedSec > 0.04 ? destinationPoint(lat, lon, heading, speed * elapsedSec) : { lat, lon });
-          const groundPoint = map.project([curPos.lon, curPos.lat]);
+          // Fast equirectangular dead-reckoning extrapolation
+          const elapsedSec = Math.max(0, Math.min(3.0, (now - (timestamp || now)) / 1000));
+          let curLat = lat;
+          let curLon = lon;
+          if (offsetSec > 0 && speed > 2) {
+            const backH = (heading + 180) % 360;
+            const hRad = (backH * Math.PI) / 180;
+            const dist = speed * offsetSec;
+            curLat = lat + (dist * Math.cos(hRad)) / 111139;
+            curLon = lon + (dist * Math.sin(hRad)) / (111139 * Math.cos((lat * Math.PI) / 180));
+          } else if (speed > 2 && elapsedSec > 0.03) {
+            const hRad = (heading * Math.PI) / 180;
+            const dist = speed * elapsedSec;
+            curLat = lat + (dist * Math.cos(hRad)) / 111139;
+            curLon = lon + (dist * Math.sin(hRad)) / (111139 * Math.cos((lat * Math.PI) / 180));
+          }
+          const groundPoint = map.project([curLon, curLat]);
 
           if (
             groundPoint.x < -cullingThreshold ||
@@ -2128,10 +2149,8 @@ export const MapView = ({
           const fwdY = -Math.cos(headingRad);
 
           const isSelected = Boolean(currentSelected && currentSelected[0] === id);
-          const isHighThreat = type === "uav" || type === "munition" || type === "bomb" || type === "fpv";
           const color = TARGET_COLORS[type] ?? "#7dd3fc";
 
-          // PREDICTED Forward flight trajectory vector (sleek, solid tactical directional line leading from silhouette nose)
           if (speed > 5) {
             const noseDist = scale * 0.95;
             const vectorLen = Math.max(16, Math.min(38, 12 + zoom * 2.0));
@@ -2140,17 +2159,10 @@ export const MapView = ({
             const tipX = targetX + fwdX * (noseDist + vectorLen);
             const tipY = targetY + fwdY * (noseDist + vectorLen);
 
-            ctx.save();
-            ctx.strokeStyle = color;
-            ctx.lineWidth = 1.4;
-            ctx.beginPath();
-            ctx.moveTo(startX, startY);
-            ctx.lineTo(tipX, tipY);
-            ctx.stroke();
-            ctx.restore();
+            if (!trajectoryBatches[color]) trajectoryBatches[color] = [];
+            trajectoryBatches[color].push({ startX, startY, tipX, tipY });
           }
 
-          // Target Tag & Telemetry: Crisp, non-colliding military pill
           const effectiveAltM =
             altitude !== undefined && altitude !== null
               ? altitude
@@ -2168,24 +2180,28 @@ export const MapView = ({
           const speedKmh = Math.round(speed * 3.6);
           const altMsl = effectiveAltM >= 1000 ? `${(effectiveAltM / 1000).toFixed(1)} км` : `${Math.round(effectiveAltM)} м`;
 
-          // Draw Military Silhouette strictly pointing in flight direction
-          if (type === "uav") {
-            drawUavSilhouette(ctx, targetX, targetY, scale, screenHeadingDeg, color, now, packetModel, speedKmh);
-          } else if (type === "bomb") {
-            drawKabSilhouette(ctx, targetX, targetY, scale, screenHeadingDeg, color, now);
-          } else if (type === "fpv") {
-            drawFpvSilhouette(ctx, targetX, targetY, scale, screenHeadingDeg, color, now);
-          } else if (type === "munition") {
-            drawMissileSilhouette(ctx, targetX, targetY, scale, screenHeadingDeg, color, now);
-          } else if (type === "helicopter") {
-            drawHelicopterSilhouette(ctx, targetX, targetY, scale, screenHeadingDeg, color, now);
-          } else {
-            drawAircraftSilhouette(ctx, targetX, targetY, scale, screenHeadingDeg, color, now);
-          }
+          const cleanModel = packetModel
+            ? packetModel
+                .replace(/ Cruise Missile/gi, "")
+                .replace(/ Fighting Falcon/gi, "")
+                .replace(/ Flanker/gi, "")
+                .replace(/ Fulcrum/gi, "")
+                .replace(/ Gunship/gi, "")
+                .replace(/ Fighter/gi, "")
+                .replace(/ Helicopter/gi, "")
+                .replace(/ Scout UAV/gi, "")
+                .replace(/ Recon/gi, "")
+                .replace(/ \(CAP\)/gi, "")
+                .replace(/ \(CSAR\)/gi, "")
+                .replace(/ \(Jet\)/gi, "")
+                .replace(/ \(Maritime\)/gi, "")
+                .replace(/ \(УМПК\)/gi, "")
+                .replace(/ \(Ударний\)/gi, "")
+                .trim()
+            : "";
 
-          const shortName = packetModel
-            ? packetModel.replace(" Cruise Missile", "").replace(" Fighting Falcon", "").replace(" Fulcrum", "").replace(" (Jet)", "-Jet")
-            : type === "uav"
+          const shortName = cleanModel || (
+            type === "uav"
             ? "БПЛА"
             : type === "bomb"
             ? "КАБ"
@@ -2197,18 +2213,64 @@ export const MapView = ({
             ? "Гелікоптер"
             : id.startsWith("adsb-")
             ? id.slice(5).toUpperCase()
-            : "Ціль";
+            : "Ціль"
+          );
 
-          // Description is rendered ONLY when user explicitly clicks/taps on the target
-          if (isSelected) {
+          renderItems.push({
+            id,
+            type,
+            targetX,
+            targetY,
+            scale,
+            screenHeadingDeg,
+            color,
+            packetModel,
+            speedKmh,
+            isSelected,
+            shortName,
+            altMsl
+          });
+        }
+
+        // Pass 2: Stroke all batched trajectories at once
+        ctx.save();
+        ctx.lineWidth = 1.4;
+        for (const [col, lines] of Object.entries(trajectoryBatches)) {
+          ctx.strokeStyle = col;
+          ctx.beginPath();
+          for (let i = 0; i < lines.length; i++) {
+            ctx.moveTo(lines[i].startX, lines[i].startY);
+            ctx.lineTo(lines[i].tipX, lines[i].tipY);
+          }
+          ctx.stroke();
+        }
+        ctx.restore();
+
+        // Pass 3: Draw silhouettes and callout pills on top
+        for (const item of renderItems) {
+          if (item.type === "uav") {
+            drawUavSilhouette(ctx, item.targetX, item.targetY, item.scale, item.screenHeadingDeg, item.color, now, item.packetModel, item.speedKmh);
+          } else if (item.type === "bomb") {
+            drawKabSilhouette(ctx, item.targetX, item.targetY, item.scale, item.screenHeadingDeg, item.color, now);
+          } else if (item.type === "fpv") {
+            drawFpvSilhouette(ctx, item.targetX, item.targetY, item.scale, item.screenHeadingDeg, item.color, now);
+          } else if (item.type === "munition") {
+            drawMissileSilhouette(ctx, item.targetX, item.targetY, item.scale, item.screenHeadingDeg, item.color, now);
+          } else if (item.type === "helicopter") {
+            drawHelicopterSilhouette(ctx, item.targetX, item.targetY, item.scale, item.screenHeadingDeg, item.color, now);
+          } else {
+            drawAircraftSilhouette(ctx, item.targetX, item.targetY, item.scale, item.screenHeadingDeg, item.color, now);
+          }
+
+          if (item.isSelected) {
             drawMilitaryCalloutPill(
               ctx,
-              targetX,
-              targetY,
-              shortName,
-              speedKmh,
-              altMsl,
-              color,
+              item.targetX,
+              item.targetY,
+              item.shortName,
+              item.speedKmh,
+              item.altMsl,
+              item.color,
               true,
               true,
               placedPillBoxes
@@ -2230,14 +2292,15 @@ export const MapView = ({
             const fade = Math.max(0.15, 1 - elapsedMs / ttlMs);
             const minAgo = Math.max(1, Math.round(elapsedMs / 60000));
             const timeText = elapsedMs < 60000 ? "< 1 хв тому" : minAgo < 60 ? `${minAgo} хв тому` : `${Math.floor(minAgo / 60)} год тому`;
-            const label = isImpact ? `💥 ПРИЛІТ (${timeText})` : `🛡️ ЗБИТТЯ (${timeText})`;
+            const label = isImpact ? `ПРИЛІТ (${timeText})` : `ЗБИТТЯ (${timeText})`;
 
             drawTacticalImpactMarker(ctx, pt.x, pt.y, isImpact, label, now, fade);
           }
         }
 
         // 3. Draw Active Reconnaissance Satellites (Persona-3, Bars-M, Lotos-S1, Kondor-FKA) - throttled to 1s
-        if (showSatellitesRef.current !== false) {
+        // Skip satellite recon layer in LOW performance tier
+        if (performanceTierRef.current !== "LOW" && showSatellitesRef.current !== false) {
           if (now - lastSatCalcRef.current > 1000 || cachedSatellitesRef.current.length === 0) {
             lastSatCalcRef.current = now;
             cachedSatellitesRef.current = calculateSatellitePositions(now);
@@ -2265,12 +2328,12 @@ export const MapView = ({
       <div className="space-vignette" />
       {isPickingLocation && (
         <div className="picking-prompt-pill">
-          🎯 Клікніть на карті для встановлення точки спостереження
+          Клікніть на карті для встановлення точки спостереження
         </div>
       )}
       {followingTargetId && (
         <div className="following-prompt-pill">
-          <span>🎯 СУПРОВОДЖЕННЯ: <strong>{followingTargetId.startsWith("adsb-") ? followingTargetId.slice(5).toUpperCase() : followingTargetId.toUpperCase()}</strong></span>
+          <span>СУПРОВОДЖЕННЯ: <strong>{followingTargetId.startsWith("adsb-") ? followingTargetId.slice(5).toUpperCase() : followingTargetId.toUpperCase()}</strong></span>
           {onStopFollow && (
             <button type="button" className="following-cancel-btn" onClick={onStopFollow}>
               ✕ ЗНЯТИ ЗАХОПЛЕННЯ

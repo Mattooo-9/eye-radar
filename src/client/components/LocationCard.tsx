@@ -116,7 +116,7 @@ export const LocationCard = ({
         <div className="location-sector-threats">
           <div className="sector-threats-header">
             <span className="sector-title">
-              🎯 Обстановка в небі (радіус 65 км)
+              Обстановка в небі (радіус 65 км)
             </span>
             <span
               className={`sector-count-badge ${
@@ -135,7 +135,7 @@ export const LocationCard = ({
             <div className="closest-threat-card">
               <div className="threat-top-row">
                 <span className="threat-model-name">
-                  🚨 {intel.closestThreat.modelName}
+                  {intel.closestThreat.modelName}
                 </span>
                 <span
                   className="threat-altitude-pill"
@@ -212,7 +212,7 @@ export const LocationCard = ({
             className="loc-action-btn primary"
             onClick={() => onCenterLocation(lat, lon)}
           >
-            🎯 Центрувати огляд
+            Центрувати огляд
           </button>
 
           <button
@@ -222,7 +222,7 @@ export const LocationCard = ({
             disabled={subscribing}
             style={subscribed ? { backgroundColor: "#059669", borderColor: "#10b981", color: "#ffffff" } : {}}
           >
-            {subscribed ? "🔔 Сповіщення в боті увімкнено!" : subscribing ? "⏳ Збереження..." : "🔔 Сповіщати про тривоги в боті"}
+            {subscribed ? "Сповіщення в боті увімкнено!" : subscribing ? "Збереження..." : "Сповіщати про тривоги в боті"}
           </button>
 
           <button

@@ -1,10 +1,11 @@
-﻿let cachedTileUrl: string | null = null;
+let cachedTileUrl: string | null = null;
 let lastFetchTime = 0;
 
-export const getLiveWeatherRadarTileUrl = async (): Promise<string | null> => {
+export const getLiveWeatherRadarTileUrl = async (isLowTier = false): Promise<string | null> => {
   const now = Date.now();
-  // Cache for 4 minutes
-  if (cachedTileUrl && now - lastFetchTime < 240_000) {
+  // Cache for 5 minutes in low tier to conserve mobile data, 4 minutes otherwise
+  const cacheTtl = isLowTier ? 300_000 : 240_000;
+  if (cachedTileUrl && now - lastFetchTime < cacheTtl) {
     return cachedTileUrl;
   }
 

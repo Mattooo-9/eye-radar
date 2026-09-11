@@ -494,6 +494,7 @@ const server = createServer(async (req, res) => {
 const wss = new WebSocketServer({ noServer: true });
 const hub = new RadarHub(wss);
 hub.setInitialSnapshotProvider(() => trackManager.toPackets(simulationEnabled));
+hub.setBinarySnapshotProvider(() => trackManager.getBinarySnapshot(simulationEnabled));
 const botManager = createTelegramBot();
 botManager.setHealthTracker(
   healthTracker,
@@ -511,8 +512,6 @@ server.on("upgrade", (req, socket, head) => {
 
   wss.handleUpgrade(req, socket, head, (ws) => {
     wss.emit("connection", ws, req);
-    ws.send(JSON.stringify([0, Date.now(), trackManager.toPackets()]));
-    ws.send(JSON.stringify([2, Date.now(), impactManager.getRecentEvents()]));
   });
 });
 
@@ -630,8 +629,8 @@ setInterval(async () => {
   trackManager.tick(now);
   trackManager.prune(now);
 
-  const delta = trackManager.getDeltaPacket(simulationEnabled);
-  hub.broadcastTracks(delta.tracks, delta.seq);
+  const delta = trackManager.getDeltaPacket(simulationEnabled, cycleCounter);
+  hub.broadcastTracks(delta.tracks, delta.seq, delta.binaryBuffer, delta.removedIds);
 
   if (cycleCounter % 3 === 0) {
     hub.broadcastImpacts(impactManager.getRecentEvents());

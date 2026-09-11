@@ -1,4 +1,4 @@
-﻿import React from "react";
+import React from "react";
 
 interface TacticalTopBarProps {
   threatCount: number;
@@ -36,12 +36,10 @@ export const TacticalTopBar: React.FC<TacticalTopBarProps> = ({
             onClick={onOpenAlerts}
             title="Натисніть для списку областей з повітряною тривогою"
           >
-            <span className="alert-siren-anim">🚨</span>
             <span className="alert-pill-text">ТРИВОГА: {activeAlertsCount} ОБЛ. ▼</span>
           </button>
         ) : (
           <div className="top-bar-calm-pill">
-            <span className="calm-shield">🛡️</span>
             <span className="calm-text">НЕБО СПОКІЙНЕ</span>
           </div>
         )}
@@ -54,7 +52,6 @@ export const TacticalTopBar: React.FC<TacticalTopBarProps> = ({
           onClick={onOpenReport}
           title="Подати екстрений рапорт очевидця про звук або проліт цілі"
         >
-          <span className="report-icon">📢</span>
           <span className="report-text">РАПОРТ</span>
         </button>
 

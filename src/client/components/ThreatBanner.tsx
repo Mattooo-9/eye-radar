@@ -56,14 +56,14 @@ export const ThreatBanner = ({ packets, location, onSelectTarget }: ThreatBanner
     <>
       <div className={`threat-banner ${etaMin <= 10 ? "critical" : "warning"}`}>
         <div className="threat-info" onClick={() => onSelectTarget(packet)}>
-          <span className="threat-icon">⚠️</span>
+          <span className="threat-icon">!</span>
           <div className="threat-text">
             <strong>{targetType} курсом на ваш сектор!</strong>
             <span>Дистанція: <b>{distanceKm} км</b> • ETA: <b>~{etaMin} хв</b></span>
           </div>
         </div>
         <button className="shelter-btn" onClick={() => setShowShelterGuide(true)}>
-          🛡️ В укриття
+          В укриття
         </button>
       </div>
 

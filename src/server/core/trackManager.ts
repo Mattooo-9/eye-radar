@@ -4,6 +4,7 @@ import type { ProvenanceRecord, SourceFamily } from "../domain/unifiedObservatio
 import { ImmFilter2D, type ImmResult } from "./immFilter.js";
 import { classifyAerialObject } from "./classificationEngine.js";
 import { TrackCorrelator } from "./trackCorrelator.js";
+import { encodeBinaryDelta, encodeBinarySnapshot } from "../../common/binaryCodec.js";
 
 interface InternalTrack {
   state: TrackState;
@@ -23,6 +24,8 @@ export class TrackManager {
   private readonly correlator = new TrackCorrelator();
   private seqNumber = 0;
   private recentlyRemovedIds = new Set<string>();
+  private readonly recentObsFingerprints = new Set<string>();
+  private readonly lastPublishedState = new Map<string, CompactTrackPacket>();
 
   getTrack(id: string): TrackState | undefined {
     return this.tracks.get(id)?.state;
@@ -38,6 +41,16 @@ export class TrackManager {
     if (now - observation.timestamp > 25_000) {
       return this.tracks.get(observation.id)?.state ?? null;
     }
+
+    // Pre-fusion observation deduplication
+    const fingerprint = `${observation.source}:${observation.id}:${observation.timestamp}`;
+    if (this.recentObsFingerprints.has(fingerprint)) {
+      return this.tracks.get(observation.id)?.state ?? null;
+    }
+    if (this.recentObsFingerprints.size >= 3000) {
+      this.recentObsFingerprints.clear();
+    }
+    this.recentObsFingerprints.add(fingerprint);
 
     // Drop civilian commercial passenger airliners and foreign corridor clutter
     if (observation.type === "aircraft") {
@@ -385,17 +398,66 @@ export class TrackManager {
   /**
    * Generates delta updates since last cycle
    */
-  getDeltaPacket(includeSynthetic = true): {
+  getDeltaPacket(includeSynthetic = true, cycle = 0): {
     seq: number;
     tracks: CompactTrackPacket[];
     removedIds: string[];
+    binaryBuffer: Uint8Array;
   } {
     const seq = this.getNextSequence();
-    const tracks = this.toPackets(includeSynthetic);
+    const allTracks = this.toPackets(includeSynthetic);
     const removedIds = Array.from(this.recentlyRemovedIds);
     this.recentlyRemovedIds.clear();
 
-    return { seq, tracks, removedIds };
+    for (const rid of removedIds) {
+      this.lastPublishedState.delete(rid);
+    }
+
+    // Adaptive update rate: urgent/fast tracks sent every tick (1s); distant/stationary tracks sent periodically
+    const deltaTracks =
+      cycle === 0
+        ? allTracks
+        : allTracks.filter((t) => {
+            const type = t[1];
+            const speed = t[5];
+            const threat = t[9];
+            const isUrgent =
+              type === "uav" ||
+              type === "munition" ||
+              type === "bomb" ||
+              type === "fpv" ||
+              speed > 40 ||
+              threat === "high" ||
+              threat === "critical";
+
+            if (isUrgent) return true;
+            if (speed > 10 || type === "aircraft" || type === "helicopter") {
+              return cycle % 2 === 0;
+            }
+            return cycle % 4 === 0;
+          });
+
+    const binaryBuffer = encodeBinaryDelta(
+      deltaTracks,
+      removedIds,
+      seq,
+      Date.now(),
+      this.lastPublishedState
+    );
+
+    for (const t of deltaTracks) {
+      this.lastPublishedState.set(t[0], t);
+    }
+
+    return { seq, tracks: deltaTracks, removedIds, binaryBuffer };
+  }
+
+  /**
+   * Generates complete binary snapshot for initial connection / reconnect
+   */
+  getBinarySnapshot(includeSynthetic = true): Uint8Array {
+    const tracks = this.toPackets(includeSynthetic);
+    return encodeBinarySnapshot(tracks, this.seqNumber, Date.now());
   }
 
   /**

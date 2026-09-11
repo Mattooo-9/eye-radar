@@ -69,12 +69,29 @@ export const App = () => {
   const [selectedCityName, setSelectedCityName] = useState<string>("");
   const [activeAlerts, setActiveAlerts] = useState<string[]>([]);
   const [showWeather, setShowWeather] = useState(false);
-  const [showSatellites, setShowSatellites] = useState(true);
+  const [showSatellites, setShowSatellites] = useState(false);
   const [followedTargetId, setFollowedTargetId] = useState<string | null>(null);
   const [alertsModalOpen, setAlertsModalOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [timelineOffsetSec, setTimelineOffsetSec] = useState<number>(0);
   const [performanceTier, setPerformanceTier] = useState<PerformanceTier>("NORMAL");
+
+  // Load saved performance tier from localStorage
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("performanceTier");
+      if (saved === "LOW" || saved === "NORMAL" || saved === "HIGH") {
+        setPerformanceTier(saved as PerformanceTier);
+      }
+    } catch {}
+  }, []);
+
+  // Persist tier changes
+  useEffect(() => {
+    try {
+      localStorage.setItem("performanceTier", performanceTier);
+    } catch {}
+  }, [performanceTier]);
 
   // Auto-detect lower-end hardware (phones with <= 4 logical cores) for 30 FPS throttle
   useEffect(() => {
@@ -210,7 +227,32 @@ export const App = () => {
     });
   }, [packets, tacticalFilters, threatOnly, filters]);
 
+  // ── Auto-Sentinel: Automatically monitors & locks onto closest threat (<= dangerRadiusKm) ───
+  useEffect(() => {
+    if (!tacticalFilters.autoTracking || !location || filteredPackets.length === 0) {
+      return;
+    }
 
+    let closest: TrackPacket | null = null;
+    let minD = Infinity;
+
+    for (const p of filteredPackets) {
+      const [, type, lat, lon] = p;
+      if (type === "uav" || type === "munition" || type === "bomb" || type === "fpv") {
+        const d = haversineMeters({ lat, lon }, { lat: location.lat, lon: location.lon });
+        if (d < minD) {
+          minD = d;
+          closest = p;
+        }
+      }
+    }
+
+    if (closest && minD <= tacticalFilters.dangerRadiusKm * 1000) {
+      if (!selectedTarget || selectedTarget[0] !== closest[0]) {
+        setSelectedTarget(closest);
+      }
+    }
+  }, [filteredPackets, location, tacticalFilters, selectedTarget]);
 
   const targetCounts = useMemo(() => {
     let uav = 0;
@@ -404,7 +446,7 @@ export const App = () => {
           onClick={handleFlyToUser}
           title="Фокус на моїй закріпленій локації"
         >
-          <span className="locator-icon">🎯</span>
+          <span className="locator-icon">◎</span>
           <span className="locator-text">МОЯ ЛОКАЦІЯ</span>
         </button>
       )}

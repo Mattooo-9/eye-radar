@@ -115,10 +115,10 @@ export const TargetCard = ({
         {/* Visual Engine Propulsion Identification Banner */}
         {spec.propulsionSummary && (
           <div className={`propulsion-banner ${spec.isJet ? "propulsion-jet" : "propulsion-piston"}`}>
-            <span className="propulsion-icon">{spec.isJet ? "🔥" : "⚙️"}</span>
+            <span className="propulsion-icon">{spec.isJet ? "ТРД" : "ДВЗ"}</span>
             <div className="propulsion-info">
               <div className="propulsion-title">
-                {spec.isJet ? "Турбореактивна тяга (ТРД • Без гвинта)" : "Поршневий двигун (ДВЗ • Штовхаючий гвинт)"}
+                {spec.isJet ? "Турбореактивна тяга (ТРД)" : "Поршневий двигун (ДВЗ)"}
               </div>
               <div className="propulsion-desc">{spec.propulsionSummary}</div>
             </div>
@@ -128,7 +128,6 @@ export const TargetCard = ({
         {/* Exact Location & Nearest Settlement */}
         <div className="target-card-location-box">
           <div className="location-row">
-            <span className="location-pin">📍</span>
             <div>
               <strong className="location-title">{nearestLandmark}</strong>
               <div className="location-coords">
@@ -138,12 +137,11 @@ export const TargetCard = ({
           </div>
 
           <div className="vector-row">
-            <span className="vector-icon">🧭</span>
             <div>
               <span className="vector-text">{headingDesc.forwardSummary}</span>
               {destinationPrediction && (
                 <div className="destination-predicted">
-                  🎯 Вектор на: <strong>{destinationPrediction.destinationName}</strong> (~{destinationPrediction.etaMinutes} хв, {destinationPrediction.distanceKm} км)
+                  Вектор на: <strong>{destinationPrediction.destinationName}</strong> (~{destinationPrediction.etaMinutes} хв, {destinationPrediction.distanceKm} км)
                 </div>
               )}
             </div>
@@ -154,13 +152,13 @@ export const TargetCard = ({
         <div className="target-origin-section">
           {spec.detectionSensors && (
             <div className="origin-row">
-              <span className="origin-label">🛰️ Комплекси виявлення:</span>
+              <span className="origin-label">Комплекси виявлення:</span>
               <span className="origin-val">{spec.detectionSensors}</span>
             </div>
           )}
           {spec.launchOrigin && (
             <div className="origin-row">
-              <span className="origin-label">🛫 Ймовірний район старту:</span>
+              <span className="origin-label">Ймовірний район старту:</span>
               <span className="origin-val">{spec.launchOrigin}</span>
             </div>
           )}
@@ -185,7 +183,7 @@ export const TargetCard = ({
           <div className="metric">
             <span className="label">До вашої позиції</span>
             <span className="value">{distanceKm !== null ? `${distanceKm} км` : "—"}</span>
-            <span className="sub-value">{location ? (distanceKm !== null && distanceKm < 30 ? "⚠️ У вашому районі" : "Дистанція безпечна") : "GPS не вказано"}</span>
+            <span className="sub-value">{location ? (distanceKm !== null && distanceKm < 30 ? "У вашому районі" : "Дистанція безпечна") : "GPS не вказано"}</span>
           </div>
 
           <div className="metric">
@@ -213,26 +211,26 @@ export const TargetCard = ({
         <div className="target-altitude-banner" style={{ borderLeftColor: altAnalysis.corridorBadgeColor }}>
           <div className="corridor-header">
             <span className="corridor-title" style={{ color: altAnalysis.corridorBadgeColor }}>
-              🛡️ Ешелон: {altAnalysis.corridorCategory}
+              Ешелон: {altAnalysis.corridorCategory}
             </span>
           </div>
           <p className="corridor-desc">{altAnalysis.tacticalDescription}</p>
           <div className="corridor-countermeasures">
-            <strong>🎯 Засоби протидії:</strong> {altAnalysis.interceptionZone}
+            <strong>Засоби протидії:</strong> {altAnalysis.interceptionZone}
           </div>
         </div>
 
         {/* Real Tactical Threat Assessment */}
         {spec.tacticalThreatAssessment && (
           <div className="target-threat-banner">
-            <span className="threat-banner-title">⚠️ Оперативна оцінка обстановки:</span>
+            <span className="threat-banner-title">Оперативна оцінка обстановки:</span>
             <p className="threat-banner-desc">{spec.tacticalThreatAssessment}</p>
           </div>
         )}
 
         {/* Full Military Specifications (TTX) */}
         <div className="target-ttx-section">
-          <div className="ttx-title">📋 Тактико-технічні характеристики (ТТХ):</div>
+          <div className="ttx-title">Тактико-технічні характеристики (ТТХ):</div>
           <div className="ttx-grid">
             <div className="ttx-row">
               <span className="ttx-key">Бойова частина:</span>
@@ -282,7 +280,7 @@ export const TargetCard = ({
                 onClose();
               }}
             >
-              🎯 Супроводжувати ціль
+              Супроводжувати ціль
             </button>
           )}
           {onZoomTarget && (
@@ -294,7 +292,7 @@ export const TargetCard = ({
                 onClose();
               }}
             >
-              🛰️ Зблизити (Zoom 18.5)
+              Зблизити (Zoom 18.5)
             </button>
           )}
           <button
@@ -303,7 +301,7 @@ export const TargetCard = ({
             onClick={handleCopyCoords}
             title="Скопіювати тактичну інформацію та координати"
           >
-            {copied ? "✓ Скопійовано!" : "📋 Копіювати координати"}
+            {copied ? "✓ Скопійовано!" : "Копіювати координати"}
           </button>
           <button
             type="button"
@@ -312,14 +310,14 @@ export const TargetCard = ({
             onClick={() => setShowInspector(true)}
             title="Переглянути повну історію вимірювань, provenance та стан IMM-фільтра"
           >
-            🔬 Діагностика (Provenance)
+            Діагностика (Provenance)
           </button>
         </div>
 
         {/* Urgent Civil Defense Notice */}
         {etaMinutes !== null && etaMinutes < 25 && (
           <div className="safety-alert">
-            🚨 <strong>Увага оперативного чергового:</strong> Ціль рухається у вашому напрямку (підліт ~{etaMinutes} хв). Негайно перейдіть в укриття або скористайтеся правилом двох стін!
+            <strong>Увага оперативного чергового:</strong> Ціль рухається у вашому напрямку (підліт ~{etaMinutes} хв). Негайно перейдіть в укриття або скористайтеся правилом двох стін!
           </div>
         )}
 

@@ -21,6 +21,12 @@ function findNearestOblast(lat: number, lon: number): { nameUk: string; oblast: 
   return { nameUk: closest.nameUk, oblast: closest.oblast || closest.nameUk };
 }
 
+interface PendingDeletion {
+  chatId: number;
+  messageId: number;
+  deleteAt: number;
+}
+
 export class EyeRadarBotManager {
   private bot: Telegraf | null = null;
   private readonly storage = new StorageManager();
@@ -30,6 +36,8 @@ export class EyeRadarBotManager {
   private trackCountProvider?: () => number;
   private tracksProvider?: () => TrackState[];
   private alertsSource?: AlertsInUaSource;
+  private readonly pendingDeletions: PendingDeletion[] = [];
+  private deletionTimer?: NodeJS.Timeout;
 
   constructor() {
     if (!env.botToken || env.botToken === "YOUR_TELEGRAM_BOT_TOKEN") {
@@ -40,8 +48,45 @@ export class EyeRadarBotManager {
     try {
       this.bot = new Telegraf(env.botToken);
       this.setupHandlers();
+
+      // Periodic check to delete expired notification messages
+      this.deletionTimer = setInterval(() => {
+        void this.processPendingDeletions();
+      }, 60_000);
+      this.deletionTimer.unref();
     } catch (err) {
       console.error("Failed to initialize Telegraf:", err);
+    }
+  }
+
+  scheduleMessageDeletion(chatId: number, messageId: number, delayMs = 3600_000): void {
+    const deleteAt = Date.now() + delayMs;
+    this.pendingDeletions.push({ chatId, messageId, deleteAt });
+
+    // Direct timer for prompt 1-hour deletion
+    setTimeout(() => {
+      void this.deleteTelegramMessage(chatId, messageId);
+    }, delayMs).unref();
+  }
+
+  private async deleteTelegramMessage(chatId: number, messageId: number): Promise<void> {
+    if (!this.bot) return;
+    try {
+      await this.bot.telegram.deleteMessage(chatId, messageId);
+    } catch {
+      // Safely ignore if user already deleted message or chat was cleared
+    }
+  }
+
+  private async processPendingDeletions(): Promise<void> {
+    if (!this.bot || this.pendingDeletions.length === 0) return;
+    const now = Date.now();
+    for (let i = this.pendingDeletions.length - 1; i >= 0; i--) {
+      const item = this.pendingDeletions[i];
+      if (now >= item.deleteAt) {
+        this.pendingDeletions.splice(i, 1);
+        await this.deleteTelegramMessage(item.chatId, item.messageId);
+      }
     }
   }
 
@@ -397,7 +442,7 @@ export class EyeRadarBotManager {
 
         try {
           if (isOblastAlarmed) {
-            await this.bot.telegram.sendMessage(
+            const sent = await this.bot.telegram.sendMessage(
               pref.chatId,
               `🚨 *ПОВІТРЯНА ТРИВОГА!*\n\n` +
                 `📍 Сектор: *${pref.cityName || nearest.nameUk}* (${nearest.oblast} область)\n` +
@@ -405,14 +450,20 @@ export class EyeRadarBotManager {
                 `Пройдіть в найближче укриття, дотримуйтесь правила двох стін!`,
               { parse_mode: "Markdown" }
             );
+            if (sent?.message_id) {
+              this.scheduleMessageDeletion(pref.chatId, sent.message_id, 3600_000);
+            }
           } else {
-            await this.bot.telegram.sendMessage(
+            const sent = await this.bot.telegram.sendMessage(
               pref.chatId,
               `🟢 *ВІДБІЙ ПОВІТРЯНОЇ ТРИВОГИ!*\n\n` +
                 `📍 Сектор: *${pref.cityName || nearest.nameUk}* (${nearest.oblast} область)\n` +
                 `🛡️ Сигнал небезпеки скасовано. Загрозу минуло.`,
               { parse_mode: "Markdown" }
             );
+            if (sent?.message_id) {
+              this.scheduleMessageDeletion(pref.chatId, sent.message_id, 3600_000);
+            }
           }
         } catch {
           // Ignore delivery errors
@@ -448,7 +499,10 @@ export class EyeRadarBotManager {
               `🚨 *Негайно перебувайте в укритті!*`;
 
             try {
-              await this.bot.telegram.sendMessage(pref.chatId, msg, { parse_mode: "Markdown" });
+              const sent = await this.bot.telegram.sendMessage(pref.chatId, msg, { parse_mode: "Markdown" });
+              if (sent?.message_id) {
+                this.scheduleMessageDeletion(pref.chatId, sent.message_id, 3600_000);
+              }
             } catch {
               // Ignore delivery errors
             }

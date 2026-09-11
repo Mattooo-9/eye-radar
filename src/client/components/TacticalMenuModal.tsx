@@ -121,49 +121,49 @@ export const TacticalMenuModal: React.FC<TacticalMenuModalProps> = ({
           </button>
         </div>
 
-        {/* Navigation Tabs */}
+        {/* Tactical Navigation Tabs */}
         <div className="tactical-menu-nav">
           <button
             type="button"
             className={`tactical-nav-item ${activeTab === "targets" ? "active" : ""}`}
             onClick={() => setActiveTab("targets")}
           >
-            🎯 Цілі ({totalTrackCount})
+            Цілі ({totalTrackCount})
           </button>
           <button
             type="button"
             className={`tactical-nav-item ${activeTab === "vision" ? "active" : ""}`}
             onClick={() => setActiveTab("vision")}
           >
-            🛰️ Оптика
+            Оптика
           </button>
           <button
             type="button"
             className={`tactical-nav-item ${activeTab === "layers" ? "active" : ""}`}
             onClick={() => setActiveTab("layers")}
           >
-            🌦️ Шари
+            Шари
           </button>
           <button
             type="button"
             className={`tactical-nav-item ${activeTab === "cities" ? "active" : ""}`}
             onClick={() => setActiveTab("cities")}
           >
-            📍 Міста
+            Міста
           </button>
           <button
             type="button"
             className={`tactical-nav-item ${activeTab === "impacts" ? "active" : ""}`}
             onClick={() => setActiveTab("impacts")}
           >
-            💥 Події ({impacts.length})
+            Події ({impacts.length})
           </button>
           <button
             type="button"
             className={`tactical-nav-item ${activeTab === "intel" ? "active" : ""}`}
             onClick={() => setActiveTab("intel")}
           >
-            🤖 Інтел
+            Інтел
           </button>
         </div>
 
@@ -259,7 +259,7 @@ export const TacticalMenuModal: React.FC<TacticalMenuModalProps> = ({
                     onClose();
                   }}
                 >
-                  🎯 Сфокусувати всі {totalTrackCount} цілей на карті
+                  Сфокусувати всі {totalTrackCount} цілей на карті
                 </button>
               </div>
             </div>

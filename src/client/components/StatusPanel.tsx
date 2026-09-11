@@ -112,23 +112,23 @@ export const StatusPanel = ({
             </div>
 
             <div className="source-row">
-              <span className="source-label">📡 airplanes.live (ADS-B радари)</span>
-              <span className="source-badge online">🟢 ОНЛАЙН (Затримка ~350 мс)</span>
+              <span className="source-label">airplanes.live (ADS-B радари)</span>
+              <span className="source-badge online">ОНЛАЙН (~350 мс)</span>
             </div>
 
             <div className="source-row">
-              <span className="source-label">🛰️ NASA FIRMS (VIIRS термоточки)</span>
-              <span className="source-badge online">🟢 ОНЛАЙН (/api/thermal)</span>
+              <span className="source-label">NASA FIRMS (VIIRS термоточки)</span>
+              <span className="source-badge online">ОНЛАЙН (/api/thermal)</span>
             </div>
 
             <div className="source-row">
-              <span className="source-label">💨 Open-Meteo (Вектор вітру)</span>
-              <span className="source-badge online">🟢 ОНЛАЙН (/api/wind)</span>
+              <span className="source-label">Open-Meteo (Вектор вітру)</span>
+              <span className="source-badge online">ОНЛАЙН (/api/wind)</span>
             </div>
 
             <div className="source-row">
-              <span className="source-label">🎯 Тактичний симулятор 24/7</span>
-              <span className="source-badge online">🟢 ОНЛАЙН (Автономний)</span>
+              <span className="source-label">Тактичний симулятор 24/7</span>
+              <span className="source-badge online">ОНЛАЙН (Автономний)</span>
             </div>
           </div>
 
@@ -141,7 +141,7 @@ export const StatusPanel = ({
                 window.location.reload();
               }}
             >
-              🔄 Примусово оновити та синхронізувати
+              Примусово оновити та синхронізувати
             </button>
           </div>
         </div>
@@ -151,7 +151,6 @@ export const StatusPanel = ({
         <div className="status-floating-popover">
           <div className="popover-header">
             <div className="popover-title">
-              <span className="popover-icon">🎯</span>
               <strong>АКТИВНІ ЦІЛІ В ПОВІТРІ ({trackCount})</strong>
             </div>
             <button
