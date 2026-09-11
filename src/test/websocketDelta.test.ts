@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TrackManager } from "../server/core/trackManager.js";
+import { TrackManager } from "../server/core/trackManager.ts";
 import { RadarHub } from "../server/ws/hub.js";
 import { decodeBinaryTracks } from "../common/binaryCodec.js";
 import type { Observation } from "../server/domain/types.js";

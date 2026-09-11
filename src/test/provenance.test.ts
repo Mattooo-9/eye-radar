@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TrackManager } from "../server/core/trackManager.js";
+import { TrackManager } from "../server/core/trackManager.ts";
 import { createUnifiedObservation, toObservation } from "../server/domain/unifiedObservation.js";
 import type { Observation } from "../server/domain/types.js";
 

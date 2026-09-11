@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from "vitest";
-import { TrackManager } from "../server/core/trackManager.js";
+import { TrackManager } from "../server/core/trackManager.ts";
 import { ImpactManager } from "../server/core/impactManager.js";
 import type { Observation } from "../server/domain/types.js";
 

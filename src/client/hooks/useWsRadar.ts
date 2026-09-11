@@ -83,13 +83,16 @@ export const useWsRadar = (
   useEffect(() => {
     let unmounted = false;
 
-    // Initialize background Web Worker for binary decoding
+    // Initialize background Web Worker for binary decoding with robust fallback
     try {
-      if (typeof window !== "undefined" && typeof Worker !== "undefined") {
+      const supportsWorker =
+        typeof window !== "undefined" &&
+        typeof Worker !== "undefined" &&
+        typeof import.meta !== "undefined";
+      if (supportsWorker) {
         const worker = new Worker(new URL("../workers/radarWorker.ts", import.meta.url), {
           type: "module"
         });
-
         worker.onmessage = (e: MessageEvent) => {
           if (unmounted) return;
           const { type, tracks, events, expectedSeq } = e.data;
@@ -98,18 +101,52 @@ export const useWsRadar = (
           } else if (type === "IMPACTS_UPDATED" && Array.isArray(events)) {
             setImpacts(events as ImpactEvent[]);
           } else if (type === "RESYNC_NEEDED") {
-            // Request resync snapshot from server
             if (socketRef.current?.readyState === WebSocket.OPEN) {
               socketRef.current.send(JSON.stringify([8, expectedSeq || 0]));
             }
           }
         };
-
+        // On worker error fall back to main‑thread decoding
+        worker.onerror = (e) => {
+          console.warn("[worker] error, falling back to main‑thread decoding", e.message);
+          workerRef.current = null;
+        };
         workerRef.current = worker;
       }
-    } catch {
+    } catch (e) {
+      console.warn("Worker initialization failed", e);
       workerRef.current = null;
     }
+    // Helper: decode binary payload on the main thread (fallback)
+    const processBinaryFallback = (buffer: ArrayBuffer) => {
+      try {
+        const decoded = decodeBinaryTracks(buffer, fallbackTracksMap.current);
+        if (decoded.kind === 0x00) {
+          fallbackTracksMap.current.clear();
+        }
+        for (const t of decoded.tracks) {
+          fallbackTracksMap.current.set(t[0], t);
+        }
+        for (const rid of decoded.removedIds) {
+          fallbackTracksMap.current.delete(rid);
+        }
+        setPackets(Array.from(fallbackTracksMap.current.values()));
+      } catch (err) {
+        console.error("Binary decode error (fallback)", err);
+        if (socketRef.current?.readyState === WebSocket.OPEN) {
+          socketRef.current.send(JSON.stringify([8, 0]));
+        }
+      }
+    };
+    // Helper: read Blob as ArrayBuffer (async)
+    const readBlobAsArrayBuffer = (blob: Blob): Promise<ArrayBuffer> => {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as ArrayBuffer);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsArrayBuffer(blob);
+      });
+    };
 
     const determineWsUrl = (serverConfigUrl?: string): string => {
       const isHttps = typeof window !== "undefined" && window.location.protocol === "https:";
@@ -198,7 +235,10 @@ export const useWsRadar = (
         socket.onclose = () => {
           if (unmounted) return;
           setConnectionState("closed");
-          reconnectTimerRef.current = window.setTimeout(connect, 3000);
+          // Exponential backoff: double the wait time up to a max of 30 seconds
+          const prev = reconnectTimerRef.current ?? 3000;
+          const next = Math.min(prev * 2, 30000);
+          reconnectTimerRef.current = window.setTimeout(connect, next);
         };
 
         socket.onerror = () => {

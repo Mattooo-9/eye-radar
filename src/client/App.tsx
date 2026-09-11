@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import ErrorBoundary from "./components/ErrorBoundary";
 import type { Map } from "maplibre-gl";
 import { AiBriefingModal } from "./components/AiBriefingModal";
 import { CitizenReportModal } from "./components/CitizenReportModal";
@@ -115,7 +115,7 @@ export const App = () => {
   };
 
   const [tacticalFilters, setTacticalFilters] = useState<TacticalFilters>({
-    autoTracking: true,
+    autoTracking: false,
     minSpeedKmh: 0,
     maxSpeedKmh: 2500,
     threatOnly: false,
@@ -397,46 +397,48 @@ export const App = () => {
       />
 
       {/* 3. Full-screen map (edge to edge, clean, zero watermarks) */}
-      <MapView
-        packets={filteredPackets}
-        impacts={impacts}
-        mapStyleUrl={mapStyleUrl}
-        location={location}
-        confirmedLocation={confirmedLocation}
-        filters={filters}
-        visionMode={visionMode}
-        selectedTarget={selectedTarget}
-        selectedImpact={selectedImpact}
-        selectedLocation={selectedLocation}
-        isPickingLocation={isPickingLocation}
-        showDayNight={true}
-        showWeather={showWeather}
-        showSatellites={showSatellites}
-        showFrontline={showFrontline}
-        followingTargetId={followedTargetId}
-        timelineOffsetSec={timelineOffsetSec}
-        performanceTier={performanceTier}
-        onStopFollow={() => setFollowedTargetId(null)}
-        onMapReady={(m) => setMapInstance(m)}
-        onPickLocation={handlePickLocation}
-        onSelectTarget={(target) => {
-          setSelectedTarget(target);
-          setInspectedTarget(target);
-          setSelectedImpact(null);
-          setSelectedLocation(null);
-        }}
-        onSelectImpact={(event) => {
-          setSelectedImpact(event);
-          setInspectedTarget(null);
-          setSelectedLocation(null);
-        }}
-        onSelectLocation={() => {
-          setSelectedTarget(null);
-          setSelectedLocation(null);
-          setInspectedTarget(null);
-          setSelectedImpact(null);
-        }}
-      />
+      <ErrorBoundary>
+        <MapView
+          packets={filteredPackets}
+          impacts={impacts}
+          mapStyleUrl={mapStyleUrl}
+          location={location}
+          confirmedLocation={confirmedLocation}
+          filters={filters}
+          visionMode={visionMode}
+          selectedTarget={selectedTarget}
+          selectedImpact={selectedImpact}
+          selectedLocation={selectedLocation}
+          isPickingLocation={isPickingLocation}
+          showDayNight={true}
+          showWeather={showWeather}
+          showSatellites={showSatellites}
+          showFrontline={showFrontline}
+          followingTargetId={followedTargetId}
+          timelineOffsetSec={timelineOffsetSec}
+          performanceTier={performanceTier}
+          onStopFollow={() => setFollowedTargetId(null)}
+          onMapReady={(m) => setMapInstance(m)}
+          onPickLocation={handlePickLocation}
+          onSelectTarget={(target) => {
+            setSelectedTarget(target);
+            setInspectedTarget(target);
+            setSelectedImpact(null);
+            setSelectedLocation(null);
+          }}
+          onSelectImpact={(event) => {
+            setSelectedImpact(event);
+            setInspectedTarget(null);
+            setSelectedLocation(null);
+          }}
+          onSelectLocation={() => {
+            setSelectedTarget(null);
+            setSelectedLocation(null);
+            setInspectedTarget(null);
+            setSelectedImpact(null);
+          }}
+        />
+      </ErrorBoundary>
 
       {/* Floating "Моя локація" / Locator Button on Map */}
       {location && (

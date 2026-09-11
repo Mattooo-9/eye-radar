@@ -143,25 +143,19 @@ export class EyeRadarBotManager {
 
     const sendLaunchMessage = async (chatId: number) => {
       try {
-        // Clear any old bulky custom reply keyboard if present from previous sessions
-        try {
-          const rm = await bot.telegram.sendMessage(chatId, "🛰️", {
-            reply_markup: { remove_keyboard: true }
-          });
-          await bot.telegram.deleteMessage(chatId, rm.message_id);
-        } catch {}
-
         const primaryBtn = isHttps
           ? { text: "🛰️ ВІДКРИТИ EYE RADAR", web_app: { url: webAppUrl } }
           : { text: "🛰️ ВІДКРИТИ EYE RADAR", url: webAppUrl };
 
-        await bot.telegram.sendMessage(
+        const launchMsg = await bot.telegram.sendMessage(
           chatId,
-          "🛰️ *EYE RADAR // ТАКТИЧНА СИСТЕМА МОНІТОРИНГУ*\n\n" +
-            "• Живі повітряні цілі: Шахеди, ракети, бойова авіація\n" +
-            "• Зони тривог, супутникові термоточки та метеодані\n" +
-            "• Оперативне AI-зведення, анти-спуфінг та акустичний моніторинг\n\n" +
-            "_Усі модулі, статус та налаштування перенесені в інтерактивне мінідодаток._",
+          `🛰️ *EYE RADAR // ТАКТИЧНА СИСТЕМА МОНІТОРИНГУ*
+
+• Живі повітряні цілі: Шахеди, ракети, бойова авіація
+• Зони тривог, супутникові термоточки та метеодані
+• Оперативне AI-зведення, анти-спуфінг та акустичний моніторинг
+
+_Усі модулі, статус та налаштування — в інтерактивному додатку._`,
           {
             parse_mode: "Markdown",
             reply_markup: {
@@ -171,32 +165,39 @@ export class EyeRadarBotManager {
             }
           }
         );
+        // Schedule deletion after 1 hour
+        this.scheduleMessageDeletion(chatId, launchMsg.message_id);
+
       } catch (err) {
         console.error("Failed to send launch message:", err);
       }
     };
+
 
     const handleBriefing = async (ctx: any) => {
       const waitMsg = await ctx.reply("⏳ Аналіз повітряного простору та генерація AI-зведення...");
       const pref = this.storage.getPreference(ctx.chat.id);
       const tracks = this.tracksProvider ? this.tracksProvider() : [];
 
-      const summary = await this.aiBriefing.generateBriefing({
-        tracks,
-        userCity: pref ? `Координати ${pref.lat.toFixed(2)}, ${pref.lon.toFixed(2)} (радіус ${pref.radiusKm} км)` : undefined,
-        userCoords: pref ? { lat: pref.lat, lon: pref.lon } : undefined
-      });
+        const summary = await this.aiBriefing.generateBriefing({
+          tracks,
+          userCity: pref ? `Координати ${pref.lat.toFixed(2)}, ${pref.lon.toFixed(2)} (радіус ${pref.radiusKm} км)` : undefined,
+          userCoords: pref ? { lat: pref.lat, lon: pref.lon } : undefined
+        });
 
-      try {
-        await ctx.telegram.deleteMessage(ctx.chat.id, waitMsg.message_id);
-      } catch {}
+        try {
+          await ctx.telegram.deleteMessage(ctx.chat.id, waitMsg.message_id);
+        } catch {}
 
-      await ctx.reply(summary, {
-        parse_mode: "Markdown",
-        reply_markup: {
-          inline_keyboard: [[getRadarButton("🛰️ Відкрити 3D Радар")]]
-        }
-      });
+        const briefingMsg = await ctx.reply(summary, {
+          parse_mode: "Markdown",
+          reply_markup: {
+            inline_keyboard: [[getRadarButton("🛰️ Відкрити 3D Радар")]]
+          }
+        });
+        // Schedule deletion after 1 hour
+        this.scheduleMessageDeletion(ctx.chat.id, briefingMsg.message_id);
+
     };
 
     bot.command("briefing", handleBriefing);
@@ -223,6 +224,7 @@ export class EyeRadarBotManager {
     bot.start(async (ctx) => {
       await sendLaunchMessage(ctx.chat.id);
     });
+
 
     bot.command("radar", async (ctx) => {
       await sendLaunchMessage(ctx.chat.id);
@@ -324,7 +326,8 @@ export class EyeRadarBotManager {
     };
 
     bot.command("status", async (ctx) => {
-      await ctx.reply(formatStatusReport(), { parse_mode: "Markdown" });
+      const sent = await ctx.reply(formatStatusReport(), { parse_mode: "Markdown" });
+      if (sent?.message_id) this.scheduleMessageDeletion(ctx.chat.id, sent.message_id);
     });
 
     bot.action("cmd_status", async (ctx) => {
@@ -333,7 +336,7 @@ export class EyeRadarBotManager {
     });
 
     bot.command("alerts", async (ctx) => {
-      await ctx.reply(
+      const sent = await ctx.reply(
         "🔔 *Статус тривог*: активні сектори та повітряні цілі відображаються на інтерактивній мапі.",
         {
           parse_mode: "Markdown",
@@ -342,6 +345,7 @@ export class EyeRadarBotManager {
           }
         }
       );
+      if (sent?.message_id) this.scheduleMessageDeletion(ctx.chat.id, sent.message_id);
     });
 
     bot.action("cmd_alerts", async (ctx) => {
@@ -515,7 +519,7 @@ export class EyeRadarBotManager {
   async launch(): Promise<void> {
     if (!this.bot) return;
     try {
-      await this.bot.launch();
+      await this.bot.launch({ dropPendingUpdates: true });
       console.log("Telegram bot launched successfully.");
       if (env.adminId) {
         try {

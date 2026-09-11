@@ -6,7 +6,7 @@ import { WebSocketServer } from "ws";
 import { createTelegramBot } from "./bot/telegramBot.js";
 import { env } from "./config/env.js";
 import { AiBriefingService } from "./core/aiBriefing.js";
-import { TrackManager } from "./core/trackManager.js";
+import { TrackManager } from "./core/trackManager.ts";
 import type { Observation } from "./domain/types.js";
 import { parseOsintText } from "./ingest/osintParser.js";
 import { normalizeSdrPayload, type SdrPayload } from "./ingest/sdrGateway.js";
@@ -20,8 +20,12 @@ import { FirmsThermalSource } from "./sources/firmsThermal.js";
 import { OpenMeteoWindSource } from "./sources/openMeteoWind.js";
 import { AirspaceSimulator } from "./sources/simulator.js";
 import { SourceHealthTracker } from "./sources/sourceHealth.js";
+import { AdsbUnifiedSource } from "./sources/adsbUnifiedSource.js";
 import { impactManager } from "./core/impactManager.js";
-import { RadarHub } from "./ws/hub.js";
+import { sourceRegistry } from "./sources/SourceRegistry.js";
+
+
+
 
 const DIST_CLIENT = resolve(process.cwd(), "dist/client");
 const MIME_TYPES: Record<string, string> = {
@@ -35,7 +39,7 @@ const MIME_TYPES: Record<string, string> = {
   ".jpg": "image/jpeg"
 };
 
-const trackManager = new TrackManager();
+const trackManager = new TrackManager(sourceRegistry);
 const alertsSource = new AlertsInUaSource();
 const firmsSource = new FirmsThermalSource();
 const windSource = new OpenMeteoWindSource();
@@ -49,13 +53,114 @@ const healthTracker = new SourceHealthTracker();
 // Live Airspace Situational Awareness (Alerts-driven + Tactical baseline)
 let simulationEnabled = process.env.SIMULATION_ENABLED !== "false";
 
-healthTracker.registerSource("alerts.in.ua");
-healthTracker.registerSource("airplanes.live");
-healthTracker.registerSource("adsb.lol");
-healthTracker.registerSource("local.sdr");
-healthTracker.registerSource("public.osint");
-healthTracker.registerSource("open-meteo");
-healthTracker.registerSource("nasa-firms");
+sourceRegistry.register(
+  "alerts.in.ua",
+  "alerts",
+  alertsSource,
+  {
+    canCreateTrack: false,
+    canClassify: false,
+    canProvidePosition: false,
+    canProvideAltitude: false,
+    canProvideSpeed: false,
+    evidenceTypes: ["alert"],
+  }
+);
+
+// Register ADS-B unified source
+const adsbUnifiedSource = new AdsbUnifiedSource();
+sourceRegistry.register(
+  "adsbUnified",
+  "adsb",
+  adsbUnifiedSource,
+  {
+    canCreateTrack: true,
+    canClassify: false,
+    canProvidePosition: true,
+    canProvideAltitude: true,
+    canProvideSpeed: true,
+    evidenceTypes: ["adsb"],
+  }
+);
+sourceRegistry.register(
+  "local.sdr",
+  "sdr",
+  localReceiverSource,
+  {
+    canCreateTrack: false,
+    canClassify: false,
+    canProvidePosition: false,
+    canProvideAltitude: false,
+    canProvideSpeed: false,
+    evidenceTypes: ["sdr"],
+  },
+  { disabled: true }
+);
+sourceRegistry.register(
+  "public.osint",
+  "osint",
+  publicOsintSource,
+  {
+    canCreateTrack: false,
+    canClassify: false,
+    canProvidePosition: false,
+    canProvideAltitude: false,
+    canProvideSpeed: false,
+    evidenceTypes: ["osint"],
+  }
+);
+sourceRegistry.register(
+  "open-meteo",
+  "weather",
+  windSource,
+  {
+    canCreateTrack: false,
+    canClassify: false,
+    canProvidePosition: false,
+    canProvideAltitude: false,
+    canProvideSpeed: false,
+    evidenceTypes: ["weather"],
+  }
+);
+sourceRegistry.register(
+  "nasa-firms",
+  "thermal",
+  firmsSource,
+  {
+    canCreateTrack: true,
+    canClassify: true,
+    canProvidePosition: true,
+    canProvideAltitude: true,
+    canProvideSpeed: true,
+    evidenceTypes: ["thermal"],
+  }
+);
+sourceRegistry.register(
+  "ukraine-alarm",
+  "alerts",
+  {} as any,
+  {
+    canCreateTrack: false,
+    canClassify: false,
+    canProvidePosition: false,
+    canProvideAltitude: false,
+    canProvideSpeed: false,
+    evidenceTypes: ["alert"],
+  }
+);
+sourceRegistry.register(
+  "kyiv-digital",
+  "alerts",
+  {} as any,
+  {
+    canCreateTrack: false,
+    canClassify: false,
+    canProvidePosition: false,
+    canProvideAltitude: false,
+    canProvideSpeed: false,
+    evidenceTypes: ["alert"],
+  }
+);
 
 const readBody = async (req: IncomingMessage): Promise<string> =>
   new Promise((resolveBody, rejectBody) => {
@@ -630,7 +735,13 @@ setInterval(async () => {
   trackManager.prune(now);
 
   const delta = trackManager.getDeltaPacket(simulationEnabled, cycleCounter);
-  hub.broadcastTracks(delta.tracks, delta.seq, delta.binaryBuffer, delta.removedIds);
+  const livePositional = sourceRegistry.getActiveSources().some(src => src.capability.canCreateTrack);
+    if (!livePositional) {
+    // No confirmed positional sources, send empty track list
+    hub.broadcastTracks([], delta.seq, delta.binaryBuffer, delta.removedIds);
+  } else {
+    hub.broadcastTracks(delta.tracks, delta.seq, delta.binaryBuffer, delta.removedIds);
+  }
 
   if (cycleCounter % 3 === 0) {
     hub.broadcastImpacts(impactManager.getRecentEvents());

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { StorageManager } from "../server/core/storage.js";
 import { ThreatEngine } from "../server/core/threatEngine.js";
-import { TrackManager } from "../server/core/trackManager.js";
+import { TrackManager } from "../server/core/trackManager.ts";
 import type { Observation } from "../server/domain/types.js";
 import { parseOsintText } from "../server/ingest/osintParser.js";
 import { SourceHealthTracker } from "../server/sources/sourceHealth.js";

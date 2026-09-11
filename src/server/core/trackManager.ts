@@ -1,4 +1,9 @@
-import { bearingDegrees, destinationPoint, haversineMeters } from "../domain/geo.js";
+import type { SourceRegistry } from "../sources/SourceRegistry.js";
+import { sourceRegistry as globalSourceRegistry } from "../sources/SourceRegistry.js";
+
+
+
+
 import type { CompactTrackPacket, Observation, ThreatLevel, TrackLifecycle, TrackState, TrackDiagnosticReport } from "../domain/types.js";
 import type { ProvenanceRecord, SourceFamily } from "../domain/unifiedObservation.js";
 import { ImmFilter2D, type ImmResult } from "./immFilter.js";
@@ -20,6 +25,10 @@ interface InternalTrack {
 const STALE_AFTER_MS = 15_000; // 15 seconds without fresh measurement = target pruned immediately
 
 export class TrackManager {
+  private readonly sourceRegistry: SourceRegistry;
+  constructor(sourceRegistry?: SourceRegistry) {
+    this.sourceRegistry = sourceRegistry ?? globalSourceRegistry;
+  }
   private readonly tracks = new Map<string, InternalTrack>();
   private readonly correlator = new TrackCorrelator();
   private seqNumber = 0;
@@ -37,6 +46,19 @@ export class TrackManager {
   }
 
   ingest(observation: Observation, now = Date.now()): TrackState | null {
+    // Evidence Gating: ensure observation evidence types are allowed by source capabilities
+    const srcReg = this.sourceRegistry.get(observation.source);
+    if (srcReg?.capability?.evidenceTypes?.length) {
+      const evidenceList = typeof observation.meta?.evidence === "string"
+        ? [observation.meta.evidence]
+        : Array.isArray(observation.meta?.evidence)
+        ? observation.meta.evidence
+        : [];
+      const disallowed = evidenceList.filter(e => !srcReg.capability.evidenceTypes.includes(e));
+      if (disallowed.length) {
+        return null;
+      }
+    }
     // Drop outdated observations (older than 25s) to prevent ghost resurrection
     if (now - observation.timestamp > 25_000) {
       return this.tracks.get(observation.id)?.state ?? null;
