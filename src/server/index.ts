@@ -4,6 +4,8 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { extname, join, resolve } from "node:path";
 import { WebSocketServer } from "ws";
 import { createTelegramBot } from "./bot/telegramBot.js";
+import { sendBotMessage, messageDeletionService, SIX_HOURS_MS, TEST_TTL_MS } from "./bot/messageDeletionService.js";
+export { sendBotMessage, messageDeletionService, SIX_HOURS_MS, TEST_TTL_MS };
 import { env } from "./config/env.js";
 import { AiBriefingService } from "./core/aiBriefing.js";
 import { TrackManager } from "./core/trackManager.js";
