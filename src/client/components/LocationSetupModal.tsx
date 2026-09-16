@@ -62,6 +62,14 @@ export const LocationSetupModal: React.FC<LocationSetupModalProps> = ({
   const [isLocating, setIsLocating] = useState(false);
   const [gpsError, setGpsError] = useState<string | null>(null);
 
+  const filteredCities = useMemo(() => {
+    if (!searchQuery.trim()) return LOCATIONS;
+    const q = searchQuery.toLowerCase().trim();
+    return LOCATIONS.filter(
+      (loc) => loc.name.toLowerCase().includes(q) || loc.region.toLowerCase().includes(q)
+    );
+  }, [searchQuery]);
+
   if (!isOpen) return null;
 
   const triggerHaptic = () => {
@@ -119,14 +127,6 @@ export const LocationSetupModal: React.FC<LocationSetupModalProps> = ({
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
     );
   };
-
-  const filteredCities = useMemo(() => {
-    if (!searchQuery.trim()) return LOCATIONS;
-    const q = searchQuery.toLowerCase().trim();
-    return LOCATIONS.filter(
-      (loc) => loc.name.toLowerCase().includes(q) || loc.region.toLowerCase().includes(q)
-    );
-  }, [searchQuery]);
 
   const handleSkipOrOverview = () => {
     triggerHaptic();

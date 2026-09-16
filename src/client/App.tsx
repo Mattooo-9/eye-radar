@@ -376,7 +376,10 @@ export const App = () => {
           timelineOffsetSec={timelineOffsetSec}
           performanceTier={performanceTier}
           onStopFollow={() => setFollowedTargetId(null)}
-          onMapReady={(m) => setMapInstance(m)}
+          onMapReady={(m) => {
+            setMapInstance(m);
+            (window as any).__eyeRadarMap = m;
+          }}
           onPickLocation={handlePickLocation}
           onSelectTarget={(target) => {
             const isSame = selectedTarget && selectedTarget[0] === target[0];
