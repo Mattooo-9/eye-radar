@@ -89,17 +89,16 @@ export class OpenskyAdsbLolSource {
 
   async fetchFlightObservations(): Promise<UnifiedObservation[]> {
     const now = Date.now();
-    // Cache for 6 seconds to respect rate limits
-    if (now - this.lastFetch < 6_000 && this.cache.length > 0) {
+    // Cache for 12 seconds to strictly respect public rate limits
+    if (now - this.lastFetch < 12_000 && this.cache.length > 0) {
       return this.cache;
     }
 
     const obsMap = new Map<string, UnifiedObservation>();
 
-    // 1. Fetch from adsb.lol theater coverage (500nmi around Ukraine) & military transponders
+    // 1. Fetch from adsb.lol theater coverage (500nmi around Ukraine) & regional military transponders
     const adsbEndpoints = [
       "https://api.adsb.lol/v2/point/49.0/31.0/500",
-      "https://api.adsb.lol/v2/mil",
       "https://opendata.adsb.fi/api/v2/mil"
     ];
 
@@ -179,8 +178,11 @@ export class OpenskyAdsbLolSource {
       try {
         const openSkyUrl = "https://opensky-network.org/api/states/all?lamin=45.0&lomin=24.0&lamax=52.0&lomax=38.0";
         const res = await fetch(openSkyUrl, {
-          headers: { "User-Agent": "EyeRadar/3.5 (Civil Defense Awareness; contact@eye-radar.ua)" },
-          signal: AbortSignal.timeout(4500)
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Accept": "application/json"
+          },
+          signal: AbortSignal.timeout(3000)
         });
         if (res.ok) {
           const data = (await res.json()) as OpenSkyStateResponse;

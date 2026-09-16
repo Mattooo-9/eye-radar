@@ -920,50 +920,55 @@ setInterval(async () => {
   const now = Date.now();
   cycleCounter += 1;
 
-  // Poll ADS-B open feed immediately on cycle 1, then every 10 seconds
-  if (cycleCounter === 1 || cycleCounter % 10 === 0) {
-    const t0 = Date.now();
-    try {
-      const flights = await airplanesSource.fetchBorderFlights();
-      for (const f of flights) {
-        trackManager.ingest(f);
-      }
-      if (flights.length > 0) {
-        healthTracker.recordSuccess("airplanes.live", Date.now() - t0, flights.length);
-        sourceRegistry.validateAndActivate("airplanes.live", flights, Date.now() - t0);
-      }
-    } catch (err) {
-      healthTracker.recordError("airplanes.live", err instanceof Error ? err : String(err));
-    }
-
-    // Secondary multi-corridor ADS-B & OpenSky feed
-    const tAdsb = Date.now();
-    try {
-      const flightObs = await openskyLolSource.fetchFlightObservations();
-      for (const fo of flightObs) {
-        trackManager.ingest(toObservation(fo));
-      }
-      if (flightObs.length > 0) {
-        healthTracker.recordSuccess("adsb.lol", Date.now() - tAdsb, flightObs.length);
-        sourceRegistry.validateAndActivate("adsb.lol", flightObs, Date.now() - tAdsb);
-      }
-    } catch (err) {
-      healthTracker.recordError("adsb.lol", err instanceof Error ? err : String(err));
-    }
-    // OpenSky Network primary live coordinate feed
-    const tOpenSky = Date.now();
-    try {
-      const openSkyObs = await openskyLiveSource.fetchTracks();
-      for (const oso of openSkyObs) {
-        trackManager.ingest(toObservation(oso));
-      }
-      if (openSkyObs.length > 0) {
-        healthTracker.recordSuccess("opensky.live", Date.now() - tOpenSky, openSkyObs.length);
-        sourceRegistry.validateAndActivate("opensky.live", openSkyObs, Date.now() - tOpenSky);
-      }
-    } catch (err) {
-      healthTracker.recordError("opensky.live", err instanceof Error ? err : String(err));
-    }
+  // Poll ADS-B open feeds immediately on cycle 1, then every 12 seconds
+  if (cycleCounter === 1 || cycleCounter % 12 === 0) {
+    await Promise.allSettled([
+      (async () => {
+        const tAdsb = Date.now();
+        try {
+          const flightObs = await openskyLolSource.fetchFlightObservations();
+          for (const fo of flightObs) {
+            trackManager.ingest(toObservation(fo));
+          }
+          if (flightObs.length > 0) {
+            healthTracker.recordSuccess("adsb.lol", Date.now() - tAdsb, flightObs.length);
+            sourceRegistry.validateAndActivate("adsb.lol", flightObs, Date.now() - tAdsb);
+          }
+        } catch (err) {
+          healthTracker.recordError("adsb.lol", err instanceof Error ? err : String(err));
+        }
+      })(),
+      (async () => {
+        const t0 = Date.now();
+        try {
+          const flights = await airplanesSource.fetchBorderFlights();
+          for (const f of flights) {
+            trackManager.ingest(f);
+          }
+          if (flights.length > 0) {
+            healthTracker.recordSuccess("airplanes.live", Date.now() - t0, flights.length);
+            sourceRegistry.validateAndActivate("airplanes.live", flights, Date.now() - t0);
+          }
+        } catch (err) {
+          healthTracker.recordError("airplanes.live", err instanceof Error ? err : String(err));
+        }
+      })(),
+      (async () => {
+        const tOpenSky = Date.now();
+        try {
+          const openSkyObs = await openskyLiveSource.fetchTracks();
+          for (const oso of openSkyObs) {
+            trackManager.ingest(toObservation(oso));
+          }
+          if (openSkyObs.length > 0) {
+            healthTracker.recordSuccess("opensky.live", Date.now() - tOpenSky, openSkyObs.length);
+            sourceRegistry.validateAndActivate("opensky.live", openSkyObs, Date.now() - tOpenSky);
+          }
+        } catch (err) {
+          healthTracker.recordError("opensky.live", err instanceof Error ? err : String(err));
+        }
+      })()
+    ]);
   }
 
   // Poll Local / Network SDR Receiver (readsb/dump1090) every 5 seconds
