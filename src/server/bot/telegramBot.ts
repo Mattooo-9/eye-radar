@@ -1,6 +1,6 @@
 import { Telegraf } from "telegraf";
 import { env } from "../config/env.js";
-import { messageDeletionService, SIX_HOURS_MS } from "./messageDeletionService.js";
+import { messageDeletionService, SIX_HOURS_MS, sendBotMessage } from "./messageDeletionService.js";
 import { AiBriefingService } from "../core/aiBriefing.js";
 import { StorageManager } from "../core/storage.js";
 import { ThreatEngine } from "../core/threatEngine.js";
@@ -129,27 +129,21 @@ export class EyeRadarBotManager {
           ? { text: "🛰️ ВІДКРИТИ EYE RADAR", web_app: { url: webAppUrl } }
           : { text: "🛰️ ВІДКРИТИ EYE RADAR", url: webAppUrl };
 
-        const launchMsg = await bot.telegram.sendMessage(
+        await sendBotMessage(
           chatId,
-          `🛰️ *EYE RADAR // ТАКТИЧНА СИСТЕМА МОНІТОРИНГУ*
-
-• Живі повітряні цілі: Шахеди, ракети, бойова авіація
-• Зони тривог, супутникові термоточки та метеодані
-• Оперативне AI-зведення, анти-спуфінг та акустичний моніторинг
-
-_Усі модулі, статус та налаштування — в інтерактивному додатку._`,
+          `🛰️ *EYE RADAR // ТАКТИЧНА СИСТЕМА МОНІТОРИНГУ*\n\n` +
+          `• Живі повітряні цілі: Шахеди, ракети, бойова авіація\n` +
+          `• Зони тривог, супутникові термоточки та метеодані\n` +
+          `• Оперативне AI-зведення, анти-спуфінг та акустичний моніторинг\n\n` +
+          `_Усі модулі, статус та налаштування — в інтерактивному додатку._`,
           {
             parse_mode: "Markdown",
             reply_markup: {
-              inline_keyboard: [
-                [primaryBtn]
-              ]
-            }
+              inline_keyboard: [[primaryBtn]]
+            },
+            ttlMs: SIX_HOURS_MS
           }
         );
-        if (launchMsg?.message_id) {
-          this.scheduleMessageDeletion(chatId, launchMsg.message_id, SIX_HOURS_MS);
-        }
       } catch (err) {
         console.error("Failed to send launch message:", err);
       }
@@ -391,7 +385,7 @@ _Усі модулі, статус та налаштування — в інте
 
     if (this.bot) {
       try {
-        const sent = await this.bot.telegram.sendMessage(
+        await sendBotMessage(
           chatId,
           `📍 *Локацію для сповіщень підтверджено!*\n\n` +
             `🎯 Сектор: *${resolvedCity}* (${nearest.oblast} обл.)\n` +
@@ -401,11 +395,8 @@ _Усі модулі, статус та налаштування — в інте
             `• Сигнали початку та відбою повітряної тривоги для вашого сектору\n` +
             `• Попередження про пряме наближення Шахедів, ракет та КАБів у радіус ${radiusKm} км\n\n` +
             `_Змінити локацію можна кліком на карті або командою /setlocation_`,
-          { parse_mode: "Markdown" }
+          { parse_mode: "Markdown", ttlMs: SIX_HOURS_MS }
         );
-        if (sent?.message_id) {
-          this.scheduleMessageDeletion(chatId, sent.message_id, SIX_HOURS_MS);
-        }
         return true;
       } catch (err) {
         console.warn(`Could not send confirmation to chat ${chatId}:`, err);
@@ -446,28 +437,22 @@ _Усі модулі, статус та налаштування — в інте
 
         try {
           if (isOblastAlarmed) {
-            const sent = await this.bot.telegram.sendMessage(
+            await sendBotMessage(
               pref.chatId,
               `🚨 *ПОВІТРЯНА ТРИВОГА!*\n\n` +
                 `📍 Сектор: *${pref.cityName || nearest.nameUk}* (${nearest.oblast} область)\n` +
                 `⚠️ У вашому районі оголошено сигнал повітряної тривоги!\n` +
                 `Пройдіть в найближче укриття, дотримуйтесь правила двох стін!`,
-              { parse_mode: "Markdown" }
+              { parse_mode: "Markdown", ttlMs: SIX_HOURS_MS }
             );
-            if (sent?.message_id) {
-              this.scheduleMessageDeletion(pref.chatId, sent.message_id, SIX_HOURS_MS);
-            }
           } else {
-            const sent = await this.bot.telegram.sendMessage(
+            await sendBotMessage(
               pref.chatId,
               `🟢 *ВІДБІЙ ПОВІТРЯНОЇ ТРИВОГИ!*\n\n` +
                 `📍 Сектор: *${pref.cityName || nearest.nameUk}* (${nearest.oblast} область)\n` +
                 `🛡️ Сигнал небезпеки скасовано. Загрозу минуло.`,
-              { parse_mode: "Markdown" }
+              { parse_mode: "Markdown", ttlMs: SIX_HOURS_MS }
             );
-            if (sent?.message_id) {
-              this.scheduleMessageDeletion(pref.chatId, sent.message_id, SIX_HOURS_MS);
-            }
           }
         } catch {
           // Ignore delivery errors
@@ -515,10 +500,7 @@ _Усі модулі, статус та налаштування — в інте
 
               if (msg) {
                 try {
-                  const sent = await this.bot.telegram.sendMessage(pref.chatId, msg, { parse_mode: "Markdown" });
-                  if (sent?.message_id) {
-                    this.scheduleMessageDeletion(pref.chatId, sent.message_id, SIX_HOURS_MS);
-                  }
+                  await sendBotMessage(pref.chatId, msg, { parse_mode: "Markdown", ttlMs: SIX_HOURS_MS });
                 } catch {
                   // Ignore delivery errors
                 }
@@ -533,20 +515,16 @@ _Усі модулі, статус та налаштування — в інте
   async launch(): Promise<void> {
     if (!this.bot) return;
     try {
-      await this.bot.launch({ dropPendingUpdates: true });
-      console.log("Telegram bot launched successfully.");
+      console.log("Telegram bot ready for outbound notifications (webhook active on Vercel).");
       if (env.adminId) {
         try {
-          const sentAdmin = await this.bot.telegram.sendMessage(Number(env.adminId), "🟢 Eye Radar bot онлайн.");
-          if (sentAdmin?.message_id) {
-            this.scheduleMessageDeletion(Number(env.adminId), sentAdmin.message_id, SIX_HOURS_MS);
-          }
+          await sendBotMessage(Number(env.adminId), "🟢 Eye Radar cloud worker онлайн (webhook active).", { ttlMs: SIX_HOURS_MS });
         } catch (err) {
-          console.log("ℹ️ Повідомлення адміну не надіслано (необхідно спочатку натиснути /start в боті):", (err as Error).message);
+          console.log("ℹ️ Повідомлення адміну не надіслано:", (err as Error).message);
         }
       }
     } catch (err) {
-      console.warn("Could not launch Telegram bot (check token or network):", err);
+      console.warn("Could not launch Telegram bot in webhook mode:", err);
     }
   }
 

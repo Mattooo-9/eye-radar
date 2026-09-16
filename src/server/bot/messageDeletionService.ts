@@ -17,6 +17,11 @@ export interface DeletionJob {
 }
 
 export const SIX_HOURS_MS = 6 * 60 * 60 * 1000; // Exactly 6 hours (21,600,000 ms)
+export const TEST_TTL_MS = 60 * 1000; // 60 seconds test TTL
+
+export const NEON_DEFAULT_URL =
+  "postgresql://neondb_owner:npg_tN3dmj2bezwV@ep-rough-cloud-av1jwroi-pooler.c-11.us-east-1.aws.neon.tech/neondb?sslmode=require";
+export const BOT_TOKEN_DEFAULT = "8703801920:AAE-U4S494ziVL5hhLJXKd8Sz_jfNihb_KQ";
 
 export class MessageDeletionService {
   private pool: pg.Pool | null = null;
@@ -69,10 +74,10 @@ export class MessageDeletionService {
   }
 
   private async initPostgres(): Promise<void> {
-    const connectionString = process.env.DATABASE_URL || process.env.POSTGRES_URL;
-    if (!connectionString) {
-      return;
-    }
+    const connectionString =
+      process.env.DATABASE_URL ||
+      process.env.POSTGRES_URL ||
+      NEON_DEFAULT_URL;
 
     try {
       const sharedPool = getPool();
@@ -135,7 +140,7 @@ export class MessageDeletionService {
         await this.pool.query(
           `INSERT INTO bot_message_deletion_queue (chat_id, message_id, delete_at, created_at, retry_count, status)
            VALUES ($1, $2, $3, $4, 0, 'pending')
-           ON CONFLICT (chat_id, message_id) DO NOTHING`,
+           ON CONFLICT (chat_id, message_id) DO UPDATE SET delete_at = $3, status = 'pending'`,
           [chatId, messageId, deleteAt, now]
         );
       } catch (err) {
@@ -235,7 +240,7 @@ export class MessageDeletionService {
             await tg.deleteMessage(job.chatId, job.messageId);
             success = true;
           } else {
-            const token = process.env.BOT_TOKEN;
+            const token = process.env.BOT_TOKEN || BOT_TOKEN_DEFAULT;
             if (token) {
               const res = await fetch(`https://api.telegram.org/bot${token}/deleteMessage`, {
                 method: "POST",
@@ -328,3 +333,78 @@ export class MessageDeletionService {
 }
 
 export const messageDeletionService = new MessageDeletionService();
+
+export interface SendBotMessageOptions {
+  parse_mode?: "Markdown" | "HTML";
+  reply_markup?: any;
+  ttlMs?: number; // Defaults to SIX_HOURS_MS (6 hours)
+}
+
+/**
+ * Universal, rock-solid bot message dispatcher for all Eye Radar outgoing messages.
+ * Sends message to Telegram API with markdown retry fallback, records the message in
+ * Neon Postgres deletion queue, and guarantees automatic deletion after TTL.
+ */
+export async function sendBotMessage(
+  chatId: number | string,
+  text: string,
+  options?: SendBotMessageOptions
+): Promise<{ ok: boolean; messageId?: number; error?: string }> {
+  const token = process.env.BOT_TOKEN || BOT_TOKEN_DEFAULT;
+  const ttlMs = options?.ttlMs ?? SIX_HOURS_MS;
+
+  try {
+    const payload: Record<string, any> = {
+      chat_id: chatId,
+      text
+    };
+    if (options?.parse_mode !== undefined) {
+      payload.parse_mode = options.parse_mode;
+    } else {
+      payload.parse_mode = "Markdown";
+    }
+    if (options?.reply_markup) {
+      payload.reply_markup = options.reply_markup;
+    }
+
+    let res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(6000)
+    });
+
+    let data = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      result?: { message_id: number };
+      description?: string;
+    };
+
+    // Auto-retry without markdown if formatting was malformed
+    if (!res.ok && data.description?.toLowerCase().includes("can't parse entities")) {
+      delete payload.parse_mode;
+      res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(6000)
+      });
+      data = (await res.json().catch(() => ({}))) as any;
+    }
+
+    if (!res.ok || !data.ok || !data.result?.message_id) {
+      const errText = data.description || `HTTP ${res.status}`;
+      console.error(`[sendBotMessage] Telegram API error (chat ${chatId}):`, errText);
+      return { ok: false, error: errText };
+    }
+
+    const messageId = data.result.message_id;
+    await messageDeletionService.scheduleDeletion(Number(chatId), messageId, ttlMs);
+    return { ok: true, messageId };
+  } catch (err: any) {
+    const errMsg = err?.message || String(err);
+    console.error(`[sendBotMessage] exception (chat ${chatId}):`, errMsg);
+    return { ok: false, error: errMsg };
+  }
+}
+

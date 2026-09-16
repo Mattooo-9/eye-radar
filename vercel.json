@@ -6,13 +6,29 @@
   "crons": [
     {
       "path": "/api/cron/cleanup-messages",
-      "schedule": "0 0 * * *"
+      "schedule": "* * * * *"
     }
   ],
   "rewrites": [
     {
-      "source": "/api/(.*)",
-      "destination": "https://eye-radar.onrender.com/api/$1"
+      "source": "/api/targets",
+      "destination": "https://eye-radar.onrender.com/api/targets"
+    },
+    {
+      "source": "/api/impacts",
+      "destination": "https://eye-radar.onrender.com/api/impacts"
+    },
+    {
+      "source": "/api/drill",
+      "destination": "https://eye-radar.onrender.com/api/drill"
+    },
+    {
+      "source": "/api/replay",
+      "destination": "https://eye-radar.onrender.com/api/replay"
+    },
+    {
+      "source": "/api/sources",
+      "destination": "https://eye-radar.onrender.com/api/sources"
     },
     {
       "source": "/health",
