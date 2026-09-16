@@ -34,6 +34,10 @@ export interface SourceAuditReport {
     staleSources: number;
     offlineSources: number;
     overallHealth: "HEALTHY" | "DEGRADED" | "CRITICAL";
+    livePositionalSources?: string[];
+    liveContextualSources?: string[];
+    testSources?: string[];
+    offlineSourcesList?: string[];
   };
   sources: SourceAuditDetail[];
 }
@@ -60,12 +64,14 @@ function calculatePercentile(samples: number[], p: number): number {
 }
 
 const DEFAULT_KNOWN_SOURCES = [
-  "alerts.in.ua",
   "airplanes.live",
   "adsb.lol",
-  "opensky",
-  "nasa-firms",
+  "alerts.in.ua",
   "open-meteo",
+  "nasa-firms",
+  "earth-observation",
+  "simulator",
+  "local.sdr",
   "public.osint"
 ];
 
@@ -76,6 +82,16 @@ export class SourceHealthTracker {
     for (const name of DEFAULT_KNOWN_SOURCES) {
       this.registerSource(name);
     }
+  }
+
+  getSource(name: string): SourceInternalStats | undefined {
+    return this.sources.get(name);
+  }
+
+  getSourceState(name: string, now = Date.now()): SourceAuditState {
+    const s = this.sources.get(name);
+    if (!s) return "OFFLINE";
+    return this.calculateState(s, now);
   }
 
   registerSource(name: string): void {

@@ -71,6 +71,25 @@ export class TrackManager {
     }
     this.recentObsFingerprints.add(fingerprint);
 
+    // Capability Matrix Gating: Each source can ONLY influence its authorized capabilities
+    const regSource = this.sourceRegistry?.get(observation.source) ||
+      (typeof observation.meta?.source_id === "string" ? this.sourceRegistry?.get(observation.meta.source_id as string) : undefined);
+    if (regSource) {
+      // If source cannot provide position AND cannot create track, reject aerial track creation
+      if (!regSource.capability.canProvidePosition && !regSource.capability.canCreateTrack) {
+        return null;
+      }
+      if (!regSource.capability.canProvideAltitude) {
+        observation.altitude = undefined;
+      }
+      if (!regSource.capability.canProvideSpeed) {
+        observation.speed = undefined;
+      }
+      if (!regSource.capability.canClassify && observation.type !== "thermal") {
+        observation.type = "unknown";
+      }
+    }
+
     // Drop civilian commercial passenger airliners and foreign corridor clutter
     if (observation.type === "aircraft") {
       const callsign = (typeof observation.meta?.callsign === "string" ? observation.meta.callsign : observation.id).toUpperCase();
@@ -101,9 +120,25 @@ export class TrackManager {
     const syntheticScenario =
       (observation.meta?.syntheticScenario as string) ||
       (observation as unknown as { syntheticScenario?: string }).syntheticScenario;
-    const sourceFamily = ((typeof observation.meta?.source_family === "string"
-      ? observation.meta.source_family
-      : observation.source) as SourceFamily) || "sdr";
+    const sourceId = (typeof observation.meta?.source_id === "string" ? observation.meta.source_id : observation.source).toLowerCase();
+    let sourceFamily: SourceFamily = "adsb";
+    if (sourceId.includes("adsb") || sourceId.includes("airplanes") || sourceId.includes("opensky")) {
+      sourceFamily = "adsb"; // Unified ADS-B / MLAT family
+    } else if (sourceId.includes("alert")) {
+      sourceFamily = "alert";
+    } else if (sourceId.includes("meteo") || sourceId.includes("weather")) {
+      sourceFamily = "weather";
+    } else if (sourceId.includes("firms") || sourceId.includes("copernicus") || sourceId.includes("observation")) {
+      sourceFamily = "optical";
+    } else if (sourceId.includes("simulation") || observation.source === "simulation") {
+      sourceFamily = "simulation";
+    } else if (sourceId.includes("osint") || observation.source === "osint") {
+      sourceFamily = "osint";
+    } else if (sourceId.includes("sdr") || observation.source === "sdr") {
+      sourceFamily = "radar";
+    } else if (typeof observation.meta?.source_family === "string") {
+      sourceFamily = observation.meta.source_family as SourceFamily;
+    }
 
     const provenanceEntry: ProvenanceRecord = {
       source: typeof observation.meta?.source_id === "string" ? observation.meta.source_id : observation.source,
@@ -206,7 +241,12 @@ export class TrackManager {
     const updatedHeading = observation.heading ?? derivedHeading;
 
     const mergedSources = new Set([...previous.sources, observation.source]);
-    const sourceDiversityBonus = mergedSources.size > 1 ? 0.15 : 0;
+    const mergedFamilies = new Set([...(previous.evidenceFamilies || []), sourceFamily]);
+
+    // Source diversity bonus strictly requires independent evidence families.
+    // adsb.lol and airplanes.live both belong to "adsb" (ADS-B/MLAT) - so no false independent confirmation is granted!
+    const isMultiFamily = mergedFamilies.size > 1 && !mergedFamilies.has("simulation");
+    const sourceDiversityBonus = isMultiFamily ? 0.15 : 0;
     const updatedConfidence = Math.min(
       0.99,
       previous.confidence * 0.4 + observation.confidence * 0.5 + sourceDiversityBonus
@@ -236,8 +276,6 @@ export class TrackManager {
     // Update provenance chain ring buffer (keep last 8 entries)
     const updatedProvenance = previous.provenanceChain ? [provenanceEntry, ...previous.provenanceChain] : [provenanceEntry];
     if (updatedProvenance.length > 8) updatedProvenance.pop();
-
-    const mergedFamilies = new Set([...(previous.evidenceFamilies || []), sourceFamily]);
 
     existing.lastMeasurementTime = now;
     existing.state = {

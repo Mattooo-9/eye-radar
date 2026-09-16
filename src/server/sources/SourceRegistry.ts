@@ -1,22 +1,41 @@
 import type { Source } from "./sourceInterface.js";
 
+export type CapabilityType =
+  | "TRACK_POSITION"
+  | "THREAT_ALERT"
+  | "WEATHER"
+  | "EARTH_OBSERVATION"
+  | "TEST_SIMULATION";
+
+export type EvidenceFamily =
+  | "adsb_mlat"
+  | "threat_alert"
+  | "weather"
+  | "earth_observation"
+  | "test_simulation"
+  | "sdr_local"
+  | "osint";
+
 export interface SourceCapability {
+  primaryCapability: CapabilityType;
+  capabilities: CapabilityType[];
   canCreateTrack: boolean;
   canClassify: boolean;
   canProvidePosition: boolean;
   canProvideAltitude: boolean;
   canProvideSpeed: boolean;
+  evidenceFamily: EvidenceFamily;
   evidenceTypes: string[]; // e.g. ["alert", "adsb", "weather"]
   coverage?: { region: string; quality: number };
 }
 
 export interface RegisteredSource {
   name: string;
-  family: string; // alerts, adsb, weather, test
-  instance: Source; // implements fetchTracks()/start()
+  family: string;
+  instance: Source;
   capability: SourceCapability;
-  isReserve?: boolean; // becomes LIVE only after successful request
-  disabled?: boolean; // legacy adapters kept for future use
+  isReserve?: boolean;
+  disabled?: boolean;
 }
 
 export class SourceRegistry {
@@ -29,6 +48,10 @@ export class SourceRegistry {
 
   get(name: string): RegisteredSource | undefined {
     return this.sources.get(name);
+  }
+
+  getAll(): RegisteredSource[] {
+    return Array.from(this.sources.values());
   }
 
   register(
@@ -47,14 +70,21 @@ export class SourceRegistry {
       disabled: opts?.disabled,
     };
     this.sources.set(name, reg);
-    // Register with health tracker (even if disabled/reserve)
     if (this.healthTracker?.registerSource) {
       this.healthTracker.registerSource(name);
     }
-    // If source has a start method, invoke it (e.g., begin fetching)
     if (typeof (instance as any).start === "function") {
       (instance as any).start();
     }
+  }
+
+  getSourceState(name: string): "LIVE" | "DEGRADED" | "STALE" | "OFFLINE" {
+    const src = this.sources.get(name);
+    if (!src || src.disabled) return "OFFLINE";
+    if (this.healthTracker) {
+      return this.healthTracker.getSourceState?.(name) ?? "OFFLINE";
+    }
+    return "OFFLINE";
   }
 
   getActiveSources(): RegisteredSource[] {
@@ -70,10 +100,55 @@ export class SourceRegistry {
     return active;
   }
 
+  /**
+   * Real LIVE positional sources: strictly provides coordinate observations (ADS-B / MLAT).
+   * E.g. adsb.lol, airplanes.live. Alerts and simulation are NEVER included.
+   */
+  getLivePositionalSources(): RegisteredSource[] {
+    return Array.from(this.sources.values()).filter(src => {
+      if (src.disabled) return false;
+      if (src.capability.primaryCapability !== "TRACK_POSITION") return false;
+      if (src.capability.capabilities.includes("TEST_SIMULATION")) return false;
+      return this.getSourceState(src.name) === "LIVE";
+    });
+  }
+
+  /**
+   * Real LIVE contextual sources (regional alerts, weather, satellite observation layers).
+   * Do not create aerial tracks.
+   */
+  getLiveContextualSources(): RegisteredSource[] {
+    return Array.from(this.sources.values()).filter(src => {
+      if (src.disabled) return false;
+      const cap = src.capability.primaryCapability;
+      const isContext = cap === "THREAT_ALERT" || cap === "WEATHER" || cap === "EARTH_OBSERVATION";
+      if (!isContext) return false;
+      return this.getSourceState(src.name) === "LIVE";
+    });
+  }
+
+  /**
+   * Test / Simulation sources (synthetic flight models, demo / test scenarios).
+   */
+  getTestSources(): RegisteredSource[] {
+    return Array.from(this.sources.values()).filter(
+      src => src.capability.primaryCapability === "TEST_SIMULATION" || src.capability.capabilities.includes("TEST_SIMULATION")
+    );
+  }
+
+  /**
+   * Offline sources (disabled, unconfigured, or failing connection).
+   */
+  getOfflineSources(): RegisteredSource[] {
+    return Array.from(this.sources.values()).filter(src => {
+      if (src.disabled) return true;
+      const state = this.getSourceState(src.name);
+      return state === "OFFLINE" || state === "STALE";
+    });
+  }
+
   hasLivePositionalSource(): boolean {
-    // Returns true if there is at least one LIVE source that can create tracks and provides position
-    const active = this.getActiveSources();
-    return active.some(src => src.capability.canCreateTrack && src.capability.canProvidePosition);
+    return this.getLivePositionalSources().length > 0;
   }
 }
 

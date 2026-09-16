@@ -58,126 +58,194 @@ sourceRegistry.setHealthTracker(healthTracker);
 let simulationEnabled = process.env.SIMULATION_ENABLED !== "false";
 
 sourceRegistry.register(
-  "alerts.in.ua",
-  "alerts",
-  alertsSource,
+  "airplanes.live",
+  "adsb_mlat",
+  airplanesSource,
   {
-    canCreateTrack: false,
-    canClassify: false,
-    canProvidePosition: false,
-    canProvideAltitude: false,
-    canProvideSpeed: false,
-    evidenceTypes: ["alert"],
-  }
-);
-
-// Register ADS-B unified source
-const adsbUnifiedSource = new AdsbUnifiedSource();
-sourceRegistry.register(
-  "adsbUnified",
-  "adsb",
-  adsbUnifiedSource,
-  {
+    primaryCapability: "TRACK_POSITION",
+    capabilities: ["TRACK_POSITION"],
     canCreateTrack: true,
     canClassify: false,
     canProvidePosition: true,
     canProvideAltitude: true,
     canProvideSpeed: true,
-    evidenceTypes: ["adsb"],
+    evidenceFamily: "adsb_mlat",
+    evidenceTypes: ["adsb", "mlat"],
   }
 );
+
 sourceRegistry.register(
-  "local.sdr",
-  "sdr",
-  localReceiverSource,
+  "adsb.lol",
+  "adsb_mlat",
+  openskyLolSource,
   {
+    primaryCapability: "TRACK_POSITION",
+    capabilities: ["TRACK_POSITION"],
+    canCreateTrack: true,
+    canClassify: false,
+    canProvidePosition: true,
+    canProvideAltitude: true,
+    canProvideSpeed: true,
+    evidenceFamily: "adsb_mlat",
+    evidenceTypes: ["adsb", "mlat"],
+  }
+);
+
+sourceRegistry.register(
+  "alerts.in.ua",
+  "threat_alert",
+  alertsSource,
+  {
+    primaryCapability: "THREAT_ALERT",
+    capabilities: ["THREAT_ALERT"],
     canCreateTrack: false,
     canClassify: false,
     canProvidePosition: false,
     canProvideAltitude: false,
     canProvideSpeed: false,
-    evidenceTypes: ["sdr"],
-  },
-  { disabled: true }
+    evidenceFamily: "threat_alert",
+    evidenceTypes: ["alert"],
+  }
 );
-sourceRegistry.register(
-  "public.osint",
-  "osint",
-  publicOsintSource,
-  {
-    canCreateTrack: false,
-    canClassify: false,
-    canProvidePosition: false,
-    canProvideAltitude: false,
-    canProvideSpeed: false,
-    evidenceTypes: ["osint"],
-  },
-  { disabled: true }
-);
+
 sourceRegistry.register(
   "open-meteo",
   "weather",
   windSource,
   {
+    primaryCapability: "WEATHER",
+    capabilities: ["WEATHER"],
     canCreateTrack: false,
     canClassify: false,
     canProvidePosition: false,
     canProvideAltitude: false,
     canProvideSpeed: false,
-    evidenceTypes: ["weather"],
+    evidenceFamily: "weather",
+    evidenceTypes: ["weather", "wind"],
   }
 );
+
 sourceRegistry.register(
   "nasa-firms",
-  "thermal",
+  "earth_observation",
   firmsSource,
   {
+    primaryCapability: "EARTH_OBSERVATION",
+    capabilities: ["EARTH_OBSERVATION"],
     canCreateTrack: false,
     canClassify: false,
     canProvidePosition: true,
     canProvideAltitude: false,
     canProvideSpeed: false,
-    evidenceTypes: ["thermal"],
+    evidenceFamily: "earth_observation",
+    evidenceTypes: ["thermal", "satellite_viirs_modis"],
   }
 );
+
 sourceRegistry.register(
   "earth-observation",
-  "optical",
+  "earth_observation",
   earthObservationService as any,
   {
+    primaryCapability: "EARTH_OBSERVATION",
+    capabilities: ["EARTH_OBSERVATION"],
     canCreateTrack: false,
     canClassify: false,
-    canProvidePosition: true,
+    canProvidePosition: false,
     canProvideAltitude: false,
     canProvideSpeed: false,
-    evidenceTypes: ["optical", "radar", "thermal"],
+    evidenceFamily: "earth_observation",
+    evidenceTypes: ["sar", "optical", "multispectral"],
   }
 );
+
+sourceRegistry.register(
+  "simulator",
+  "test_simulation",
+  simulator,
+  {
+    primaryCapability: "TEST_SIMULATION",
+    capabilities: ["TEST_SIMULATION"],
+    canCreateTrack: true,
+    canClassify: true,
+    canProvidePosition: true,
+    canProvideAltitude: true,
+    canProvideSpeed: true,
+    evidenceFamily: "test_simulation",
+    evidenceTypes: ["synthetic_aerodynamics"],
+  }
+);
+
+sourceRegistry.register(
+  "local.sdr",
+  "sdr_local",
+  localReceiverSource,
+  {
+    primaryCapability: "TRACK_POSITION",
+    capabilities: ["TRACK_POSITION"],
+    canCreateTrack: false,
+    canClassify: false,
+    canProvidePosition: false,
+    canProvideAltitude: false,
+    canProvideSpeed: false,
+    evidenceFamily: "sdr_local",
+    evidenceTypes: ["sdr"],
+  },
+  { disabled: true }
+);
+
+sourceRegistry.register(
+  "public.osint",
+  "osint",
+  publicOsintSource,
+  {
+    primaryCapability: "THREAT_ALERT",
+    capabilities: ["THREAT_ALERT"],
+    canCreateTrack: false,
+    canClassify: false,
+    canProvidePosition: false,
+    canProvideAltitude: false,
+    canProvideSpeed: false,
+    evidenceFamily: "osint",
+    evidenceTypes: ["osint"],
+  },
+  { disabled: true }
+);
+
 sourceRegistry.register(
   "ukraine-alarm",
-  "alerts",
+  "threat_alert",
   {} as any,
   {
+    primaryCapability: "THREAT_ALERT",
+    capabilities: ["THREAT_ALERT"],
     canCreateTrack: false,
     canClassify: false,
     canProvidePosition: false,
     canProvideAltitude: false,
     canProvideSpeed: false,
+    evidenceFamily: "threat_alert",
     evidenceTypes: ["alert"],
-  }
+  },
+  { disabled: true }
 );
+
 sourceRegistry.register(
   "kyiv-digital",
-  "alerts",
+  "threat_alert",
   {} as any,
   {
+    primaryCapability: "THREAT_ALERT",
+    capabilities: ["THREAT_ALERT"],
     canCreateTrack: false,
     canClassify: false,
     canProvidePosition: false,
     canProvideAltitude: false,
     canProvideSpeed: false,
+    evidenceFamily: "threat_alert",
     evidenceTypes: ["alert"],
-  }
+  },
+  { disabled: true }
 );
 
 const readBody = async (req: IncomingMessage): Promise<string> =>
@@ -285,13 +353,23 @@ const server = createServer(async (req, res) => {
 
   if (req.method === "GET" && url.pathname === "/health") {
     const audit = healthTracker.getAuditReport(trackManager.snapshot(simulationEnabled));
+    const livePositional = sourceRegistry.getLivePositionalSources().map(s => s.name);
+    const liveContextual = sourceRegistry.getLiveContextualSources().map(s => s.name);
+    const testSources = sourceRegistry.getTestSources().map(s => s.name);
+    const offlineSources = sourceRegistry.getOfflineSources().map(s => s.name);
     json(res, 200, {
       ok: true,
       uptime: process.uptime(),
       tracks: trackManager.snapshot(simulationEnabled).length,
       simulator: simulationEnabled,
       wsClients: hub.getClientCount(),
-      summary: audit.summary,
+      summary: {
+        ...audit.summary,
+        livePositionalSources: livePositional,
+        liveContextualSources: liveContextual,
+        testSources,
+        offlineSources
+      },
       sources: audit.sources
     });
     return;
@@ -316,13 +394,23 @@ const server = createServer(async (req, res) => {
 
   if (req.method === "GET" && url.pathname === "/api/status") {
     const audit = healthTracker.getAuditReport(trackManager.snapshot(simulationEnabled));
+    const livePositional = sourceRegistry.getLivePositionalSources().map(s => s.name);
+    const liveContextual = sourceRegistry.getLiveContextualSources().map(s => s.name);
+    const testSources = sourceRegistry.getTestSources().map(s => s.name);
+    const offlineSources = sourceRegistry.getOfflineSources().map(s => s.name);
     json(res, 200, {
       uptime: process.uptime(),
       memory: process.memoryUsage(),
       tracksCount: trackManager.snapshot(simulationEnabled).length,
       wsClients: hub.getClientCount(),
       sources: audit.sources,
-      summary: audit.summary,
+      summary: {
+        ...audit.summary,
+        livePositionalSources: livePositional,
+        liveContextualSources: liveContextual,
+        testSources,
+        offlineSources
+      },
       simulationEnabled
     });
     return;
@@ -762,9 +850,9 @@ setInterval(async () => {
   }
 
   const delta = trackManager.getDeltaPacket(simulationEnabled, cycleCounter);
-  const livePositional = sourceRegistry.getActiveSources().some(src => src.capability.canCreateTrack);
-    if (!livePositional) {
-    // No confirmed positional sources, send empty track list
+  const livePositional = sourceRegistry.hasLivePositionalSource();
+  if (!livePositional && !simulationEnabled) {
+    // No confirmed positional sources in strict production mode, send empty track list
     hub.broadcastTracks([], delta.seq, delta.binaryBuffer, delta.removedIds);
   } else {
     hub.broadcastTracks(delta.tracks, delta.seq, delta.binaryBuffer, delta.removedIds);
