@@ -153,31 +153,26 @@ export const useWsRadar = (
       });
     };
 
+    const CLOUD_WS_URL = "wss://eye-radar.onrender.com/ws";
+    const CLOUD_API_BASE = "https://eye-radar.onrender.com";
+
     const determineWsUrl = (serverConfigUrl?: string): string => {
-      const isHttps = typeof window !== "undefined" && window.location.protocol === "https:";
-      const host = typeof window !== "undefined" ? window.location.host : "localhost:3000";
-      let localWs = `${isHttps ? "wss:" : "ws:"}//${host}/ws`;
-
-      if (typeof window !== "undefined" && (window.location.host.includes("vercel.app") || window.location.host.includes("eye-radar"))) {
-        localWs = "wss://eye-radar.onrender.com/ws";
-      }
-
       if (serverConfigUrl && serverConfigUrl.startsWith("ws")) {
+        const isHttps = typeof window !== "undefined" && window.location.protocol === "https:";
         if (isHttps && serverConfigUrl.startsWith("ws://")) {
           return serverConfigUrl.replace("ws://", "wss://");
         }
         return serverConfigUrl;
       }
-
-      return localWs;
+      return CLOUD_WS_URL;
     };
 
     const pollFallback = async () => {
       if (unmounted) return;
       try {
         const [targetsRes, impactsRes] = await Promise.all([
-          fetch("/api/targets", { signal: AbortSignal.timeout(3000) }),
-          fetch("/api/impacts", { signal: AbortSignal.timeout(3000) })
+          fetch(`${CLOUD_API_BASE}/api/targets`, { signal: AbortSignal.timeout(3000) }),
+          fetch(`${CLOUD_API_BASE}/api/impacts`, { signal: AbortSignal.timeout(3000) })
         ]);
 
         if (targetsRes.ok) {

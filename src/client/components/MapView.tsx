@@ -15,6 +15,7 @@ import FpsCounter from "./FpsCounter";
 import { SpatialIndex } from "../lib/spatialIndex.js";
 import { getTierConfig } from "../lib/hardwareBenchmark.js";
 import { trackStore } from "../lib/trackStore.js";
+import { renderTacticalGlyph } from "../lib/tacticalGlyphs.js";
 
 export type VisionMode = "satellite" | "nvg" | "flir" | "tactical";
 
@@ -1652,6 +1653,8 @@ export const MapView = ({
   const cachedSatellitesRef = useRef<SatelliteTrack[]>([]);
   const lastSatCalcRef = useRef<number>(0);
   const renderRef = useRef<(() => void) | null>(null);
+  const targetInterpRef = useRef<Record<string, { x: number; y: number; heading: number; lastTime: number }>>({});
+  const lastInterpPruneRef = useRef<number>(0);
 
   // Safe canvas resizer: ONLY updates dimensions if they have changed, never clears buffer on subpixel drift
   const resizeCanvasSafe = () => {
@@ -2144,8 +2147,7 @@ export const MapView = ({
           visiblePackets = currentPackets;
         }
 
-        // 2.2 Draw Air Targets: Pass 1 — Collect visible targets and trajectory vectors
-        const trajectoryBatches: Record<string, Array<{ startX: number; startY: number; tipX: number; tipY: number }>> = {};
+        // 2.2 Draw Air Targets: Pass 1 — Collect visible targets with 60fps smooth kinematic interpolation
         interface RenderItem {
           id: string;
           type: string;
@@ -2159,8 +2161,19 @@ export const MapView = ({
           isSelected: boolean;
           shortName: string;
           altMsl: string;
+          confidence?: number;
         }
         const renderItems: RenderItem[] = [];
+
+        // Periodic pruning of interpolation cache for expired targets
+        if (now - lastInterpPruneRef.current > 6000) {
+          lastInterpPruneRef.current = now;
+          for (const [tId, state] of Object.entries(targetInterpRef.current)) {
+            if (now - state.lastTime > 12000) {
+              delete targetInterpRef.current[tId];
+            }
+          }
+        }
 
         for (const packet of visiblePackets) {
           const [id, type, lat, lon, heading, speed, timestamp, confidence, uncertaintyRadius, , altitude, packetModel] = packet;
@@ -2202,28 +2215,37 @@ export const MapView = ({
           }
 
           const scale = Math.max(12, Math.min(22, 10 + zoom * 0.85));
-          const targetX = groundPoint.x;
-          const targetY = groundPoint.y;
+          const rawTargetX = groundPoint.x;
+          const rawTargetY = groundPoint.y;
+          const rawScreenHeadingDeg = (heading - mapBearing + 360) % 360;
 
-          const screenHeadingDeg = (heading - mapBearing + 360) % 360;
-          const headingRad = (screenHeadingDeg * Math.PI) / 180;
-          const fwdX = Math.sin(headingRad);
-          const fwdY = -Math.cos(headingRad);
+          // 60 fps smooth kinematic interpolation for position & shortest-arc heading
+          let renderX = rawTargetX;
+          let renderY = rawTargetY;
+          let renderHeading = rawScreenHeadingDeg;
+
+          const prevInterp = targetInterpRef.current[id];
+          if (prevInterp) {
+            const distSq = (rawTargetX - prevInterp.x) ** 2 + (rawTargetY - prevInterp.y) ** 2;
+            if (distSq > 25000 || now - prevInterp.lastTime > 2500) {
+              renderX = rawTargetX;
+              renderY = rawTargetY;
+              renderHeading = rawScreenHeadingDeg;
+            } else {
+              const dtSec = Math.min(0.1, Math.max(0.001, (now - prevInterp.lastTime) / 1000));
+              const posAlpha = 1 - Math.exp(-12 * dtSec);
+              renderX = prevInterp.x + (rawTargetX - prevInterp.x) * posAlpha;
+              renderY = prevInterp.y + (rawTargetY - prevInterp.y) * posAlpha;
+
+              const dH = (rawScreenHeadingDeg - prevInterp.heading + 540) % 360 - 180;
+              const rotAlpha = 1 - Math.exp(-14 * dtSec);
+              renderHeading = (prevInterp.heading + dH * rotAlpha + 360) % 360;
+            }
+          }
+          targetInterpRef.current[id] = { x: renderX, y: renderY, heading: renderHeading, lastTime: now };
 
           const isSelected = Boolean(currentSelected && currentSelected[0] === id);
           const color = TARGET_COLORS[type] ?? "#7dd3fc";
-
-          if (speed > 5) {
-            const noseDist = scale * 0.95;
-            const vectorLen = Math.max(16, Math.min(38, 12 + zoom * 2.0));
-            const startX = targetX + fwdX * noseDist;
-            const startY = targetY + fwdY * noseDist;
-            const tipX = targetX + fwdX * (noseDist + vectorLen);
-            const tipY = targetY + fwdY * (noseDist + vectorLen);
-
-            if (!trajectoryBatches[color]) trajectoryBatches[color] = [];
-            trajectoryBatches[color].push({ startX, startY, tipX, tipY });
-          }
 
           const effectiveAltM =
             altitude !== undefined && altitude !== null
@@ -2281,69 +2303,47 @@ export const MapView = ({
           renderItems.push({
             id,
             type,
-            targetX,
-            targetY,
+            targetX: renderX,
+            targetY: renderY,
             scale,
-            screenHeadingDeg,
+            screenHeadingDeg: renderHeading,
             color,
             packetModel,
             speedKmh,
             isSelected,
             shortName,
-            altMsl
+            altMsl,
+            confidence
           });
         }
 
-        // Pass 2: Stroke all batched trajectories at once
-        ctx.save();
-        ctx.lineWidth = 1.4;
-        for (const [col, lines] of Object.entries(trajectoryBatches)) {
-          ctx.strokeStyle = col;
-          ctx.beginPath();
-          for (let i = 0; i < lines.length; i++) {
-            ctx.moveTo(lines[i].startX, lines[i].startY);
-            ctx.lineTo(lines[i].tipX, lines[i].tipY);
-          }
-          ctx.stroke();
-        }
-        ctx.restore();
-
-        // Pass 2.1: Draw historical motion trails from ring buffers
-        const trailBatches: Record<string, Array<Array<{ x: number; y: number }>>> = {};
-        for (const item of renderItems) {
-          const trailPts = trackStore.getTrailPoints(item.id);
-          if (trailPts.length >= 2) {
-            const screenPts: Array<{ x: number; y: number }> = [];
-            for (const [tLat, tLon] of trailPts) {
-              const pt = map.project([tLon, tLat]);
-              screenPts.push({ x: pt.x, y: pt.y });
-            }
-            if (!trailBatches[item.color]) trailBatches[item.color] = [];
-            trailBatches[item.color].push(screenPts);
-          }
-        }
-
-        if (Object.keys(trailBatches).length > 0) {
-          ctx.save();
-          ctx.lineWidth = 1.2;
-          ctx.setLineDash([2, 3]);
-          for (const [col, paths] of Object.entries(trailBatches)) {
-            ctx.strokeStyle = col;
-            ctx.globalAlpha = 0.4;
-            ctx.beginPath();
-            for (const path of paths) {
-              if (path.length < 2) continue;
-              ctx.moveTo(path[0].x, path[0].y);
-              for (let i = 1; i < path.length; i++) {
-                ctx.lineTo(path[i].x, path[i].y);
+        // Pass 2: Subtle fading historical motion trail (only selected target or close zoom >= 9.5, disabled on LOW tier)
+        if (!isLowTier) {
+          for (const item of renderItems) {
+            if (item.isSelected || zoom >= 9.5) {
+              const trailPts = trackStore.getTrailPoints(item.id);
+              if (trailPts.length >= 2) {
+                const recentPts = trailPts.slice(-8);
+                ctx.save();
+                ctx.lineWidth = item.isSelected ? 1.8 : 1.2;
+                for (let i = 1; i < recentPts.length; i++) {
+                  const p0 = map.project([recentPts[i - 1][1], recentPts[i - 1][0]]);
+                  const p1 = map.project([recentPts[i][1], recentPts[i][0]]);
+                  const segAlpha = (i / recentPts.length) * (item.isSelected ? 0.6 : 0.28);
+                  ctx.strokeStyle = item.color;
+                  ctx.globalAlpha = segAlpha;
+                  ctx.beginPath();
+                  ctx.moveTo(p0.x, p0.y);
+                  ctx.lineTo(p1.x, p1.y);
+                  ctx.stroke();
+                }
+                ctx.restore();
               }
             }
-            ctx.stroke();
           }
-          ctx.restore();
         }
 
-        // Pass 3: Draw silhouettes and callout pills on top (with LOD clustering for zoom < 7 & > 80 targets)
+        // Pass 3: Draw aerospace-grade tactical glyphs and callout pills (with LOD clustering for zoom < 7 & > 80 targets)
         const lodThreshold = isLowTier ? 50 : 80;
         const shouldCluster = zoom < 7.0 && renderItems.length > lodThreshold;
 
@@ -2382,19 +2382,22 @@ export const MapView = ({
           }
 
           for (const item of standalone) {
-            if (item.type === "uav") {
-              drawUavSilhouette(ctx, item.targetX, item.targetY, item.scale, item.screenHeadingDeg, item.color, now, item.packetModel, item.speedKmh);
-            } else if (item.type === "bomb") {
-              drawKabSilhouette(ctx, item.targetX, item.targetY, item.scale, item.screenHeadingDeg, item.color, now);
-            } else if (item.type === "fpv") {
-              drawFpvSilhouette(ctx, item.targetX, item.targetY, item.scale, item.screenHeadingDeg, item.color, now);
-            } else if (item.type === "munition") {
-              drawMissileSilhouette(ctx, item.targetX, item.targetY, item.scale, item.screenHeadingDeg, item.color, now);
-            } else if (item.type === "helicopter") {
-              drawHelicopterSilhouette(ctx, item.targetX, item.targetY, item.scale, item.screenHeadingDeg, item.color, now);
-            } else {
-              drawAircraftSilhouette(ctx, item.targetX, item.targetY, item.scale, item.screenHeadingDeg, item.color, now);
-            }
+            ctx.save();
+            ctx.translate(item.targetX, item.targetY);
+            ctx.rotate((item.screenHeadingDeg * Math.PI) / 180);
+            renderTacticalGlyph(ctx, {
+              size: item.scale,
+              rotationDeg: 0,
+              type: item.type,
+              color: item.color,
+              isSelected: item.isSelected,
+              model: item.packetModel,
+              speedKmh: item.speedKmh,
+              isLowTier: isLowTier,
+              confidence: item.confidence,
+              timeMs: now
+            });
+            ctx.restore();
 
             if (item.isSelected) {
               drawMilitaryCalloutPill(
@@ -2413,19 +2416,22 @@ export const MapView = ({
           }
         } else {
           for (const item of renderItems) {
-            if (item.type === "uav") {
-              drawUavSilhouette(ctx, item.targetX, item.targetY, item.scale, item.screenHeadingDeg, item.color, now, item.packetModel, item.speedKmh);
-            } else if (item.type === "bomb") {
-              drawKabSilhouette(ctx, item.targetX, item.targetY, item.scale, item.screenHeadingDeg, item.color, now);
-            } else if (item.type === "fpv") {
-              drawFpvSilhouette(ctx, item.targetX, item.targetY, item.scale, item.screenHeadingDeg, item.color, now);
-            } else if (item.type === "munition") {
-              drawMissileSilhouette(ctx, item.targetX, item.targetY, item.scale, item.screenHeadingDeg, item.color, now);
-            } else if (item.type === "helicopter") {
-              drawHelicopterSilhouette(ctx, item.targetX, item.targetY, item.scale, item.screenHeadingDeg, item.color, now);
-            } else {
-              drawAircraftSilhouette(ctx, item.targetX, item.targetY, item.scale, item.screenHeadingDeg, item.color, now);
-            }
+            ctx.save();
+            ctx.translate(item.targetX, item.targetY);
+            ctx.rotate((item.screenHeadingDeg * Math.PI) / 180);
+            renderTacticalGlyph(ctx, {
+              size: item.scale,
+              rotationDeg: 0,
+              type: item.type,
+              color: item.color,
+              isSelected: item.isSelected,
+              model: item.packetModel,
+              speedKmh: item.speedKmh,
+              isLowTier: isLowTier,
+              confidence: item.confidence,
+              timeMs: now
+            });
+            ctx.restore();
 
             if (item.isSelected) {
               drawMilitaryCalloutPill(
