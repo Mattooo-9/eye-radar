@@ -200,6 +200,18 @@ _Усі модулі, статус та налаштування — в інте
 
     };
 
+    const replyAndSchedule = async (ctx: any, text: string, extra?: any) => {
+      try {
+        const sent = await ctx.reply(text, extra);
+        if (sent?.message_id && ctx.chat?.id) {
+          this.scheduleMessageDeletion(ctx.chat.id, sent.message_id, 3600_000);
+        }
+        return sent;
+      } catch (err) {
+        console.error("Failed to send bot reply:", err);
+      }
+    };
+
     bot.command("briefing", handleBriefing);
     bot.action("cmd_briefing", async (ctx) => {
       await ctx.answerCbQuery();
@@ -211,20 +223,19 @@ _Усі модулі, статус та налаштування — в інте
     });
     bot.hears("📊 AI-Зведення", handleBriefing);
     bot.hears("🔔 Тривоги", async (ctx) => {
-      await ctx.reply("🔔 Актуальні зони повітряних тривог відображаються на карті в реальному часі.", {
+      await replyAndSchedule(ctx, "🔔 Актуальні зони повітряних тривог відображаються на карті в реальному часі.", {
         reply_markup: {
           inline_keyboard: [[getRadarButton("🛰️ Відкрити радар")]]
         }
       });
     });
     bot.hears("⚙️ Статус", async (ctx) => {
-      await ctx.reply(formatStatusReport(), { parse_mode: "Markdown" });
+      await replyAndSchedule(ctx, formatStatusReport(), { parse_mode: "Markdown" });
     });
 
     bot.start(async (ctx) => {
       await sendLaunchMessage(ctx.chat.id);
     });
-
 
     bot.command("radar", async (ctx) => {
       await sendLaunchMessage(ctx.chat.id);
@@ -234,7 +245,7 @@ _Усі модулі, статус та налаштування — в інте
       const parts = ctx.message.text.split(" ");
       const km = parseInt(parts[1], 10);
       if (isNaN(km) || km < 5 || km > 150) {
-        await ctx.reply("Вкажіть радіус від 5 до 150 км. Приклад: `/radius 35`", { parse_mode: "Markdown" });
+        await replyAndSchedule(ctx, "Вкажіть радіус від 5 до 150 км. Приклад: `/radius 35`", { parse_mode: "Markdown" });
         return;
       }
 
@@ -248,13 +259,14 @@ _Усі модулі, статус та налаштування — в інте
       pref.radiusKm = km;
       this.storage.savePreference(pref);
 
-      await ctx.reply(`✅ Радіус персонального сповіщення встановлено: *${km} км*`, { parse_mode: "Markdown" });
+      await replyAndSchedule(ctx, `✅ Радіус персонального сповіщення встановлено: *${km} км*`, { parse_mode: "Markdown" });
     });
 
     bot.command("setlocation", async (ctx) => {
       const parts = ctx.message.text.split(" ").slice(1).join(" ");
       if (!parts) {
-        await ctx.reply(
+        await replyAndSchedule(
+          ctx,
           "Вкажіть назву міста (наприклад: `/setlocation Полтава`) або просто надішліть геопозицію Telegram скріпкою в чат.",
           { parse_mode: "Markdown" }
         );
@@ -274,11 +286,11 @@ _Усі модулі, статус та налаштування — в інте
         pref.lon = city.lon;
         this.storage.savePreference(pref);
 
-        await ctx.reply(`✅ Локацію для сповіщень встановлено: *${city.nameUk}* (${city.lat}, ${city.lon}). Радіус: *${pref.radiusKm} км*`, {
+        await replyAndSchedule(ctx, `✅ Локацію для сповіщень встановлено: *${city.nameUk}* (${city.lat}, ${city.lon}). Радіус: *${pref.radiusKm} км*`, {
           parse_mode: "Markdown"
         });
       } else {
-        await ctx.reply(`Не вдалося знайти місто "${parts}". Спробуйте іншу назву (Київ, Харків, Одеса, Дніпро, Запоріжжя тощо).`);
+        await replyAndSchedule(ctx, `Не вдалося знайти місто "${parts}". Спробуйте іншу назву (Київ, Харків, Одеса, Дніпро, Запоріжжя тощо).`);
       }
     });
 
@@ -295,7 +307,7 @@ _Усі модулі, статус та налаштування — в інте
       pref.lon = loc.longitude;
       this.storage.savePreference(pref);
 
-      await ctx.reply(`📍 Координати збережено: *${loc.latitude.toFixed(4)}, ${loc.longitude.toFixed(4)}*. Радіус контролю: *${pref.radiusKm} км*`, {
+      await replyAndSchedule(ctx, `📍 Координати збережено: *${loc.latitude.toFixed(4)}, ${loc.longitude.toFixed(4)}*. Радіус контролю: *${pref.radiusKm} км*`, {
         parse_mode: "Markdown"
       });
     });
@@ -326,17 +338,17 @@ _Усі модулі, статус та налаштування — в інте
     };
 
     bot.command("status", async (ctx) => {
-      const sent = await ctx.reply(formatStatusReport(), { parse_mode: "Markdown" });
-      if (sent?.message_id) this.scheduleMessageDeletion(ctx.chat.id, sent.message_id);
+      await replyAndSchedule(ctx, formatStatusReport(), { parse_mode: "Markdown" });
     });
 
     bot.action("cmd_status", async (ctx) => {
       await ctx.answerCbQuery();
-      await ctx.reply(formatStatusReport(), { parse_mode: "Markdown" });
+      await replyAndSchedule(ctx, formatStatusReport(), { parse_mode: "Markdown" });
     });
 
     bot.command("alerts", async (ctx) => {
-      const sent = await ctx.reply(
+      await replyAndSchedule(
+        ctx,
         "🔔 *Статус тривог*: активні сектори та повітряні цілі відображаються на інтерактивній мапі.",
         {
           parse_mode: "Markdown",
@@ -345,12 +357,11 @@ _Усі модулі, статус та налаштування — в інте
           }
         }
       );
-      if (sent?.message_id) this.scheduleMessageDeletion(ctx.chat.id, sent.message_id);
     });
 
     bot.action("cmd_alerts", async (ctx) => {
       await ctx.answerCbQuery();
-      await ctx.reply("🔔 Відкрийте карту для перегляду актуальних секторів тривоги.", {
+      await replyAndSchedule(ctx, "🔔 Відкрийте карту для перегляду актуальних секторів тривоги.", {
         reply_markup: {
           inline_keyboard: [[getRadarButton("🗺️ Відкрити радар")]]
         }
@@ -360,13 +371,13 @@ _Усі модулі, статус та налаштування — в інте
     bot.command("report", async (ctx) => {
       const text = ctx.message.text.replace(/^\/report\s*/, "").trim();
       if (!text) {
-        await ctx.reply("Вкажіть спостереження після команди. Приклад: `/report Чую звук двигуна БПЛА на південь від міста`", {
+        await replyAndSchedule(ctx, "Вкажіть спостереження після команди. Приклад: `/report Чую звук двигуна БПЛА на південь від міста`", {
           parse_mode: "Markdown"
         });
         return;
       }
 
-      await ctx.reply("✅ Дякуємо за інформацію! Повідомлення передано в чергу аналізу для зіставлення з даними сенсорів.");
+      await replyAndSchedule(ctx, "✅ Дякуємо за інформацію! Повідомлення передано в чергу аналізу для зіставлення з даними сенсорів.");
     });
   }
 
@@ -380,6 +391,15 @@ _Усі модулі, статус та налаштування — в інте
     const nearest = findNearestOblast(lat, lon);
     const resolvedCity = cityName || nearest.nameUk;
     const existing = this.storage.getPreference(chatId);
+
+    // If identical preference already confirmed, do not resend notification message
+    const isSame =
+      existing &&
+      Math.abs(existing.lat - lat) < 0.001 &&
+      Math.abs(existing.lon - lon) < 0.001 &&
+      existing.radiusKm === radiusKm &&
+      existing.cityName === resolvedCity;
+
     const pref: UserAlertPreference = {
       chatId,
       lat,
@@ -392,9 +412,13 @@ _Усі модулі, статус та налаштування — в інте
     };
     this.storage.savePreference(pref);
 
+    if (isSame) {
+      return true;
+    }
+
     if (this.bot) {
       try {
-        await this.bot.telegram.sendMessage(
+        const sent = await this.bot.telegram.sendMessage(
           chatId,
           `📍 *Локацію для сповіщень підтверджено!*\n\n` +
             `🎯 Сектор: *${resolvedCity}* (${nearest.oblast} обл.)\n` +
@@ -406,6 +430,9 @@ _Усі модулі, статус та налаштування — в інте
             `_Змінити локацію можна кліком на карті або командою /setlocation_`,
           { parse_mode: "Markdown" }
         );
+        if (sent?.message_id) {
+          this.scheduleMessageDeletion(chatId, sent.message_id, 3600_000);
+        }
         return true;
       } catch (err) {
         console.warn(`Could not send confirmation to chat ${chatId}:`, err);
@@ -523,7 +550,10 @@ _Усі модулі, статус та налаштування — в інте
       console.log("Telegram bot launched successfully.");
       if (env.adminId) {
         try {
-          await this.bot.telegram.sendMessage(Number(env.adminId), "🟢 Eye Radar bot онлайн.");
+          const sentAdmin = await this.bot.telegram.sendMessage(Number(env.adminId), "🟢 Eye Radar bot онлайн.");
+          if (sentAdmin?.message_id) {
+            this.scheduleMessageDeletion(Number(env.adminId), sentAdmin.message_id, 3600_000);
+          }
         } catch (err) {
           console.log("ℹ️ Повідомлення адміну не надіслано (необхідно спочатку натиснути /start в боті):", (err as Error).message);
         }

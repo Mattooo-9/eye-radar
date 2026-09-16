@@ -1609,7 +1609,8 @@ export const MapView = ({
     const container = mapContainerRef.current;
     if (!canvas || !container) return;
 
-    const ratio = Math.min(window.devicePixelRatio || 1, 2);
+    const maxDpr = performanceTierRef.current === "LOW" ? 1.0 : 1.5;
+    const ratio = Math.min(window.devicePixelRatio || 1, maxDpr);
     const w = container.clientWidth;
     const h = container.clientHeight;
     if (w <= 0 || h <= 0) return;
@@ -1696,7 +1697,7 @@ export const MapView = ({
 
       // 2. Check if a target was clicked
       let closestTarget: TrackPacket | null = null;
-      let minTargetDist = 28;
+      let minTargetDist = 36; // comfortable touch target radius for mobile
       for (const p of packetsRef.current) {
         const [, , lat, lon] = p;
         const pt = map.project([lon, lat]);
@@ -1923,7 +1924,8 @@ export const MapView = ({
       const ctx = cachedCtx;
 
       if (map && canvas && ctx && container) {
-        const ratio = Math.min(window.devicePixelRatio || 1, 2);
+        const maxDpr = performanceTierRef.current === "LOW" ? 1.0 : 1.5;
+        const ratio = Math.min(window.devicePixelRatio || 1, maxDpr);
         const width = container.clientWidth;
         const height = container.clientHeight;
         if (width <= 0 || height <= 0) return;

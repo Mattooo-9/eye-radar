@@ -1,3 +1,4 @@
+import React, { useEffect, useMemo, useState } from "react";
 import ErrorBoundary from "./components/ErrorBoundary";
 import type { Map } from "maplibre-gl";
 import { AiBriefingModal } from "./components/AiBriefingModal";
@@ -227,32 +228,13 @@ export const App = () => {
     });
   }, [packets, tacticalFilters, threatOnly, filters]);
 
-  // ── Auto-Sentinel: Automatically monitors & locks onto closest threat (<= dangerRadiusKm) ───
+  // ── Auto-Sentinel: Proximity monitoring without unwanted auto-selection ───
   useEffect(() => {
     if (!tacticalFilters.autoTracking || !location || filteredPackets.length === 0) {
       return;
     }
-
-    let closest: TrackPacket | null = null;
-    let minD = Infinity;
-
-    for (const p of filteredPackets) {
-      const [, type, lat, lon] = p;
-      if (type === "uav" || type === "munition" || type === "bomb" || type === "fpv") {
-        const d = haversineMeters({ lat, lon }, { lat: location.lat, lon: location.lon });
-        if (d < minD) {
-          minD = d;
-          closest = p;
-        }
-      }
-    }
-
-    if (closest && minD <= tacticalFilters.dangerRadiusKm * 1000) {
-      if (!selectedTarget || selectedTarget[0] !== closest[0]) {
-        setSelectedTarget(closest);
-      }
-    }
-  }, [filteredPackets, location, tacticalFilters, selectedTarget]);
+    // Target designation and telemetry info must ONLY be displayed when explicitly tapped by the user!
+  }, [filteredPackets, location, tacticalFilters]);
 
   const targetCounts = useMemo(() => {
     let uav = 0;
@@ -421,13 +403,15 @@ export const App = () => {
           onMapReady={(m) => setMapInstance(m)}
           onPickLocation={handlePickLocation}
           onSelectTarget={(target) => {
-            setSelectedTarget(target);
-            setInspectedTarget(target);
+            const isSame = selectedTarget && selectedTarget[0] === target[0];
+            setSelectedTarget(isSame ? null : target);
+            setInspectedTarget(isSame ? null : target);
             setSelectedImpact(null);
             setSelectedLocation(null);
           }}
           onSelectImpact={(event) => {
             setSelectedImpact(event);
+            setSelectedTarget(null);
             setInspectedTarget(null);
             setSelectedLocation(null);
           }}
@@ -507,7 +491,10 @@ export const App = () => {
           <TargetCard
             packet={liveTarget}
             location={location}
-            onClose={() => setInspectedTarget(null)}
+            onClose={() => {
+              setInspectedTarget(null);
+              setSelectedTarget(null);
+            }}
             onFollowTarget={(id) => setFollowedTargetId(id)}
             onZoomTarget={(lat, lon) => {
               setFollowedTargetId(null);

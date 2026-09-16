@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { TrackCorrelator } from '../server/core/trackCorrelator';
-import { TrackManager } from "../server/core/trackManager.ts";
+import { TrackManager } from "../server/core/trackManager.js";
 import type { Observation, TrackState } from '../server/domain/types';
 
 describe('Crossing Tracks, Gating & Reacquisition', () => {

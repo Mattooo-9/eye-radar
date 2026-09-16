@@ -1,9 +1,6 @@
 import type { SourceRegistry } from "../sources/SourceRegistry.js";
 import { sourceRegistry as globalSourceRegistry } from "../sources/SourceRegistry.js";
-
-
-
-
+import { bearingDegrees, destinationPoint, haversineMeters } from "../domain/geo.js";
 import type { CompactTrackPacket, Observation, ThreatLevel, TrackLifecycle, TrackState, TrackDiagnosticReport } from "../domain/types.js";
 import type { ProvenanceRecord, SourceFamily } from "../domain/unifiedObservation.js";
 import { ImmFilter2D, type ImmResult } from "./immFilter.js";

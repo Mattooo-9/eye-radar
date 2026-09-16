@@ -1,6 +1,4 @@
-// src/server/sources/SourceRegistry.ts
 import type { Source } from "./sourceInterface.js";
-import { healthTracker } from "../index.js"; // health tracker instance
 
 export interface SourceCapability {
   canCreateTrack: boolean;
@@ -23,6 +21,15 @@ export interface RegisteredSource {
 
 export class SourceRegistry {
   private sources: Map<string, RegisteredSource> = new Map();
+  private healthTracker?: any;
+
+  setHealthTracker(tracker: any) {
+    this.healthTracker = tracker;
+  }
+
+  get(name: string): RegisteredSource | undefined {
+    return this.sources.get(name);
+  }
 
   register(
     name: string,
@@ -41,7 +48,9 @@ export class SourceRegistry {
     };
     this.sources.set(name, reg);
     // Register with health tracker (even if disabled/reserve)
-    healthTracker.registerSource(name);
+    if (this.healthTracker?.registerSource) {
+      this.healthTracker.registerSource(name);
+    }
     // If source has a start method, invoke it (e.g., begin fetching)
     if (typeof (instance as any).start === "function") {
       (instance as any).start();
@@ -51,10 +60,10 @@ export class SourceRegistry {
   getActiveSources(): RegisteredSource[] {
     const active: RegisteredSource[] = [];
     for (const src of this.sources.values()) {
-      const health = (healthTracker as any).sources?.get(src.name); // internal map
-      const state = health?.state ?? "OFFLINE";
       if (src.disabled) continue;
-      if (state === "LIVE" || src.family === "test") {
+      const health = this.healthTracker?.sources?.get?.(src.name);
+      const state = health?.state ?? "LIVE";
+      if (state === "LIVE" || src.family === "test" || !this.healthTracker) {
         active.push(src);
       }
     }

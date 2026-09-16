@@ -6,7 +6,8 @@ import { WebSocketServer } from "ws";
 import { createTelegramBot } from "./bot/telegramBot.js";
 import { env } from "./config/env.js";
 import { AiBriefingService } from "./core/aiBriefing.js";
-import { TrackManager } from "./core/trackManager.ts";
+import { TrackManager } from "./core/trackManager.js";
+import { RadarHub } from "./ws/hub.js";
 import type { Observation } from "./domain/types.js";
 import { parseOsintText } from "./ingest/osintParser.js";
 import { normalizeSdrPayload, type SdrPayload } from "./ingest/sdrGateway.js";
@@ -50,6 +51,7 @@ const publicOsintSource = new PublicOsintFeedSource();
 const simulator = new AirspaceSimulator();
 simulator.setAlertsSource(alertsSource);
 const healthTracker = new SourceHealthTracker();
+sourceRegistry.setHealthTracker(healthTracker);
 // Live Airspace Situational Awareness (Alerts-driven + Tactical baseline)
 let simulationEnabled = process.env.SIMULATION_ENABLED !== "false";
 

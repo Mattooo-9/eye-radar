@@ -148,28 +148,6 @@ export const useTrustedLocation = () => {
     }
   }, []);
 
-  // Sync confirmed coordinates to Telegram Bot alert preferences
-  useEffect(() => {
-    if (!location) return;
-    const tgUserId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
-    if (!tgUserId) return;
-
-    const timer = setTimeout(() => {
-      void fetch("/api/alerts/subscribe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: tgUserId,
-          lat: location.lat,
-          lon: location.lon,
-          cityName: confirmedLocation?.name,
-          radiusKm: 35
-        })
-      }).catch(() => {});
-    }, 1500);
-
-    return () => clearTimeout(timer);
-  }, [confirmedLocation?.name, location?.lat, location?.lon]);
 
   const saveUserLocation = useCallback(
     (loc: { lat: number; lon: number; name: string; region?: string }) => {
@@ -181,9 +159,26 @@ export const useTrustedLocation = () => {
       setIsConfirmed(true);
       setManualLocation({ lat: loc.lat, lon: loc.lon });
       setNeedsManualConfirm(false);
+
+      // Subscribe to bot alerts only when user explicitly saves location (once)
+      const tgUserId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
+      if (tgUserId) {
+        void fetch("/api/alerts/subscribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: tgUserId,
+            lat: loc.lat,
+            lon: loc.lon,
+            cityName: loc.name,
+            radiusKm: 35
+          })
+        }).catch(() => {});
+      }
     },
     [setManualLocation]
   );
+
 
   return useMemo(
     () => ({

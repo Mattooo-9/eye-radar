@@ -1,6 +1,6 @@
 // src/server/sources/adsbUnifiedSource.ts
 import type { Source } from "./sourceInterface.js";
-import { fetchJson } from "../../utils/fetch.ts";
+import { fetchJson } from "../../utils/fetch.js";
 
 /**
  * Unified ADS‑B source combines the two public feeds `adsb.lol` and `airplanes.live`.
@@ -19,7 +19,8 @@ export class AdsbUnifiedSource implements Source {
       this.endpoints.map((url) => fetchJson(url).catch(() => []))
     );
     const map = new Map<string, any>();
-    for (const arr of results) {
+    for (const arr of results as any[]) {
+      if (!Array.isArray(arr)) continue;
       for (const tr of arr) {
         if (!tr.hex) continue;
         const existing = map.get(tr.hex);
