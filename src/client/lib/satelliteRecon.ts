@@ -1,13 +1,16 @@
-export interface ReconSatellite {
+export interface EarthObservationSatellite {
   id: string;
   name: string;
-  type: "optical" | "sar_radar" | "elint";
-  country: "RU";
+  type: "sar_radar" | "optical" | "thermal" | "atmospheric";
+  provider: "Copernicus CDSE" | "NASA GIBS" | "EUMETSAT";
   altitudeKm: number;
   periodMin: number;
   inclinationDeg: number;
   swathWidthKm: number;
+  resolutionMeters: number;
+  revisitHours: number;
   description: string;
+  lawfulStatus: "Public Open Access";
   // Ephemeris epoch parameters
   epochLon: number;
   epochLat: number;
@@ -18,92 +21,111 @@ export interface ReconSatellite {
 export interface SatelliteTrack {
   id: string;
   name: string;
-  type: "optical" | "sar_radar" | "elint";
+  type: "sar_radar" | "optical" | "thermal" | "atmospheric";
+  provider: "Copernicus CDSE" | "NASA GIBS" | "EUMETSAT";
   lat: number;
   lon: number;
   heading: number;
   altitudeKm: number;
   speedKmh: number;
   swathWidthKm: number;
+  resolutionMeters: number;
+  revisitHours: number;
   inRangeOfUkraine: boolean;
   description: string;
+  isLiveRadar: false;
 }
 
-// Active Russian military reconnaissance satellites monitoring the Ukrainian theater
-export const RECON_SATELLITES: ReconSatellite[] = [
+// Official Open-Access Earth Observation Satellites (Copernicus CDSE, NASA GIBS, EUMETSAT)
+export const RECON_SATELLITES: EarthObservationSatellite[] = [
   {
-    id: "sat-persona-3",
-    name: "Персона-3 (Космос-2506)",
-    type: "optical",
-    country: "RU",
-    altitudeKm: 720,
-    periodMin: 99.2,
-    inclinationDeg: 98.2,
-    swathWidthKm: 180,
-    description: "Оптико-електронна розвідка високої роздільної здатності (0.3м)",
+    id: "sat-sentinel-1a",
+    name: "Copernicus Sentinel-1A (C-SAR)",
+    type: "sar_radar",
+    provider: "Copernicus CDSE",
+    altitudeKm: 693,
+    periodMin: 98.6,
+    inclinationDeg: 98.18,
+    swathWidthKm: 250,
+    resolutionMeters: 20,
+    revisitHours: 36,
+    description: "Радар синтезованої апертури SAR: всепогодний цілодобовий моніторинг рельєфу та інфраструктури крізь хмари",
+    lawfulStatus: "Public Open Access",
     epochLon: 34.2,
     epochLat: 52.0,
     epochHeading: 192,
     epochTime: 1788984000000
   },
   {
-    id: "sat-kondor-fka",
-    name: "Кондор-ФКА №1",
-    type: "sar_radar",
-    country: "RU",
-    altitudeKm: 518,
-    periodMin: 95.0,
-    inclinationDeg: 97.4,
-    swathWidthKm: 220,
-    description: "Всепогодний радіолокаційний радар SAR з синтезованою апертурою",
+    id: "sat-sentinel-2b",
+    name: "Copernicus Sentinel-2B (MSI)",
+    type: "optical",
+    provider: "Copernicus CDSE",
+    altitudeKm: 786,
+    periodMin: 100.6,
+    inclinationDeg: 98.62,
+    swathWidthKm: 290,
+    resolutionMeters: 10,
+    revisitHours: 72,
+    description: "Високороздільна мультиспектральна оптична зйомка високої чіткості (10м/пікс)",
+    lawfulStatus: "Public Open Access",
     epochLon: 31.0,
     epochLat: 46.5,
     epochHeading: 194,
     epochTime: 1788984600000
   },
   {
-    id: "sat-bars-m",
-    name: "Барс-М №3 (Космос-2553)",
-    type: "optical",
-    country: "RU",
-    altitudeKm: 525,
-    periodMin: 95.2,
-    inclinationDeg: 67.4,
-    swathWidthKm: 160,
-    description: "Стереоскопічна картографічна та тактична розвідка",
+    id: "sat-sentinel-3a",
+    name: "Copernicus Sentinel-3A (SLSTR)",
+    type: "thermal",
+    provider: "Copernicus CDSE",
+    altitudeKm: 814,
+    periodMin: 101.0,
+    inclinationDeg: 98.65,
+    swathWidthKm: 1420,
+    resolutionMeters: 300,
+    revisitHours: 24,
+    description: "Тепловий та поверхневий сенсор температури суші й радіаційної потужності пожеж",
+    lawfulStatus: "Public Open Access",
     epochLon: 36.8,
     epochLat: 49.5,
     epochHeading: 135,
     epochTime: 1788983200000
   },
   {
-    id: "sat-lotos-s1",
-    name: "Лотос-С1 №4 (Космос-2545)",
-    type: "elint",
-    country: "RU",
-    altitudeKm: 900,
-    periodMin: 103.0,
-    inclinationDeg: 67.1,
-    swathWidthKm: 450,
-    description: "Радіотехнічна розвідка (РТР / ELINT, пеленгація РЛС та зв'язку)",
+    id: "sat-viirs-snpp",
+    name: "NASA Suomi-NPP (VIIRS)",
+    type: "thermal",
+    provider: "NASA GIBS",
+    altitudeKm: 824,
+    periodMin: 101.5,
+    inclinationDeg: 98.7,
+    swathWidthKm: 3040,
+    resolutionMeters: 375,
+    revisitHours: 12,
+    description: "Спектрорадіометр NASA GIBS/FIRMS: фіксація термоаномалій та детонацій високої інтенсивності",
+    lawfulStatus: "Public Open Access",
     epochLon: 28.5,
     epochLat: 51.2,
     epochHeading: 142,
     epochTime: 1788985100000
   },
   {
-    id: "sat-resurs-p4",
-    name: "Ресурс-П №4",
-    type: "optical",
-    country: "RU",
-    altitudeKm: 475,
-    periodMin: 94.1,
-    inclinationDeg: 97.3,
-    swathWidthKm: 140,
-    description: "Детальна багатоспектральна зйомка об'єктів інфраструктури",
+    id: "sat-eumetsat-mtg",
+    name: "EUMETSAT MTG-I1 (FCI)",
+    type: "atmospheric",
+    provider: "EUMETSAT",
+    altitudeKm: 35786,
+    periodMin: 1436.0,
+    inclinationDeg: 0.1,
+    swathWidthKm: 12000,
+    resolutionMeters: 1000,
+    revisitHours: 0.25,
+    description: "Геостаціонарний метеорологічний моніторинг висоти хмарного покриву, опадів та атмосфери",
+    lawfulStatus: "Public Open Access",
     epochLon: 33.5,
     epochLat: 48.0,
-    epochHeading: 196,
+    epochHeading: 180,
     epochTime: 1788982500000
   }
 ];
@@ -144,14 +166,18 @@ export const calculateSatellitePositions = (timeMs = Date.now()): SatelliteTrack
       id: sat.id,
       name: sat.name,
       type: sat.type,
+      provider: sat.provider,
       lat: Number(lat.toFixed(4)),
       lon: Number(lon.toFixed(4)),
       heading: Math.round(heading),
       altitudeKm: sat.altitudeKm,
       speedKmh,
       swathWidthKm: sat.swathWidthKm,
+      resolutionMeters: sat.resolutionMeters,
+      revisitHours: sat.revisitHours,
       inRangeOfUkraine: inRange,
-      description: sat.description
+      description: sat.description,
+      isLiveRadar: false
     };
   });
 };

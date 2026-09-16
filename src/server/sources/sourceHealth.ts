@@ -1,4 +1,5 @@
 import type { TrackState } from "../domain/types.js";
+import { backendAiEngine } from "../core/backendAiEngine.js";
 
 export type SourceAuditState = "LIVE" | "DEGRADED" | "STALE" | "OFFLINE";
 
@@ -180,21 +181,8 @@ export class SourceHealthTracker {
   calculateTrustScore(s: SourceInternalStats, state: SourceAuditState): number {
     if (state === "OFFLINE") return 0.0;
     if (state === "STALE") return 0.3;
-    if (state === "DEGRADED") return 0.5;
-
     const p95 = calculatePercentile(s.latencies, 95);
-    let score = 0.95;
-
-    // Latency degradation
-    if (p95 > 5000) score -= 0.25;
-    else if (p95 > 2500) score -= 0.1;
-
-    // Success consistency
-    if (s.successCount > 10 && s.errorCount === 0) {
-      score = Math.min(1.0, score + 0.05);
-    }
-
-    return Math.round(score * 100) / 100;
+    return backendAiEngine.scoreSourceQuality(s.name, s.successCount, s.errorCount, p95);
   }
 
   getSourceWeight(name: string): number {

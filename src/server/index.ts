@@ -24,6 +24,8 @@ import { SourceHealthTracker } from "./sources/sourceHealth.js";
 import { AdsbUnifiedSource } from "./sources/adsbUnifiedSource.js";
 import { impactManager } from "./core/impactManager.js";
 import { sourceRegistry } from "./sources/SourceRegistry.js";
+import { earthObservationService } from "./sources/earthObservation.js";
+import { backendAiEngine } from "./core/backendAiEngine.js";
 
 
 
@@ -109,7 +111,8 @@ sourceRegistry.register(
     canProvideAltitude: false,
     canProvideSpeed: false,
     evidenceTypes: ["osint"],
-  }
+  },
+  { disabled: true }
 );
 sourceRegistry.register(
   "open-meteo",
@@ -129,12 +132,25 @@ sourceRegistry.register(
   "thermal",
   firmsSource,
   {
-    canCreateTrack: true,
-    canClassify: true,
+    canCreateTrack: false,
+    canClassify: false,
     canProvidePosition: true,
-    canProvideAltitude: true,
-    canProvideSpeed: true,
+    canProvideAltitude: false,
+    canProvideSpeed: false,
     evidenceTypes: ["thermal"],
+  }
+);
+sourceRegistry.register(
+  "earth-observation",
+  "optical",
+  earthObservationService as any,
+  {
+    canCreateTrack: false,
+    canClassify: false,
+    canProvidePosition: true,
+    canProvideAltitude: false,
+    canProvideSpeed: false,
+    evidenceTypes: ["optical", "radar", "thermal"],
   }
 );
 sourceRegistry.register(
@@ -345,6 +361,19 @@ const server = createServer(async (req, res) => {
   if (req.method === "GET" && url.pathname === "/api/thermal") {
     const thermals = await firmsSource.fetchThermalObservations();
     json(res, 200, { thermals, count: thermals.length });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/eo/layers") {
+    const layers = await earthObservationService.getLayers();
+    json(res, 200, layers);
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/ai/anomalies") {
+    const list = trackManager.snapshot(simulationEnabled);
+    const anomalies = list.map(t => backendAiEngine.scoreKinematicsAnomaly(t)).filter(a => a.isKinematicAnomaly);
+    json(res, 200, { count: anomalies.length, anomalies });
     return;
   }
 
@@ -693,21 +722,7 @@ setInterval(async () => {
     }
   }
 
-  // Poll Public OSINT Feed every 15 seconds
-  if (cycleCounter === 1 || cycleCounter % 15 === 0) {
-    const tOsint = Date.now();
-    try {
-      const osintObs = await publicOsintSource.fetchPublicOsintObservations();
-      for (const o of osintObs) {
-        trackManager.ingest(toObservation(o));
-      }
-      if (osintObs.length > 0) {
-        healthTracker.recordSuccess("public.osint", Date.now() - tOsint, osintObs.length);
-      }
-    } catch (err) {
-      healthTracker.recordError("public.osint", err instanceof Error ? err : String(err));
-    }
-  }
+  // Public OSINT reposts completely excluded per primary API mandate
 
   // Poll NASA FIRMS Thermal Satellite Observations every 60 seconds
   if (cycleCounter === 1 || cycleCounter % 60 === 0) {
@@ -735,6 +750,16 @@ setInterval(async () => {
 
   trackManager.tick(now);
   trackManager.prune(now);
+
+  // Stage 5: Backend AI Engine - Auxiliary aerodynamic & kinematic envelope validation
+  if (cycleCounter % 3 === 0) {
+    for (const track of trackManager.snapshot(simulationEnabled)) {
+      const anomaly = backendAiEngine.scoreKinematicsAnomaly(track);
+      if (anomaly.isKinematicAnomaly) {
+        track.confidence = Math.min(track.confidence, anomaly.confidence);
+      }
+    }
+  }
 
   const delta = trackManager.getDeltaPacket(simulationEnabled, cycleCounter);
   const livePositional = sourceRegistry.getActiveSources().some(src => src.capability.canCreateTrack);

@@ -13,14 +13,6 @@ export interface ManualLocationInput {
   lon: number;
 }
 
-interface IpFallbackResponse {
-  fallback: {
-    lat?: number;
-    lon?: number;
-    city?: string;
-    country?: string;
-  } | null;
-}
 
 export const useTrustedLocation = () => {
   const [confirmedLocation, setConfirmedLocation] = useState<{
@@ -53,11 +45,14 @@ export const useTrustedLocation = () => {
     return null;
   });
 
-  const [coarseLocation, setCoarseLocation] = useState<TrustedLocation | null>(null);
   const [trustScore, setTrustScore] = useState(100);
   const [flags, setFlags] = useState<string[]>([]);
+  const [isDegraded, setIsDegraded] = useState(false);
+  const [isSpoofed, setIsSpoofed] = useState(false);
+  const [trustStatus, setTrustStatus] = useState<"TRUSTED" | "DEGRADED" | "SPOOFED_FALLBACK">("TRUSTED");
   const [needsManualConfirm, setNeedsManualConfirm] = useState(!isConfirmed);
   const previousRef = useRef<RawLocationSample | null>(null);
+  const lastTrustedLocationRef = useRef<TrustedLocation | null>(location);
   const [isManual, setIsManual] = useState(Boolean(confirmedLocation));
   const lastGpsRef = useRef<TrustedLocation | null>(null);
 
@@ -86,38 +81,65 @@ export const useTrustedLocation = () => {
         };
         lastGpsRef.current = gpsLoc;
 
-        const anomaly = detectLocationAnomaly(previousRef.current, sample, coarseLocation);
-        previousRef.current = sample;
+        const anomaly = detectLocationAnomaly(
+          previousRef.current,
+          sample,
+          confirmedLocation ? { lat: confirmedLocation.lat, lon: confirmedLocation.lon } : null
+        );
 
         setTrustScore(anomaly.trustScore);
         setFlags(anomaly.flags);
+        setIsDegraded(anomaly.isDegraded);
+        setIsSpoofed(anomaly.isSpoofed);
 
         if (!isManual) {
-          if (anomaly.trustScore < 55 && coarseLocation) {
-            setLocation(coarseLocation);
+          // If EW/spoofing is detected or coordinates degraded, freeze lastTrustedLocation or fall back to confirmed reserve
+          if (anomaly.isSpoofed || anomaly.isDegraded) {
+            setTrustStatus(anomaly.isSpoofed ? "SPOOFED_FALLBACK" : "DEGRADED");
             setNeedsManualConfirm(true);
+            if (lastTrustedLocationRef.current) {
+              setLocation(lastTrustedLocationRef.current);
+            } else if (confirmedLocation) {
+              setLocation({
+                lat: confirmedLocation.lat,
+                lon: confirmedLocation.lon,
+                accuracy: 100,
+                timestamp: Date.now()
+              });
+            }
             return;
           }
 
-          setNeedsManualConfirm(anomaly.trustScore < 55);
+          // Healthy GNSS sample
+          previousRef.current = sample;
+          lastTrustedLocationRef.current = gpsLoc;
+          setTrustStatus("TRUSTED");
+          setNeedsManualConfirm(false);
           setLocation(gpsLoc);
         }
       },
       () => {
-        if (!isManual && coarseLocation) {
-          setLocation(coarseLocation);
+        if (!isManual && confirmedLocation) {
+          setLocation({
+            lat: confirmedLocation.lat,
+            lon: confirmedLocation.lon,
+            accuracy: 50,
+            timestamp: Date.now()
+          });
         }
+        setIsDegraded(true);
+        setTrustStatus("DEGRADED");
         setNeedsManualConfirm(true);
       },
       {
         enableHighAccuracy: true,
-        maximumAge: 4_000,
-        timeout: 12_000
+        maximumAge: 3_000,
+        timeout: 10_000
       }
     );
 
     return () => navigator.geolocation.clearWatch(watchId);
-  }, [coarseLocation, isManual]);
+  }, [confirmedLocation, isManual]);
 
   const setManualLocation = useCallback((value: ManualLocationInput) => {
     const manualLocation = {
@@ -188,6 +210,9 @@ export const useTrustedLocation = () => {
       isManual,
       trustScore,
       flags,
+      isDegraded,
+      isSpoofed,
+      trustStatus,
       needsManualConfirm,
       setManualLocation,
       saveUserLocation,
@@ -197,13 +222,16 @@ export const useTrustedLocation = () => {
       confirmedLocation,
       flags,
       isConfirmed,
+      isDegraded,
       isManual,
+      isSpoofed,
       location,
       needsManualConfirm,
       resetToGps,
       saveUserLocation,
       setManualLocation,
-      trustScore
+      trustScore,
+      trustStatus
     ]
   );
 };

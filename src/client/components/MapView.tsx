@@ -1447,10 +1447,18 @@ const drawSatelliteReconLayer = (
       continue;
     }
 
-    // Sleek minimal satellite diamond marker (no circles, no boxes)
+    // Sleek minimal satellite diamond marker
     ctx.save();
     ctx.translate(satPt.x, satPt.y);
-    ctx.fillStyle = sat.type === "sar_radar" ? "#c084fc" : "#38bdf8";
+    const sensorColor =
+      sat.type === "sar_radar"
+        ? "#c084fc"
+        : sat.type === "thermal"
+        ? "#fb923c"
+        : sat.type === "atmospheric"
+        ? "#34d399"
+        : "#38bdf8";
+    ctx.fillStyle = sensorColor;
     ctx.beginPath();
     ctx.moveTo(0, -4);
     ctx.lineTo(4, 0);
@@ -1460,14 +1468,21 @@ const drawSatelliteReconLayer = (
     ctx.fill();
     ctx.restore();
 
-    // Clean telemetry text without emojis
-    const typeLabel = sat.type === "sar_radar" ? "SAR" : sat.type === "elint" ? "ELINT" : "HD";
+    // Clean Earth Observation metadata without emojis
+    const typeLabel =
+      sat.type === "sar_radar"
+        ? "SAR"
+        : sat.type === "thermal"
+        ? "Thermal"
+        : sat.type === "atmospheric"
+        ? "Meteo"
+        : "MSI";
     drawTextWithOutline(
       ctx,
-      `${sat.name} [${typeLabel}] ${sat.altitudeKm} км`,
+      `${sat.name} [${typeLabel} • ${sat.resolutionMeters}м]`,
       satPt.x + 8,
       satPt.y - 4,
-      sat.inRangeOfUkraine ? "#f43f5e" : "#38bdf8",
+      sensorColor,
       "rgba(0, 0, 0, 0.95)",
       "9px Inter, monospace"
     );

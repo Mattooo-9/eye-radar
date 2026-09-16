@@ -1,6 +1,7 @@
-﻿import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { OBLASTS_OF_UKRAINE } from '../client/components/LocationSetupModal';
 import { LOCATIONS } from '../client/components/CitySelector';
+import { detectLocationAnomaly } from '../client/location/anomaly.js';
 
 describe('Location Logic & Confirmation Rules', () => {
   it('contains comprehensive coverage of Ukrainian administrative regions', () => {
@@ -50,4 +51,57 @@ describe('Location Logic & Confirmation Rules', () => {
     expect(homeLocation.name).toBe('Львів');
     expect(homeLocation.lat).toBe(49.8397);
   });
+
+  it('detects GNSS spoofing and EW interference anomalies correctly', () => {
+
+    // 1. Healthy sample
+    const healthyPrev = {
+      lat: 50.4501,
+      lon: 30.5234,
+      accuracy: 8,
+      speed: 1.2,
+      heading: 90,
+      timestamp: 1000000
+    };
+    const healthyCur = {
+      lat: 50.4502,
+      lon: 30.5235,
+      accuracy: 8,
+      speed: 1.3,
+      heading: 90,
+      timestamp: 1001000
+    };
+    const resHealthy = detectLocationAnomaly(healthyPrev, healthyCur);
+    expect(resHealthy.isSpoofed).toBe(false);
+    expect(resHealthy.isDegraded).toBe(false);
+    expect(resHealthy.trustScore).toBeGreaterThanOrEqual(90);
+
+    // 2. Teleportation / Impossible jump (Mach 3 jump)
+    const spoofedJump = {
+      lat: 48.0,
+      lon: 36.0, // ~400 km away in 1 second!
+      accuracy: 10,
+      speed: 0,
+      heading: null,
+      timestamp: 1002000
+    };
+    const resSpoofed = detectLocationAnomaly(healthyCur, spoofedJump);
+    expect(resSpoofed.isSpoofed).toBe(true);
+    expect(resSpoofed.isDegraded).toBe(true);
+    expect(resSpoofed.flags).toContain('teleport');
+
+    // 3. EW interference (accuracy degrades to 2000m)
+    const ewDegraded = {
+      lat: 50.4503,
+      lon: 30.5236,
+      accuracy: 2500,
+      speed: null,
+      heading: null,
+      timestamp: 1002000
+    };
+    const resEw = detectLocationAnomaly(healthyCur, ewDegraded);
+    expect(resEw.flags).toContain('ew_interference');
+    expect(resEw.isDegraded).toBe(true);
+  });
 });
+
