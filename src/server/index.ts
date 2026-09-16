@@ -33,7 +33,6 @@ import { impactManager } from "./core/impactManager.js";
 import { sourceRegistry } from "./sources/SourceRegistry.js";
 import { earthObservationService } from "./sources/earthObservation.js";
 import { backendAiEngine } from "./core/backendAiEngine.js";
-import { messageDeletionService } from "./bot/messageDeletionService.js";
 import { pingDb } from "./db/pool.js";
 import { initSchema } from "./db/schema.js";
 import { checkpointService } from "./db/checkpointService.js";
@@ -71,7 +70,7 @@ simulator.setAlertsSource(alertsSource);
 const healthTracker = new SourceHealthTracker();
 sourceRegistry.setHealthTracker(healthTracker);
 // Live Airspace Situational Awareness (Alerts-driven + Tactical baseline)
-let simulationEnabled = process.env.SIMULATION_ENABLED !== "false";
+let simulationEnabled = process.env.SIMULATION_ENABLED === "true";
 
 sourceRegistry.register(
   "airplanes.live",
@@ -942,6 +941,7 @@ setInterval(async () => {
     const t0 = Date.now();
     try {
       await alertsSource.fetchAlerts();
+      trackManager.setActiveAlertOblasts(alertsSource.getActiveAlertOblastNames());
       healthTracker.recordSuccess("alerts.in.ua", Date.now() - t0);
     } catch (err) {
       healthTracker.recordError("alerts.in.ua", err instanceof Error ? err : String(err));

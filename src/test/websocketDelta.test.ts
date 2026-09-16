@@ -90,7 +90,8 @@ describe("WebSocket Delta & Sequence Synchronization", () => {
         confidence: 0.9,
         meta: {
           model: "Shahed-136",
-          callsign: "SH-99"
+          callsign: "SH-99",
+          isSynthetic: true
         }
       },
       now

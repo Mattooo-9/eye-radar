@@ -8,6 +8,20 @@ import { classifyAerialObject } from "./classificationEngine.js";
 import { TrackCorrelator } from "./trackCorrelator.js";
 import { encodeBinaryDelta, encodeBinarySnapshot } from "../../common/binaryCodec.js";
 import { timeCalibrationService } from "./timeCalibration.js";
+import { UKRAINE_CITIES } from "../sources/ukraineGeo.js";
+
+export function findNearestOblast(lat: number, lon: number): { nameUk: string; oblast: string } {
+  let minD = Infinity;
+  let closest = UKRAINE_CITIES.kyiv;
+  for (const c of Object.values(UKRAINE_CITIES)) {
+    const d = (c.lat - lat) ** 2 + (c.lon - lon) ** 2;
+    if (d < minD) {
+      minD = d;
+      closest = c;
+    }
+  }
+  return { nameUk: closest.nameUk, oblast: closest.oblast || closest.nameUk };
+}
 
 interface InternalTrack {
   state: TrackState;
@@ -33,6 +47,77 @@ export class TrackManager {
   private recentlyRemovedIds = new Set<string>();
   private readonly recentObsFingerprints = new Set<string>();
   private readonly lastPublishedState = new Map<string, CompactTrackPacket>();
+  private activeAlertOblasts = new Set<string>();
+
+  setActiveAlertOblasts(oblasts: string[]): void {
+    this.activeAlertOblasts = new Set(
+      oblasts.map((o) => o.toLowerCase().replace("область", "").replace("обл.", "").trim())
+    );
+    this.runRegionalSanityCheck();
+  }
+
+  getActiveAlertOblasts(): string[] {
+    return Array.from(this.activeAlertOblasts);
+  }
+
+  runRegionalSanityCheck(): void {
+    for (const entry of this.tracks.values()) {
+      this.applySanityCheckToTrack(entry.state);
+    }
+  }
+
+  applySanityCheckToTrack(track: TrackState): void {
+    const isCombatType =
+      track.type === "uav" ||
+      track.type === "munition" ||
+      track.type === "bomb" ||
+      track.type === "fpv";
+
+    if (!isCombatType) return;
+
+    // Check for independent threat evidence
+    const hasIndependentThreatEvidence =
+      (track.threatEvidence && track.threatEvidence.length > 0) ||
+      (track.evidence &&
+        track.evidence.some(
+          (e) =>
+            e.startsWith("acoustic_") ||
+            e.startsWith("optical_") ||
+            e.startsWith("radar_") ||
+            e.startsWith("threat_")
+        )) ||
+      Boolean(track.isSynthetic);
+
+    if (hasIndependentThreatEvidence) {
+      return;
+    }
+
+    const nearest = findNearestOblast(track.lat, track.lon);
+    const regionKey = nearest.oblast.toLowerCase().replace("область", "").replace("обл.", "").trim();
+    const regionUkKey = nearest.nameUk.toLowerCase();
+
+    const hasActiveAlert = Array.from(this.activeAlertOblasts).some(
+      (alertName) =>
+        alertName.includes(regionKey) ||
+        regionKey.includes(alertName) ||
+        alertName.includes(regionUkKey)
+    );
+
+    // If NO active alert in the region AND NO independent threat evidence:
+    // Sanity check triggers: automatically reduce combat classConfidence to UNKNOWN
+    if (!hasActiveAlert) {
+      track.type = "unknown";
+      track.model = "Невідома повітряна ціль (тривога відсутня)";
+      track.classConfidence = Math.min(track.classConfidence || 0.4, 0.25);
+      track.alternativeType = "unknown";
+      track.alternativeModel = "Непідтверджена загроза";
+      track.alternativeConfidence = 0.15;
+      if (!track.classEvidence) track.classEvidence = [];
+      if (!track.classEvidence.includes("sanity_check_no_alert_demoted_to_unknown")) {
+        track.classEvidence.push("sanity_check_no_alert_demoted_to_unknown");
+      }
+    }
+  }
 
   getTrack(id: string): TrackState | undefined {
     return this.tracks.get(id)?.state;
@@ -222,6 +307,22 @@ export class TrackManager {
       const effectiveSpeed = observation.speed ?? (imm.speedMs > 2 ? imm.speedMs : 45);
       const effectiveHeading = observation.heading ?? (imm.headingDeg || 0);
 
+      const rawThreat = (observation.meta as any)?.threatEvidence ?? observation.threatEvidence;
+      const obsThreatEvidence: string[] = typeof rawThreat === "string"
+        ? [rawThreat]
+        : Array.isArray(rawThreat)
+        ? rawThreat
+        : [];
+      const rawEv = (observation.meta as any)?.evidence ?? (observation as any).evidence;
+      if (typeof rawEv === "string" && (
+        rawEv.startsWith("acoustic_") ||
+        rawEv.startsWith("optical_") ||
+        rawEv.startsWith("radar_") ||
+        rawEv.startsWith("threat_")
+      )) {
+        obsThreatEvidence.push(rawEv);
+      }
+
       const classification = classifyAerialObject({
         claimedType: observation.type,
         speedMs: effectiveSpeed,
@@ -232,7 +333,10 @@ export class TrackManager {
         modelHint: typeof observation.meta?.model === "string" ? observation.meta.model : undefined,
         callsign: typeof observation.meta?.callsign === "string" ? observation.meta.callsign : undefined,
         sources: [observation.source],
-        evidence: typeof observation.meta?.evidence === "string" ? [observation.meta.evidence] : undefined
+        evidence: typeof observation.meta?.evidence === "string" ? [observation.meta.evidence] : undefined,
+        threatEvidence: obsThreatEvidence,
+        isSynthetic,
+        positionConfidence: observation.confidence
       });
 
       // High-quality or multi-sensor source immediately becomes CONFIRMED; others start TENTATIVE
@@ -248,6 +352,10 @@ export class TrackManager {
         speed: effectiveSpeed,
         timestamp: observation.timestamp,
         confidence: Math.min(1, observation.confidence + correlation.confidenceBonus),
+        positionConfidence: classification.positionConfidence,
+        classConfidence: classification.classConfidence,
+        classEvidence: classification.classEvidence,
+        threatEvidence: classification.threatEvidence,
         sources: new Set([observation.source]),
         altitude: classification.estimatedAltitudeM,
         covLat: imm.covLat,
@@ -273,6 +381,8 @@ export class TrackManager {
         syntheticScenario,
         provenanceChain: [provenanceEntry]
       };
+
+      this.applySanityCheckToTrack(state);
 
       this.tracks.set(targetId, {
         state,
@@ -315,6 +425,26 @@ export class TrackManager {
       previous.confidence * 0.4 + observation.confidence * 0.5 + sourceDiversityBonus
     );
 
+    const rawThreat = (observation.meta as any)?.threatEvidence ?? observation.threatEvidence;
+    const obsThreatEvidence: string[] = typeof rawThreat === "string"
+      ? [rawThreat]
+      : Array.isArray(rawThreat)
+      ? rawThreat
+      : [];
+    const rawEv = (observation.meta as any)?.evidence ?? (observation as any).evidence;
+    if (typeof rawEv === "string" && (
+      rawEv.startsWith("acoustic_") ||
+      rawEv.startsWith("optical_") ||
+      rawEv.startsWith("radar_") ||
+      rawEv.startsWith("threat_")
+    )) {
+      obsThreatEvidence.push(rawEv);
+    }
+
+    const mergedThreatEvidence = Array.from(
+      new Set([...(previous.threatEvidence || []), ...obsThreatEvidence])
+    );
+
     const classification = classifyAerialObject({
       claimedType: observation.type !== "unknown" ? observation.type : previous.type,
       speedMs: updatedSpeed,
@@ -325,7 +455,10 @@ export class TrackManager {
       modelHint: typeof observation.meta?.model === "string" ? observation.meta.model : previous.model,
       callsign: typeof observation.meta?.callsign === "string" ? observation.meta.callsign : previous.callsign,
       sources: Array.from(mergedSources),
-      evidence: previous.evidence
+      evidence: previous.evidence,
+      threatEvidence: mergedThreatEvidence,
+      isSynthetic: previous.isSynthetic || isSynthetic,
+      positionConfidence: updatedConfidence
     });
 
     // Lifecycle promotion: 2 hits confirms tentative tracks
@@ -351,6 +484,10 @@ export class TrackManager {
       altitude: classification.estimatedAltitudeM,
       timestamp: observation.timestamp,
       confidence: Math.round(updatedConfidence * 100) / 100,
+      positionConfidence: classification.positionConfidence,
+      classConfidence: classification.classConfidence,
+      classEvidence: classification.classEvidence,
+      threatEvidence: classification.threatEvidence,
       sources: mergedSources,
       covLat: imm.covLat,
       covLon: imm.covLon,
@@ -376,6 +513,8 @@ export class TrackManager {
       provenanceChain: updatedProvenance
     };
 
+    this.applySanityCheckToTrack(existing.state);
+
     return existing.state;
   }
 
@@ -385,6 +524,7 @@ export class TrackManager {
   }
 
   tick(now = Date.now()): void {
+    this.runRegionalSanityCheck();
     for (const [, entry] of this.tracks.entries()) {
       const dt = Math.max(0, (now - entry.state.timestamp) / 1000);
       const timeSinceLastMeasurement = now - entry.lastMeasurementTime;
@@ -608,6 +748,10 @@ export class TrackManager {
         model: t.model,
         propulsion: t.propulsion,
         confidence: t.confidence,
+        positionConfidence: t.positionConfidence,
+        classConfidence: t.classConfidence,
+        classEvidence: t.classEvidence ?? [],
+        threatEvidence: t.threatEvidence ?? [],
         evidence: t.evidence ?? [],
         evidenceFamilies: t.evidenceFamilies ?? []
       },

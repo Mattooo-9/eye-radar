@@ -76,7 +76,8 @@ describe("Replay Engine & Edge-Case Robustness", () => {
       speed: 45,
       timestamp: t0,
       source: "sdr",
-      confidence: 0.92
+      confidence: 0.92,
+      meta: { isSynthetic: true }
     };
     // Target B: flying East at 140 m/s (Shahed-238 Jet)
     const targetB1: Observation = {
@@ -88,7 +89,8 @@ describe("Replay Engine & Edge-Case Robustness", () => {
       speed: 140,
       timestamp: t0,
       source: "sdr",
-      confidence: 0.92
+      confidence: 0.92,
+      meta: { isSynthetic: true }
     };
 
     manager.ingest(targetA1, t0);
@@ -106,7 +108,8 @@ describe("Replay Engine & Edge-Case Robustness", () => {
       speed: 45,
       timestamp: t0 + 2000,
       source: "sdr",
-      confidence: 0.92
+      confidence: 0.92,
+      meta: { isSynthetic: true }
     };
     const targetB2: Observation = {
       id: "target-east",
@@ -117,7 +120,8 @@ describe("Replay Engine & Edge-Case Robustness", () => {
       speed: 140,
       timestamp: t0 + 2000,
       source: "sdr",
-      confidence: 0.92
+      confidence: 0.92,
+      meta: { isSynthetic: true }
     };
 
     manager.ingest(targetA2, t0 + 2000);

@@ -15,6 +15,7 @@ describe("E2E Pipeline Integration Test", () => {
 
     healthTracker.registerSource("osint");
     healthTracker.registerSource("sdr");
+    trackManager.setActiveAlertOblasts(["Полтавська", "Полтава"]);
 
     // 1. Natural language OSINT message
     const osintRaw = "⚠️ Помічено шахеди біля Кременчука, вектор на Полтаву";

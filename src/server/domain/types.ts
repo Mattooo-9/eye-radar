@@ -15,7 +15,12 @@ export type SourceKind =
   | "firms"
   | "weather"
   | "manual"
-  | "simulation";
+  | "simulation"
+  | "adsb"
+  | "radar"
+  | "acoustic"
+  | "optical"
+  | "satellite";
 
 export type ThreatLevel = "low" | "medium" | "high" | "critical";
 
@@ -59,7 +64,9 @@ export interface Observation {
   source: SourceKind;
   confidence: number;
   altitude?: number;
-  meta?: Record<string, string | number | boolean>;
+  meta?: Record<string, any>;
+  threatEvidence?: string[] | string;
+  isSynthetic?: boolean;
 }
 
 export type TrackLifecycle = "TENTATIVE" | "CONFIRMED" | "COASTING" | "STALE" | "EXPIRED";
@@ -73,6 +80,10 @@ export interface TrackState {
   speed: number;
   timestamp: number;
   confidence: number;
+  positionConfidence?: number;
+  classConfidence?: number;
+  classEvidence?: string[];
+  threatEvidence?: string[];
   sources: Set<SourceKind>;
   altitude?: number;
   covLat?: number;
@@ -124,6 +135,10 @@ export interface TrackDiagnosticReport {
     model?: string;
     propulsion?: string;
     confidence: number;
+    positionConfidence?: number;
+    classConfidence?: number;
+    classEvidence?: string[];
+    threatEvidence?: string[];
     evidence: string[];
     evidenceFamilies: string[];
   };

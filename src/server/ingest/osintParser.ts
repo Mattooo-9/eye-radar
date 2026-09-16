@@ -149,6 +149,8 @@ export const parseOsintText = (text: string, now = Date.now()): Observation[] =>
         meta: {
           cityName: city.nameUk,
           rawSnippet: text.slice(0, 100),
+          evidence: "osint_threat_report",
+          threatEvidence: "osint_threat_report",
           ...(model ? { model } : {})
         }
       });
