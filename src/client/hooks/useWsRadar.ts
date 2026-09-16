@@ -98,6 +98,7 @@ export const useWsRadar = (
           if (unmounted) return;
           const { type, tracks, removedIds, events, expectedSeq } = e.data;
           if (type === "TRACKS_UPDATED" && Array.isArray(tracks)) {
+            trackStore.recordDecoded((tracks as TrackPacket[]).length);
             trackStore.ingestDelta(tracks as TrackPacket[], removedIds || []);
             setPackets(tracks as TrackPacket[]);
           } else if (type === "IMPACTS_UPDATED" && Array.isArray(events)) {
@@ -134,6 +135,7 @@ export const useWsRadar = (
           fallbackTracksMap.current.delete(rid);
         }
         const activeTracks = Array.from(fallbackTracksMap.current.values());
+        trackStore.recordDecoded(decoded.tracks.length);
         trackStore.ingestDelta(decoded.tracks, decoded.removedIds);
         setPackets(activeTracks);
       } catch (err) {

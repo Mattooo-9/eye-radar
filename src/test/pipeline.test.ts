@@ -91,4 +91,64 @@ describe("E2E Pipeline Integration Test", () => {
     expect(osintStatus?.status).toBe("online");
     expect(sdrStatus?.status).toBe("online");
   });
+
+  it("retains civilian and unidentified flights as confirmed positional tracks without converting to combat types", () => {
+    const trackManager = new TrackManager();
+    const now = Date.now();
+
+    const civilAirlinerObs: Observation = {
+      id: "adsb-wzz123",
+      type: "aircraft",
+      lat: 48.5,
+      lon: 25.5,
+      heading: 90,
+      speed: 230,
+      altitude: 10500,
+      timestamp: now,
+      source: "adsb.lol",
+      confidence: 0.95,
+      meta: {
+        source_id: "adsb.lol",
+        callsign: "WZZ123",
+        model: "AIRBUS A321",
+        squawk: "1000"
+      }
+    };
+
+    const state = trackManager.ingest(civilAirlinerObs, now);
+    expect(state).not.toBeNull();
+    expect(state?.type).toBe("aircraft");
+    expect(state?.threatLevel).toBe("low");
+    expect(state?.threatEvidence).toEqual([]);
+    expect(state?.type).not.toBe("shahed");
+    expect(state?.type).not.toBe("munition");
+
+    const activeTracks = trackManager.snapshot();
+    expect(activeTracks.length).toBe(1);
+    expect(activeTracks[0].id).toBe("adsb-wzz123");
+  });
+
+  it("gathers accurate pipeline diagnostics counters across the end-to-end ingestion flow", () => {
+    const trackManager = new TrackManager();
+    const now = Date.now();
+
+    const validObs: Observation = {
+      id: "adsb-c17-01",
+      type: "aircraft",
+      lat: 50.1,
+      lon: 30.2,
+      heading: 180,
+      speed: 210,
+      altitude: 8000,
+      timestamp: now,
+      source: "adsb.lol",
+      confidence: 0.96,
+      meta: { source_id: "adsb.lol", model: "BOEING C-17", callsign: "RCH101" }
+    };
+
+    trackManager.ingest(validObs, now);
+    const diag = trackManager.getDiagnosticReport();
+    expect(diag).not.toBeNull();
+    expect(diag?.hitsCount).toBeGreaterThanOrEqual(1);
+  });
 });

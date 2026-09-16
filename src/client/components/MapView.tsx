@@ -1964,20 +1964,33 @@ export const MapView = ({
     }
   }, [packets, filters, impacts]);
 
-  // 6. Synchronized Canvas overlay render loop (locked 1:1 with MapLibre camera)
+  // 6. Synchronized Canvas overlay render loop (locked 1:1 with MapLibre camera, event-driven with idle sleep)
   useEffect(() => {
-    let animId: number;
+    let animId: number | null = null;
+    let idleHeartbeatTimer: any = null;
     let lastAudioCheck = 0;
     let cachedCtx: CanvasRenderingContext2D | null = null;
+    let isLoopRunning = false;
+    let settleFramesLeft = 0;
 
-    const render = (_time = performance.now(), _force = false) => {
-      animId = requestAnimationFrame((t) => render(t, false));
+    const requestRender = () => {
+      settleFramesLeft = 3; // Ensure smooth 3-frame settle on updates
+      if (!isLoopRunning) {
+        isLoopRunning = true;
+        animId = requestAnimationFrame((t) => render(t));
+      }
+    };
+
+    renderRef.current = requestRender;
+
+    const render = (_time = performance.now()) => {
+      animId = null;
 
       if (typeof document !== "undefined" && document.hidden) {
+        isLoopRunning = false;
         return;
       }
 
-      renderRef.current = () => render(performance.now(), true);
       const map = mapRef.current;
       const canvas = canvasRef.current;
       const container = mapContainerRef.current;
@@ -1989,7 +2002,10 @@ export const MapView = ({
         const ratio = Math.min(window.devicePixelRatio || 1, tierCfg.maxDpr);
         const width = container.clientWidth;
         const height = container.clientHeight;
-        if (width <= 0 || height <= 0) return;
+        if (width <= 0 || height <= 0) {
+          isLoopRunning = false;
+          return;
+        }
 
         const targetW = Math.round(width * ratio);
         const targetH = Math.round(height * ratio);
@@ -2005,6 +2021,9 @@ export const MapView = ({
         // FPS throttling for LOW performance tier (~30 fps)
         const delta = now - lastFrameTimeRef.current;
         if (performanceTierRef.current === "LOW" && delta < tierCfg.frameBudgetMs) {
+          if (isLoopRunning) {
+            animId = requestAnimationFrame((t) => render(t));
+          }
           return;
         }
         lastFrameTimeRef.current = now;
@@ -2132,20 +2151,19 @@ export const MapView = ({
         let visiblePackets: TrackPacket[];
         try {
           const bounds = map.getBounds();
-          const pad = 0.5; // ~50 km geo padding
-          visiblePackets = trackStore.searchViewport(
-            bounds.getWest() - pad,
-            bounds.getSouth() - pad,
-            bounds.getEast() + pad,
-            bounds.getNorth() + pad
-          );
-          if (visiblePackets.length === 0 && currentPackets.length > 0) {
-            visiblePackets = spatialIndexRef.current.search({
-              minX: bounds.getWest() - pad,
-              minY: bounds.getSouth() - pad,
-              maxX: bounds.getEast() + pad,
-              maxY: bounds.getNorth() + pad
-            });
+          const pad = 0.8; // ~80 km geo padding
+          if (zoom < 7.0 || (bounds.getEast() - bounds.getWest()) > 15) {
+            visiblePackets = currentPackets;
+          } else {
+            visiblePackets = trackStore.searchViewport(
+              bounds.getWest() - pad,
+              bounds.getSouth() - pad,
+              bounds.getEast() + pad,
+              bounds.getNorth() + pad
+            );
+            if (visiblePackets.length === 0 && currentPackets.length > 0) {
+              visiblePackets = currentPackets;
+            }
           }
         } catch {
           visiblePackets = currentPackets;
@@ -2321,6 +2339,8 @@ export const MapView = ({
           });
         }
 
+        trackStore.recordRenderFrame(renderItems.length, Math.max(0, currentPackets.length - renderItems.length));
+
         // Pass 2: Subtle fading historical motion trail (only selected target or close zoom >= 9.5, disabled on LOW tier)
         if (!isLowTier) {
           for (const item of renderItems) {
@@ -2483,13 +2503,41 @@ export const MapView = ({
           }
           drawSatelliteReconLayer(ctx, map, cachedSatellitesRef.current, now, width, height);
         }
+
+        // 4. Adaptive render scheduler:
+        // If map is moving/zooming/rotating/pitching, or if there are moving targets (speed > 2), or settle frames left:
+        // continue the rAF loop at adaptive tier rate.
+        // Otherwise (stationary map and stationary/no targets), pause the rAF loop completely! (0% CPU/GPU idle load)
+        const isMapMoving = map.isMoving() || map.isZooming() || map.isRotating();
+        const hasMovingTargets = currentPackets.some(p => p[5] > 2);
+
+        if (isMapMoving || hasMovingTargets || settleFramesLeft > 0) {
+          if (settleFramesLeft > 0) settleFramesLeft--;
+          isLoopRunning = true;
+          animId = requestAnimationFrame((t) => render(t));
+        } else {
+          isLoopRunning = false;
+        }
+      } else {
+        isLoopRunning = false;
       }
     };
 
-    animId = requestAnimationFrame(render);
+    // Kick off initial frame
+    requestRender();
+
+    // 1 Hz idle heartbeat: smoothly updates solar elevation & clock without waking heavy GPU loop
+    idleHeartbeatTimer = setInterval(() => {
+      if (!isLoopRunning) {
+        requestRender();
+      }
+    }, 1000);
 
     return () => {
-      cancelAnimationFrame(animId);
+      if (animId !== null) cancelAnimationFrame(animId);
+      if (idleHeartbeatTimer) clearInterval(idleHeartbeatTimer);
+      isLoopRunning = false;
+      renderRef.current = null;
     };
   }, []);
 

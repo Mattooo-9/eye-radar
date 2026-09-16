@@ -34,6 +34,23 @@ export interface ProductionTelemetryReport {
   ewInterferenceEvents: number;
 }
 
+export interface PipelineDiagnosticsReport {
+  timestamp: number;
+  receivedObservations: number;
+  acceptedObservations: number;
+  rejectedObservations: number;
+  rejectedReasons: Record<string, number>;
+  activeTracks: number;
+  tracksSerialized: number;
+  tracksSent: number;
+  clientTelemetry?: {
+    tracksDecoded: number;
+    tracksStored: number;
+    tracksVisible: number;
+    tracksCulled: number;
+  };
+}
+
 function calculatePercentile(samples: number[], p: number): number {
   if (samples.length === 0) return 0;
   const sorted = [...samples].sort((a, b) => a - b);
@@ -50,6 +67,66 @@ export class ProductionObservability {
   private anomaliesCount = 0;
   private ewEventsCount = 0;
   private agreementSamples: boolean[] = [];
+  private receivedObservationsCount = 0;
+  private acceptedObservationsCount = 0;
+  private rejectedObservationsCount = 0;
+  private rejectedReasons = new Map<string, number>();
+  private tracksSerializedCount = 0;
+  private tracksSentCount = 0;
+  private clientTelemetryData?: {
+    tracksDecoded: number;
+    tracksStored: number;
+    tracksVisible: number;
+    tracksCulled: number;
+  };
+
+  recordObservationReceived(count = 1): void {
+    this.receivedObservationsCount += count;
+  }
+
+  recordObservationAccepted(count = 1): void {
+    this.acceptedObservationsCount += count;
+  }
+
+  recordObservationRejected(reason: string, count = 1): void {
+    this.rejectedObservationsCount += count;
+    this.rejectedReasons.set(reason, (this.rejectedReasons.get(reason) || 0) + count);
+  }
+
+  recordTracksSerialized(count: number): void {
+    this.tracksSerializedCount = count;
+  }
+
+  recordTracksSent(count: number): void {
+    this.tracksSentCount += count;
+  }
+
+  recordClientTelemetry(data: {
+    tracksDecoded: number;
+    tracksStored: number;
+    tracksVisible: number;
+    tracksCulled: number;
+  }): void {
+    this.clientTelemetryData = data;
+  }
+
+  getPipelineDiagnostics(activeTracksCount = 0): PipelineDiagnosticsReport {
+    const reasons: Record<string, number> = {};
+    for (const [k, v] of this.rejectedReasons.entries()) {
+      reasons[k] = v;
+    }
+    return {
+      timestamp: Date.now(),
+      receivedObservations: this.receivedObservationsCount,
+      acceptedObservations: this.acceptedObservationsCount,
+      rejectedObservations: this.rejectedObservationsCount,
+      rejectedReasons: reasons,
+      activeTracks: activeTracksCount,
+      tracksSerialized: this.tracksSerializedCount,
+      tracksSent: this.tracksSentCount,
+      clientTelemetry: this.clientTelemetryData
+    };
+  }
 
   /**
    * Generates a unique, traceable ID for an incoming packet

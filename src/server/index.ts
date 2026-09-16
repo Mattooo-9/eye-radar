@@ -473,6 +473,19 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && url.pathname === "/api/diagnostics/pipeline") {
+    const pipeline = productionObservability.getPipelineDiagnostics(
+      trackManager.snapshot(simulationEnabled).length
+    );
+    const audit = healthTracker.getAuditReport(trackManager.snapshot(simulationEnabled));
+    json(res, 200, {
+      ...pipeline,
+      sourcesSummary: audit.summary,
+      timeCalibration: timeCalibrationService.getAllMetrics()
+    });
+    return;
+  }
+
   if ((req.method === "GET" || req.method === "POST") && url.pathname === "/api/cron/cleanup-messages") {
     const result = await messageDeletionService.processPendingDeletions();
     json(res, 200, {
@@ -875,7 +888,10 @@ setInterval(async () => {
       for (const f of flights) {
         trackManager.ingest(f);
       }
-      healthTracker.recordSuccess("airplanes.live", Date.now() - t0);
+      if (flights.length > 0) {
+        healthTracker.recordSuccess("airplanes.live", Date.now() - t0, flights.length);
+        sourceRegistry.validateAndActivate("airplanes.live", flights, Date.now() - t0);
+      }
     } catch (err) {
       healthTracker.recordError("airplanes.live", err instanceof Error ? err : String(err));
     }
@@ -887,7 +903,10 @@ setInterval(async () => {
       for (const fo of flightObs) {
         trackManager.ingest(toObservation(fo));
       }
-      healthTracker.recordSuccess("adsb.lol", Date.now() - tAdsb);
+      if (flightObs.length > 0) {
+        healthTracker.recordSuccess("adsb.lol", Date.now() - tAdsb, flightObs.length);
+        sourceRegistry.validateAndActivate("adsb.lol", flightObs, Date.now() - tAdsb);
+      }
     } catch (err) {
       healthTracker.recordError("adsb.lol", err instanceof Error ? err : String(err));
     }
@@ -900,6 +919,7 @@ setInterval(async () => {
       }
       if (openSkyObs.length > 0) {
         healthTracker.recordSuccess("opensky.live", Date.now() - tOpenSky, openSkyObs.length);
+        sourceRegistry.validateAndActivate("opensky.live", openSkyObs, Date.now() - tOpenSky);
       }
     } catch (err) {
       healthTracker.recordError("opensky.live", err instanceof Error ? err : String(err));
@@ -1016,12 +1036,10 @@ setInterval(async () => {
 
   const delta = trackManager.getDeltaPacket(simulationEnabled, cycleCounter);
   const livePositional = sourceRegistry.hasLivePositionalSource();
-  if (!livePositional && !simulationEnabled) {
-    // No confirmed positional sources in strict production mode, send empty track list
-    hub.broadcastTracks([], delta.seq, delta.binaryBuffer, delta.removedIds);
-  } else {
-    hub.broadcastTracks(delta.tracks, delta.seq, delta.binaryBuffer, delta.removedIds);
-  }
+  const tracksToBroadcast = (delta.tracks.length > 0 || livePositional || simulationEnabled) ? delta.tracks : [];
+  hub.broadcastTracks(tracksToBroadcast, delta.seq, delta.binaryBuffer, delta.removedIds);
+  productionObservability.recordTracksSerialized(delta.tracks.length);
+  productionObservability.recordTracksSent(tracksToBroadcast.length);
 
   if (cycleCounter % 3 === 0) {
     hub.broadcastImpacts(impactManager.getRecentEvents());

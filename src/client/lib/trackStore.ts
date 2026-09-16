@@ -200,6 +200,33 @@ export class MutableTrackStore {
     };
   }
 
+  private clientMetrics = {
+    tracksDecoded: 0,
+    tracksStored: 0,
+    tracksVisible: 0,
+    tracksCulled: 0
+  };
+
+  recordDecoded(count: number): void {
+    this.clientMetrics.tracksDecoded += count;
+    this.clientMetrics.tracksStored = this.tracks.size;
+  }
+
+  recordRenderFrame(visible: number, culled: number): void {
+    this.clientMetrics.tracksStored = this.tracks.size;
+    this.clientMetrics.tracksVisible = visible;
+    this.clientMetrics.tracksCulled = culled;
+  }
+
+  getClientMetrics() {
+    return {
+      tracksDecoded: this.clientMetrics.tracksDecoded,
+      tracksStored: this.tracks.size,
+      tracksVisible: this.clientMetrics.tracksVisible,
+      tracksCulled: this.clientMetrics.tracksCulled
+    };
+  }
+
   private scheduleNotify(): void {
     const now = performance.now();
     // Throttle UI subscriber notifications to once per 800ms to avoid React re-render thrashing
@@ -221,3 +248,6 @@ export class MutableTrackStore {
 }
 
 export const trackStore = new MutableTrackStore();
+if (typeof window !== "undefined") {
+  (window as any).__eyeRadarPipelineDiagnostics = () => trackStore.getClientMetrics();
+}

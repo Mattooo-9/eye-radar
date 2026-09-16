@@ -9,6 +9,7 @@ import { TrackCorrelator } from "./trackCorrelator.js";
 import { encodeBinaryDelta, encodeBinarySnapshot } from "../../common/binaryCodec.js";
 import { timeCalibrationService } from "./timeCalibration.js";
 import { UKRAINE_CITIES } from "../sources/ukraineGeo.js";
+import { productionObservability } from "./observability.js";
 
 export function findNearestOblast(lat: number, lon: number): { nameUk: string; oblast: string } {
   let minD = Infinity;
@@ -180,8 +181,11 @@ export class TrackManager {
   }
 
   ingest(observation: Observation, now = Date.now()): TrackState | null {
+    productionObservability.recordObservationReceived(1);
+
     // Evidence Gating: ensure observation evidence types are allowed by source capabilities
-    const srcReg = this.sourceRegistry.get(observation.source);
+    const srcReg = this.sourceRegistry.get(observation.source) ||
+      (typeof observation.meta?.source_id === "string" ? this.sourceRegistry.get(observation.meta.source_id as string) : undefined);
     if (srcReg?.capability?.evidenceTypes?.length) {
       const evidenceList = typeof observation.meta?.evidence === "string"
         ? [observation.meta.evidence]
@@ -190,6 +194,7 @@ export class TrackManager {
         : [];
       const disallowed = evidenceList.filter(e => !srcReg.capability.evidenceTypes.includes(e));
       if (disallowed.length) {
+        productionObservability.recordObservationRejected("disallowed_evidence", 1);
         return null;
       }
     }
@@ -207,12 +212,14 @@ export class TrackManager {
 
     // Drop outdated observations (older than 25s) to prevent ghost resurrection
     if (now - observation.timestamp > 25_000) {
+      productionObservability.recordObservationRejected("outdated_timestamp", 1);
       return this.tracks.get(observation.id)?.state ?? null;
     }
 
     // Pre-fusion observation deduplication
     const fingerprint = `${observation.source}:${observation.id}:${observation.timestamp}`;
     if (this.recentObsFingerprints.has(fingerprint)) {
+      productionObservability.recordObservationRejected("deduplicated", 1);
       return this.tracks.get(observation.id)?.state ?? null;
     }
     if (this.recentObsFingerprints.size >= 3000) {
@@ -221,11 +228,11 @@ export class TrackManager {
     this.recentObsFingerprints.add(fingerprint);
 
     // Capability Matrix Gating: Each source can ONLY influence its authorized capabilities
-    const regSource = this.sourceRegistry?.get(observation.source) ||
-      (typeof observation.meta?.source_id === "string" ? this.sourceRegistry?.get(observation.meta.source_id as string) : undefined);
+    const regSource = srcReg;
     if (regSource) {
       // If source cannot provide position AND cannot create track, reject aerial track creation
       if (!regSource.capability.canProvidePosition && !regSource.capability.canCreateTrack) {
+        productionObservability.recordObservationRejected("capability_not_positional", 1);
         return null;
       }
       if (!regSource.capability.canProvideAltitude) {
@@ -239,7 +246,7 @@ export class TrackManager {
       }
     }
 
-    // Drop civilian commercial passenger airliners and foreign corridor clutter
+    // Real civilian passenger aircraft or corridor flights: retain in positional track table as AIRCRAFT / UNKNOWN
     if (observation.type === "aircraft") {
       const callsign = (typeof observation.meta?.callsign === "string" ? observation.meta.callsign : observation.id).toUpperCase();
       const model = (typeof observation.meta?.model === "string" ? observation.meta.model : "").toUpperCase();
@@ -252,9 +259,14 @@ export class TrackManager {
         model.includes("A32") ||
         /^(RYR|WZZ|WUK|LOT|DLH|KLM|AFR|BAW|THY|AUA|SXS|PGT|EZY|BTI|ENT|TOM|FDB|ETH|ROT|CAI|ISR|PIA|FDX|UPS|BOX|CGF|MNB|UTN|LBT|NMA|GJT|ASL|EXS|CCA|SIA|RYS|NSZ)/.test(callsign);
       if (isCivilAirliner) {
-        return null;
+        observation.threatEvidence = [];
+        if (!observation.meta) observation.meta = {};
+        observation.meta.threatEvidence = [];
+        observation.meta.threatLevel = "low";
       }
     }
+
+    productionObservability.recordObservationAccepted(1);
 
     const activeList = this.snapshot();
     const correlation = this.correlator.findBestMatch(observation, activeList);
@@ -363,6 +375,7 @@ export class TrackManager {
         covLat: imm.covLat,
         covLon: imm.covLon,
         uncertaintyRadius: imm.uncertaintyRadiusMeters,
+        threatLevel: (observation.meta?.threatLevel as ThreatLevel) || (classification.resolvedType === "aircraft" ? "low" : undefined),
         lastUpdated: now,
         model: classification.resolvedModel,
         alternativeType: classification.alternative?.type,
@@ -740,6 +753,11 @@ export class TrackManager {
   /**
    * Diagnostic lookup for a single track
    */
+  getDiagnosticReport(id?: string): TrackDiagnosticReport | null {
+    const targetId = id || Array.from(this.tracks.keys())[0];
+    return targetId ? this.getTrackDiagnostic(targetId) : null;
+  }
+
   getTrackDiagnostic(id: string): TrackDiagnosticReport | null {
     const entry = this.tracks.get(id);
     if (!entry) return null;

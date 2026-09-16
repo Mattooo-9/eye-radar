@@ -122,14 +122,10 @@ export class AirplanesLiveSource {
 
                 const flightCode = (a.flight ?? "").trim().replace(/\s+/g, "");
                 const callsign = flightCode || a.t || a.hex;
-
-                // Eliminate civilian passenger airliners
-                if (this.isCivilAirliner(callsign, a.desc, a.t)) {
-                  continue;
-                }
+                const isCivil = this.isCivilAirliner(callsign, a.desc, a.t);
 
                 const id = flightCode ? `adsb-${flightCode}` : `adsb-${a.hex}`;
-                const model = a.desc ?? a.t ?? "MIL_AIRCRAFT";
+                const model = a.desc ?? a.t ?? (isCivil ? "Civilian Aircraft" : "MIL_AIRCRAFT");
                 const speedMs = a.gs * 0.514444; // knots to m/s
                 const altM = a.alt_baro ? Math.round(a.alt_baro * 0.3048) : undefined;
                 const type: TrackType = this.isHelicopter(a.desc, a.t) ? "helicopter" : "aircraft";
@@ -143,9 +139,10 @@ export class AirplanesLiveSource {
                   speed: Number(speedMs.toFixed(1)),
                   altitude: altM,
                   timestamp: now,
-                  source: "sdr",
+                  source: "airplanes.live",
                   confidence: 0.95,
                   meta: {
+                    source_id: "airplanes.live",
                     callsign: callsign || a.hex,
                     model,
                     squawk: a.squawk ?? "none"
@@ -188,9 +185,9 @@ export class AirplanesLiveSource {
               lon !== null &&
               !onGround &&
               velocity !== null &&
-              velocity > 25 &&
-              !this.isCivilAirliner(callsign)
+              velocity > 25
             ) {
+              const isCivil = this.isCivilAirliner(callsign);
               obsMap.set(hex, {
                 id: `adsb-${hex}`,
                 type: "aircraft",
@@ -200,10 +197,12 @@ export class AirplanesLiveSource {
                 speed: Number(velocity.toFixed(1)),
                 altitude: alt !== null ? Math.round(alt) : undefined,
                 timestamp: now,
-                source: "sdr",
+                source: "airplanes.live",
                 confidence: 0.95,
                 meta: {
+                  source_id: "airplanes.live",
                   callsign: callsign || hex,
+                  model: isCivil ? "Civilian Aircraft" : "AIRCRAFT",
                   country: st[2]
                 }
               });
