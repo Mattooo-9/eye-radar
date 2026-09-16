@@ -197,23 +197,7 @@ export const App = () => {
       if (type === "munition" && !filters.munition) return false;
       if (type === "bomb" && filters.bomb === false) return false;
       if (type === "fpv" && filters.fpv === false) return false;
-      if (type === "aircraft") {
-        if (!filters.aircraft) return false;
-        const modelUpper = (p[11] || "").toUpperCase();
-        const callsignUpper = (p[12] || "").toUpperCase();
-        // Eliminate civilian passenger airliners & foreign commercial flights
-        if (
-          modelUpper.includes("BOEING") ||
-          modelUpper.includes("AIRBUS") ||
-          modelUpper.includes("CIVIL") ||
-          modelUpper.includes("EMBRAER") ||
-          modelUpper.includes("B73") ||
-          modelUpper.includes("A32") ||
-          /^(RYR|WZZ|WUK|LOT|DLH|KLM|AFR|BAW|THY|AUA|SXS|PGT|EZY|BTI|ENT|TOM|FDB|ETH|ROT|CAI|ISR|PIA|FDX|UPS|BOX|CGF|MNB|UTN|LBT|NMA|GJT|ASL|EXS|CCA|SIA|RYS|NSZ)/.test(callsignUpper)
-        ) {
-          return false;
-        }
-      }
+      if (type === "aircraft" && !filters.aircraft) return false;
       if (type === "helicopter" && filters.helicopter === false) return false;
 
       return true;
