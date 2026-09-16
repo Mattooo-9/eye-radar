@@ -192,9 +192,17 @@ export class TrackManager {
         : Array.isArray(observation.meta?.evidence)
         ? observation.meta.evidence
         : [];
-      const disallowed = evidenceList.filter(e => !srcReg.capability.evidenceTypes.includes(e));
-      if (disallowed.length) {
-        productionObservability.recordObservationRejected("disallowed_evidence", 1);
+      const disallowed = evidenceList.filter(e => {
+        return !srcReg.capability.evidenceTypes.some(allowed =>
+          e === allowed || e.startsWith(`${allowed}_`) || e.startsWith(allowed) || e.includes(allowed)
+        );
+      });
+      // If observation claims unauthorized combat/sensor threat evidence (e.g. pure ADS-B claiming acoustic/radar), reject
+      const hasDisallowedThreat = disallowed.some(d =>
+        d.startsWith("threat_") || d.startsWith("acoustic_") || d.startsWith("radar_") || d.startsWith("optical_")
+      );
+      if (hasDisallowedThreat) {
+        productionObservability.recordObservationRejected("disallowed_threat_evidence", 1);
         return null;
       }
     }

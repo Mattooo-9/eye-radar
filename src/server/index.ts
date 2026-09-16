@@ -84,7 +84,7 @@ sourceRegistry.register(
     canProvideAltitude: true,
     canProvideSpeed: true,
     evidenceFamily: "adsb_mlat",
-    evidenceTypes: ["adsb", "mlat"],
+    evidenceTypes: ["adsb", "mlat", "hex", "squawk", "sensor", "direct_adsb"],
   }
 );
 
@@ -101,7 +101,7 @@ sourceRegistry.register(
     canProvideAltitude: true,
     canProvideSpeed: true,
     evidenceFamily: "adsb_mlat",
-    evidenceTypes: ["adsb", "mlat"],
+    evidenceTypes: ["adsb", "mlat", "hex", "squawk", "sensor", "direct_adsb"],
   }
 );
 
@@ -118,7 +118,7 @@ sourceRegistry.register(
     canProvideAltitude: true,
     canProvideSpeed: true,
     evidenceFamily: "adsb_mlat",
-    evidenceTypes: ["adsb", "mlat"],
+    evidenceTypes: ["adsb", "mlat", "hex", "squawk", "sensor", "direct_adsb"],
   }
 );
 
