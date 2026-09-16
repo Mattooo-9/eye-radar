@@ -18,10 +18,20 @@ type IncomingClientMessage =
   | [kind: 8, lastSeq: number] // resume / reconcile request
   | [kind: 9, clientTimestamp: number]; // ping
 
+interface CachedDelta {
+  seq: number;
+  timestamp: number;
+  binaryBuffer: Uint8Array;
+  tracks: CompactTrackPacket[];
+  removedIds: string[];
+}
+
 export class RadarHub {
   private readonly sessions = new Map<WebSocket, ExtendedSession>();
   private currentSeq = 0;
   private heartbeatTimer?: NodeJS.Timeout;
+  private readonly deltaHistory: CachedDelta[] = [];
+  private readonly maxDeltaHistory = 120;
 
   private initialSnapshotProvider?: () => CompactTrackPacket[];
   private binarySnapshotProvider?: () => Uint8Array;
@@ -103,6 +113,19 @@ export class RadarHub {
   ): void {
     const now = Date.now();
     this.currentSeq = seq ?? (this.currentSeq + 1);
+
+    if (binaryBuffer) {
+      this.deltaHistory.push({
+        seq: this.currentSeq,
+        timestamp: now,
+        binaryBuffer,
+        tracks: packets,
+        removedIds
+      });
+      if (this.deltaHistory.length > this.maxDeltaHistory) {
+        this.deltaHistory.shift();
+      }
+    }
 
     for (const [socket, session] of this.sessions.entries()) {
       if (socket.readyState !== socket.OPEN) {
@@ -237,12 +260,40 @@ export class RadarHub {
 
       // Kind 8: Client Reconnect Resume / Resync request
       if (kind === 8) {
-        const clientLastSeq = parsed[1];
+        const clientLastSeq = Number(parsed[1] || 0);
         session.lastSeenSeq = clientLastSeq;
         session.pendingCongestedTracks?.clear();
         session.pendingCongestedRemoved?.clear();
         session.lastKnownState?.clear();
 
+        // 1. Reconciliation: If client recently disconnected and gap is within history window
+        if (clientLastSeq > 0 && this.currentSeq > clientLastSeq) {
+          const missedDeltas = this.deltaHistory.filter((d) => d.seq > clientLastSeq);
+          if (
+            missedDeltas.length > 0 &&
+            missedDeltas[0].seq === clientLastSeq + 1 &&
+            missedDeltas[missedDeltas.length - 1].seq === this.currentSeq
+          ) {
+            // Replay missed contiguous deltas in exact chronological order
+            for (const d of missedDeltas) {
+              if (session.binaryMode && d.binaryBuffer) {
+                socket.send(d.binaryBuffer, { binary: true });
+              } else {
+                socket.send(
+                  JSON.stringify([
+                    0,
+                    d.timestamp,
+                    applyDynamicJitter(d.tracks, session.location),
+                    d.seq
+                  ])
+                );
+              }
+            }
+            return;
+          }
+        }
+
+        // 2. Fallback: Full snapshot if gap is too wide (> 120 packets) or fresh connect
         if (this.binarySnapshotProvider && session.binaryMode) {
           try {
             const bin = this.binarySnapshotProvider();

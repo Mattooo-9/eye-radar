@@ -27,6 +27,10 @@ import { sourceRegistry } from "./sources/SourceRegistry.js";
 import { earthObservationService } from "./sources/earthObservation.js";
 import { backendAiEngine } from "./core/backendAiEngine.js";
 import { messageDeletionService } from "./bot/messageDeletionService.js";
+import { pingDb } from "./db/pool.js";
+import { initSchema } from "./db/schema.js";
+import { checkpointService } from "./db/checkpointService.js";
+import { watchdogService } from "./db/watchdogService.js";
 
 
 
@@ -358,8 +362,14 @@ const server = createServer(async (req, res) => {
     const liveContextual = sourceRegistry.getLiveContextualSources().map(s => s.name);
     const testSources = sourceRegistry.getTestSources().map(s => s.name);
     const offlineSources = sourceRegistry.getOfflineSources().map(s => s.name);
+    const dbHealth = await pingDb();
+    const watchdogHealth = watchdogService.getHealthStatus();
+
     json(res, 200, {
       ok: true,
+      database: dbHealth,
+      watchdog: watchdogHealth,
+      sequenceId: trackManager.getSequence(),
       uptime: process.uptime(),
       tracks: trackManager.snapshot(simulationEnabled).length,
       simulator: simulationEnabled,
@@ -880,6 +890,33 @@ setInterval(async () => {
 }, 1_000).unref();
 
 const main = async (): Promise<void> => {
+  // 1. Initialize Postgres schema migrations
+  await initSchema();
+
+  // 2. Restore latest track checkpoint from Neon Postgres / local backup
+  try {
+    const checkpoint = await checkpointService.loadLatestCheckpoint();
+    if (checkpoint && checkpoint.tracks && checkpoint.tracks.length > 0) {
+      trackManager.restoreFromCheckpoint(checkpoint);
+    }
+  } catch (err) {
+    console.warn("⚠️ Could not load initial checkpoint:", err);
+  }
+
+  // 3. Start distributed watchdog service
+  watchdogService.start(() => ({
+    activeTracks: trackManager.snapshot(simulationEnabled).length,
+    sequenceId: trackManager.getSequence()
+  }));
+
+  // 4. Periodic checkpoint commit loop every 5 seconds
+  setInterval(() => {
+    void checkpointService.saveCheckpoint(
+      trackManager.getSequence(),
+      trackManager.snapshot(simulationEnabled)
+    );
+  }, 5_000).unref();
+
   server.listen(env.port, env.host, async () => {
     console.log(`📡 Eye Radar HTTP/WS listening on http://${env.host}:${env.port}`);
   });
@@ -890,6 +927,28 @@ const main = async (): Promise<void> => {
 
   await botManager.launch();
 };
+
+const handleGracefulShutdown = async (signal: string) => {
+  console.log(`🛑 Received ${signal}, initiating graceful shutdown...`);
+  try {
+    await checkpointService.saveCheckpoint(
+      trackManager.getSequence(),
+      trackManager.snapshot(simulationEnabled)
+    );
+    console.log("💾 Final checkpoint successfully saved to Neon Postgres.");
+  } catch (err) {
+    console.warn("Could not save final checkpoint on shutdown:", err);
+  }
+  watchdogService.stop();
+  server.close(() => {
+    console.log("Server stopped cleanly.");
+    process.exit(0);
+  });
+  setTimeout(() => process.exit(0), 4000).unref();
+};
+
+process.on("SIGTERM", () => void handleGracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => void handleGracefulShutdown("SIGINT"));
 
 main().catch((error) => {
   console.error("Fatal error:", error);

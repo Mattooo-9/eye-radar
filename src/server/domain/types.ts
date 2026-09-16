@@ -200,5 +200,6 @@ export interface UserAlertPreference {
   lastNotified?: number;
   cityName?: string;
   lastAlertState?: boolean;
+  soundEnabled?: boolean;
 }
 

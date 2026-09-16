@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { dirname, resolve } from "node:path";
 import pg from "pg";
 import { env } from "../config/env.js";
+import { getPool } from "../db/pool.js";
 
 const { Pool } = pg;
 
@@ -72,7 +73,8 @@ export class MessageDeletionService {
     }
 
     try {
-      this.pool = new Pool({
+      const sharedPool = getPool();
+      this.pool = sharedPool || new Pool({
         connectionString,
         ssl: connectionString.includes("localhost") ? false : { rejectUnauthorized: false },
         max: 5,
@@ -193,7 +195,8 @@ export class MessageDeletionService {
              FROM bot_message_deletion_queue
              WHERE delete_at <= $1 AND status = 'pending'
              ORDER BY delete_at ASC
-             LIMIT 50`,
+             LIMIT 50
+             FOR UPDATE SKIP LOCKED`,
             [now]
           );
           for (const row of res.rows) {

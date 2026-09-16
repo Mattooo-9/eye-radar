@@ -37,9 +37,58 @@ export class TrackManager {
     return this.tracks.get(id)?.state;
   }
 
+  getSequence(): number {
+    return this.seqNumber;
+  }
+
+  setSequence(seq: number): void {
+    this.seqNumber = Math.max(this.seqNumber, seq);
+  }
+
   getNextSequence(): number {
     this.seqNumber += 1;
     return this.seqNumber;
+  }
+
+  restoreFromCheckpoint(checkpoint: { sequenceId: number; tracks: TrackState[]; timestamp?: number }): number {
+    this.seqNumber = Math.max(this.seqNumber, checkpoint.sequenceId || 0);
+    const baseTime = checkpoint.timestamp || Date.now();
+    let restoredCount = 0;
+
+    for (const t of checkpoint.tracks) {
+      if (!t.id || typeof t.lat !== "number" || typeof t.lon !== "number") continue;
+      const filter = new ImmFilter2D();
+      filter.update(t.timestamp || baseTime, t.lat, t.lon);
+
+      this.tracks.set(t.id, {
+        state: t,
+        filter,
+        lastMeasurementTime: t.timestamp || baseTime,
+        firstSeen: (t as any).firstSeen || t.timestamp || baseTime,
+        hitsCount: (t as any).hitsCount || 1
+      });
+
+      const packet: CompactTrackPacket = [
+        t.id,
+        t.type,
+        t.lat,
+        t.lon,
+        t.heading,
+        t.speed,
+        t.timestamp,
+        t.confidence,
+        t.uncertaintyRadius,
+        t.threatLevel,
+        t.altitude,
+        t.model,
+        t.callsign
+      ];
+      this.lastPublishedState.set(t.id, packet);
+      restoredCount++;
+    }
+
+    console.log(`🚀 TrackManager: restored ${restoredCount} tracks at sequence ${this.seqNumber} from checkpoint`);
+    return restoredCount;
   }
 
   ingest(observation: Observation, now = Date.now()): TrackState | null {
