@@ -2,7 +2,6 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import pg from "pg";
-import { env } from "../config/env.js";
 import { getPool } from "../db/pool.js";
 
 const { Pool } = pg;
@@ -27,7 +26,10 @@ export class MessageDeletionService {
   private isProcessing = false;
 
   constructor(customStoragePath?: string) {
-    this.storagePath = customStoragePath || resolve(process.cwd(), "data", "message_deletion_queue.json");
+    const isVercel = Boolean(process.env.VERCEL);
+    this.storagePath = customStoragePath || (isVercel
+      ? resolve("/tmp", "message_deletion_queue.json")
+      : resolve(process.cwd(), "data", "message_deletion_queue.json"));
     this.initLocalStore();
     this.initPostgres();
   }
@@ -233,7 +235,7 @@ export class MessageDeletionService {
             await tg.deleteMessage(job.chatId, job.messageId);
             success = true;
           } else {
-            const token = env.botToken;
+            const token = process.env.BOT_TOKEN;
             if (token) {
               const res = await fetch(`https://api.telegram.org/bot${token}/deleteMessage`, {
                 method: "POST",

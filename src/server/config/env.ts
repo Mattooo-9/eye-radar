@@ -2,9 +2,12 @@ import { config } from "dotenv";
 
 config();
 
-const required = (name: string, fallback?: string): string => {
+const required = (name: string, fallback = ""): string => {
   const value = process.env[name] ?? fallback;
   if (!value) {
+    if (process.env.NODE_ENV === "test" || process.env.VERCEL) {
+      return fallback;
+    }
     throw new Error(`Missing required env variable: ${name}`);
   }
 

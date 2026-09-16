@@ -4,7 +4,7 @@ import { env } from "../config/env.js";
 import type { UserAlertPreference } from "../domain/types.js";
 import { getPool, query } from "../db/pool.js";
 
-const DATA_DIR = resolve(process.cwd(), "data");
+const DATA_DIR = process.env.VERCEL ? resolve("/tmp") : resolve(process.cwd(), "data");
 const STORAGE_FILE = resolve(DATA_DIR, "subscriptions.json");
 const UPSTASH_KEY = "eye_radar_subscriptions";
 
@@ -18,8 +18,12 @@ export class StorageManager {
   }
 
   private init(): void {
-    if (!existsSync(DATA_DIR)) {
-      mkdirSync(DATA_DIR, { recursive: true });
+    try {
+      if (!existsSync(DATA_DIR)) {
+        mkdirSync(DATA_DIR, { recursive: true });
+      }
+    } catch {
+      // Ignored in read-only / ephemeral environments
     }
 
     if (existsSync(STORAGE_FILE)) {

@@ -28,7 +28,10 @@ export class CheckpointService {
   private lastSavedSeq = 0;
 
   constructor(customBackupPath?: string) {
-    this.localBackupPath = customBackupPath || resolve(process.cwd(), "data", "latest_checkpoint.json");
+    const isVercel = Boolean(process.env.VERCEL);
+    this.localBackupPath = customBackupPath || (isVercel
+      ? resolve("/tmp", "latest_checkpoint.json")
+      : resolve(process.cwd(), "data", "latest_checkpoint.json"));
   }
 
   /**
