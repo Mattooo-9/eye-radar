@@ -3,6 +3,12 @@
   "buildCommand": "npm run build:client",
   "outputDirectory": "dist/client",
   "framework": "vite",
+  "crons": [
+    {
+      "path": "/api/cron/cleanup-messages",
+      "schedule": "* * * * *"
+    }
+  ],
   "rewrites": [
     {
       "source": "/api/(.*)",

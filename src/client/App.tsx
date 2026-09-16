@@ -18,6 +18,8 @@ import { haversineMeters } from "./lib/geo";
 import { soundEngine } from "./lib/sound";
 import { useTrustedLocation } from "./location/useTrustedLocation";
 import { LocationSetupModal, type ConfirmedLocation } from "./components/LocationSetupModal";
+import { detectHardwareTier } from "./lib/hardwareBenchmark.js";
+import { trackStore } from "./lib/trackStore.js";
 
 const getUserId = (): string => {
   const tgUserId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
@@ -75,9 +77,9 @@ export const App = () => {
   const [alertsModalOpen, setAlertsModalOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [timelineOffsetSec, setTimelineOffsetSec] = useState<number>(0);
-  const [performanceTier, setPerformanceTier] = useState<PerformanceTier>("NORMAL");
+  const [performanceTier, setPerformanceTier] = useState<PerformanceTier>(() => detectHardwareTier());
 
-  // Load saved performance tier from localStorage
+  // Load saved performance tier from localStorage if present
   useEffect(() => {
     try {
       const saved = localStorage.getItem("performanceTier");
@@ -87,23 +89,13 @@ export const App = () => {
     } catch {}
   }, []);
 
-  // Persist tier changes
+  // Persist tier changes and sync with trackStore
   useEffect(() => {
     try {
       localStorage.setItem("performanceTier", performanceTier);
     } catch {}
+    trackStore.setTier(performanceTier);
   }, [performanceTier]);
-
-  // Auto-detect lower-end hardware (phones with <= 4 logical cores) for 30 FPS throttle
-  useEffect(() => {
-    try {
-      if (typeof navigator !== "undefined" && typeof navigator.hardwareConcurrency === "number") {
-        if (navigator.hardwareConcurrency < 4) {
-          setPerformanceTier("LOW");
-        }
-      }
-    } catch {}
-  }, []);
 
   const handleSelectOblastFromAlert = (oblastName: string) => {
     const clean = oblastName.toLowerCase().replace("область", "").replace("обл.", "").trim();

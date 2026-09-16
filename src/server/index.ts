@@ -26,6 +26,7 @@ import { impactManager } from "./core/impactManager.js";
 import { sourceRegistry } from "./sources/SourceRegistry.js";
 import { earthObservationService } from "./sources/earthObservation.js";
 import { backendAiEngine } from "./core/backendAiEngine.js";
+import { messageDeletionService } from "./bot/messageDeletionService.js";
 
 
 
@@ -378,6 +379,18 @@ const server = createServer(async (req, res) => {
   if (req.method === "GET" && url.pathname === "/api/audit") {
     const audit = healthTracker.getAuditReport(trackManager.snapshot(simulationEnabled));
     json(res, 200, audit);
+    return;
+  }
+
+  if ((req.method === "GET" || req.method === "POST") && url.pathname === "/api/cron/cleanup-messages") {
+    const result = await messageDeletionService.processPendingDeletions();
+    json(res, 200, {
+      ok: true,
+      deleted: result.deleted,
+      errors: result.errors,
+      queueSize: messageDeletionService.getQueueSize(),
+      timestamp: Date.now()
+    });
     return;
   }
 

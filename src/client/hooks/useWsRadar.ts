@@ -7,6 +7,7 @@ import {
   PROTOCOL_VERSION
 } from "../../common/binaryCodec.js";
 import type { CompactTrackPacket } from "../../server/domain/types.js";
+import { trackStore } from "../lib/trackStore.js";
 
 export interface ImpactEvent {
   id: string;
@@ -95,10 +96,12 @@ export const useWsRadar = (
         });
         worker.onmessage = (e: MessageEvent) => {
           if (unmounted) return;
-          const { type, tracks, events, expectedSeq } = e.data;
+          const { type, tracks, removedIds, events, expectedSeq } = e.data;
           if (type === "TRACKS_UPDATED" && Array.isArray(tracks)) {
+            trackStore.ingestDelta(tracks as TrackPacket[], removedIds || []);
             setPackets(tracks as TrackPacket[]);
           } else if (type === "IMPACTS_UPDATED" && Array.isArray(events)) {
+            trackStore.setImpacts(events as ImpactEvent[]);
             setImpacts(events as ImpactEvent[]);
           } else if (type === "RESYNC_NEEDED") {
             if (socketRef.current?.readyState === WebSocket.OPEN) {
@@ -130,7 +133,9 @@ export const useWsRadar = (
         for (const rid of decoded.removedIds) {
           fallbackTracksMap.current.delete(rid);
         }
-        setPackets(Array.from(fallbackTracksMap.current.values()));
+        const activeTracks = Array.from(fallbackTracksMap.current.values());
+        trackStore.ingestDelta(decoded.tracks, decoded.removedIds);
+        setPackets(activeTracks);
       } catch (err) {
         console.error("Binary decode error (fallback)", err);
         if (socketRef.current?.readyState === WebSocket.OPEN) {
@@ -193,6 +198,7 @@ export const useWsRadar = (
               t.model,
               t.callsign
             ]);
+            trackStore.replaceSnapshot(converted);
             setPackets(converted);
           }
         }
@@ -200,6 +206,7 @@ export const useWsRadar = (
         if (impactsRes.ok) {
           const impactData = (await impactsRes.json()) as { events?: ImpactEvent[] };
           if (Array.isArray(impactData.events)) {
+            trackStore.setImpacts(impactData.events);
             setImpacts(impactData.events);
           }
         }
@@ -287,9 +294,12 @@ export const useWsRadar = (
                   for (const rid of decoded.removedIds) {
                     fallbackTracksMap.current.delete(rid);
                   }
-                  setPackets(Array.from(fallbackTracksMap.current.values()));
+                  const activeTracks = Array.from(fallbackTracksMap.current.values());
+                  trackStore.ingestDelta(decoded.tracks, decoded.removedIds);
+                  setPackets(activeTracks);
                 } else if (kind === 0x02) {
                   const decoded = decodeBinaryImpacts(buffer);
+                  trackStore.setImpacts(decoded.events);
                   setImpacts(decoded.events);
                 }
                 return;

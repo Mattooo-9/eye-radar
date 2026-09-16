@@ -13,6 +13,8 @@ import { drawNightCityLights } from "../lib/nightCityLights";
 import type { FilterState } from "./StatusPanel";
 import FpsCounter from "./FpsCounter";
 import { SpatialIndex } from "../lib/spatialIndex.js";
+import { getTierConfig } from "../lib/hardwareBenchmark.js";
+import { trackStore } from "../lib/trackStore.js";
 
 export type VisionMode = "satellite" | "nvg" | "flir" | "tactical";
 
@@ -1133,6 +1135,39 @@ interface PillRect {
 const doesPillOverlap = (r1: PillRect, r2: PillRect): boolean =>
   !(r1.x + r1.w < r2.x - 4 || r2.x + r2.w < r1.x - 4 || r1.y + r1.h < r2.y - 4 || r2.y + r2.h < r1.y - 4);
 
+const drawTacticalClusterNode = (
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  count: number,
+  color: string
+) => {
+  ctx.save();
+  const radius = Math.min(16, 10 + Math.log2(count) * 2.2);
+  ctx.fillStyle = "rgba(15, 23, 42, 0.9)";
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.6;
+
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  // Subtle outer radar pulse ring
+  ctx.lineWidth = 0.8;
+  ctx.strokeStyle = `${color}88`;
+  ctx.beginPath();
+  ctx.arc(x, y, radius + 3, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.fillStyle = "#f8fafc";
+  ctx.font = "bold 9px Inter, system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(String(count), x, y + 0.5);
+  ctx.restore();
+};
+
 const drawMilitaryCalloutPill = (
   ctx: CanvasRenderingContext2D,
   targetX: number,
@@ -1624,8 +1659,8 @@ export const MapView = ({
     const container = mapContainerRef.current;
     if (!canvas || !container) return;
 
-    const maxDpr = performanceTierRef.current === "LOW" ? 1.0 : 1.5;
-    const ratio = Math.min(window.devicePixelRatio || 1, maxDpr);
+    const tierCfg = getTierConfig(performanceTierRef.current || "NORMAL");
+    const ratio = Math.min(window.devicePixelRatio || 1, tierCfg.maxDpr);
     const w = container.clientWidth;
     const h = container.clientHeight;
     if (w <= 0 || h <= 0) return;
@@ -1931,6 +1966,10 @@ export const MapView = ({
     const render = (_time = performance.now(), _force = false) => {
       animId = requestAnimationFrame((t) => render(t, false));
 
+      if (typeof document !== "undefined" && document.hidden) {
+        return;
+      }
+
       renderRef.current = () => render(performance.now(), true);
       const map = mapRef.current;
       const canvas = canvasRef.current;
@@ -1939,8 +1978,8 @@ export const MapView = ({
       const ctx = cachedCtx;
 
       if (map && canvas && ctx && container) {
-        const maxDpr = performanceTierRef.current === "LOW" ? 1.0 : 1.5;
-        const ratio = Math.min(window.devicePixelRatio || 1, maxDpr);
+        const tierCfg = getTierConfig(performanceTierRef.current || "NORMAL");
+        const ratio = Math.min(window.devicePixelRatio || 1, tierCfg.maxDpr);
         const width = container.clientWidth;
         const height = container.clientHeight;
         if (width <= 0 || height <= 0) return;
@@ -1958,9 +1997,7 @@ export const MapView = ({
         const now = Date.now();
         // FPS throttling for LOW performance tier (~30 fps)
         const delta = now - lastFrameTimeRef.current;
-        if (performanceTierRef.current === "LOW" && delta < 33) {
-          // Skip this frame but keep the animation loop alive
-          requestAnimationFrame(render);
+        if (performanceTierRef.current === "LOW" && delta < tierCfg.frameBudgetMs) {
           return;
         }
         lastFrameTimeRef.current = now;
@@ -2008,7 +2045,7 @@ export const MapView = ({
           ctx.restore();
 
           // C. Living Night City Lights Illumination (Authentic soft NASA Black Marble glow)
-          if (elev < 0) {
+          if (elev < 0 && performanceTierRef.current !== "LOW") {
             const nightFactor = Math.min(1, Math.max(0, -elev / 10));
             drawNightCityLights(ctx, map, nightFactor, now, width, height);
           }
@@ -2089,12 +2126,20 @@ export const MapView = ({
         try {
           const bounds = map.getBounds();
           const pad = 0.5; // ~50 km geo padding
-          visiblePackets = spatialIndexRef.current.search({
-            minX: bounds.getWest() - pad,
-            minY: bounds.getSouth() - pad,
-            maxX: bounds.getEast() + pad,
-            maxY: bounds.getNorth() + pad
-          });
+          visiblePackets = trackStore.searchViewport(
+            bounds.getWest() - pad,
+            bounds.getSouth() - pad,
+            bounds.getEast() + pad,
+            bounds.getNorth() + pad
+          );
+          if (visiblePackets.length === 0 && currentPackets.length > 0) {
+            visiblePackets = spatialIndexRef.current.search({
+              minX: bounds.getWest() - pad,
+              minY: bounds.getSouth() - pad,
+              maxX: bounds.getEast() + pad,
+              maxY: bounds.getNorth() + pad
+            });
+          }
         } catch {
           visiblePackets = currentPackets;
         }
@@ -2263,35 +2308,139 @@ export const MapView = ({
         }
         ctx.restore();
 
-        // Pass 3: Draw silhouettes and callout pills on top
+        // Pass 2.1: Draw historical motion trails from ring buffers
+        const trailBatches: Record<string, Array<Array<{ x: number; y: number }>>> = {};
         for (const item of renderItems) {
-          if (item.type === "uav") {
-            drawUavSilhouette(ctx, item.targetX, item.targetY, item.scale, item.screenHeadingDeg, item.color, now, item.packetModel, item.speedKmh);
-          } else if (item.type === "bomb") {
-            drawKabSilhouette(ctx, item.targetX, item.targetY, item.scale, item.screenHeadingDeg, item.color, now);
-          } else if (item.type === "fpv") {
-            drawFpvSilhouette(ctx, item.targetX, item.targetY, item.scale, item.screenHeadingDeg, item.color, now);
-          } else if (item.type === "munition") {
-            drawMissileSilhouette(ctx, item.targetX, item.targetY, item.scale, item.screenHeadingDeg, item.color, now);
-          } else if (item.type === "helicopter") {
-            drawHelicopterSilhouette(ctx, item.targetX, item.targetY, item.scale, item.screenHeadingDeg, item.color, now);
-          } else {
-            drawAircraftSilhouette(ctx, item.targetX, item.targetY, item.scale, item.screenHeadingDeg, item.color, now);
+          const trailPts = trackStore.getTrailPoints(item.id);
+          if (trailPts.length >= 2) {
+            const screenPts: Array<{ x: number; y: number }> = [];
+            for (const [tLat, tLon] of trailPts) {
+              const pt = map.project([tLon, tLat]);
+              screenPts.push({ x: pt.x, y: pt.y });
+            }
+            if (!trailBatches[item.color]) trailBatches[item.color] = [];
+            trailBatches[item.color].push(screenPts);
+          }
+        }
+
+        if (Object.keys(trailBatches).length > 0) {
+          ctx.save();
+          ctx.lineWidth = 1.2;
+          ctx.setLineDash([2, 3]);
+          for (const [col, paths] of Object.entries(trailBatches)) {
+            ctx.strokeStyle = col;
+            ctx.globalAlpha = 0.4;
+            ctx.beginPath();
+            for (const path of paths) {
+              if (path.length < 2) continue;
+              ctx.moveTo(path[0].x, path[0].y);
+              for (let i = 1; i < path.length; i++) {
+                ctx.lineTo(path[i].x, path[i].y);
+              }
+            }
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
+
+        // Pass 3: Draw silhouettes and callout pills on top (with LOD clustering for zoom < 7 & > 80 targets)
+        const lodThreshold = isLowTier ? 50 : 80;
+        const shouldCluster = zoom < 7.0 && renderItems.length > lodThreshold;
+
+        if (shouldCluster) {
+          const gridSize = 45; // 45px spatial clustering cell
+          const grid: Record<string, RenderItem[]> = {};
+          const standalone: RenderItem[] = [];
+
+          for (const item of renderItems) {
+            if (item.isSelected) {
+              standalone.push(item);
+              continue;
+            }
+            const gx = Math.floor(item.targetX / gridSize);
+            const gy = Math.floor(item.targetY / gridSize);
+            const key = `${gx}:${gy}`;
+            if (!grid[key]) grid[key] = [];
+            grid[key].push(item);
           }
 
-          if (item.isSelected) {
-            drawMilitaryCalloutPill(
-              ctx,
-              item.targetX,
-              item.targetY,
-              item.shortName,
-              item.speedKmh,
-              item.altMsl,
-              item.color,
-              true,
-              true,
-              placedPillBoxes
-            );
+          for (const cell of Object.values(grid)) {
+            if (cell.length === 1) {
+              standalone.push(cell[0]);
+            } else {
+              let avgX = 0;
+              let avgY = 0;
+              for (const it of cell) {
+                avgX += it.targetX;
+                avgY += it.targetY;
+              }
+              avgX /= cell.length;
+              avgY /= cell.length;
+              const primaryColor = cell[0].color;
+              drawTacticalClusterNode(ctx, avgX, avgY, cell.length, primaryColor);
+            }
+          }
+
+          for (const item of standalone) {
+            if (item.type === "uav") {
+              drawUavSilhouette(ctx, item.targetX, item.targetY, item.scale, item.screenHeadingDeg, item.color, now, item.packetModel, item.speedKmh);
+            } else if (item.type === "bomb") {
+              drawKabSilhouette(ctx, item.targetX, item.targetY, item.scale, item.screenHeadingDeg, item.color, now);
+            } else if (item.type === "fpv") {
+              drawFpvSilhouette(ctx, item.targetX, item.targetY, item.scale, item.screenHeadingDeg, item.color, now);
+            } else if (item.type === "munition") {
+              drawMissileSilhouette(ctx, item.targetX, item.targetY, item.scale, item.screenHeadingDeg, item.color, now);
+            } else if (item.type === "helicopter") {
+              drawHelicopterSilhouette(ctx, item.targetX, item.targetY, item.scale, item.screenHeadingDeg, item.color, now);
+            } else {
+              drawAircraftSilhouette(ctx, item.targetX, item.targetY, item.scale, item.screenHeadingDeg, item.color, now);
+            }
+
+            if (item.isSelected) {
+              drawMilitaryCalloutPill(
+                ctx,
+                item.targetX,
+                item.targetY,
+                item.shortName,
+                item.speedKmh,
+                item.altMsl,
+                item.color,
+                true,
+                true,
+                placedPillBoxes
+              );
+            }
+          }
+        } else {
+          for (const item of renderItems) {
+            if (item.type === "uav") {
+              drawUavSilhouette(ctx, item.targetX, item.targetY, item.scale, item.screenHeadingDeg, item.color, now, item.packetModel, item.speedKmh);
+            } else if (item.type === "bomb") {
+              drawKabSilhouette(ctx, item.targetX, item.targetY, item.scale, item.screenHeadingDeg, item.color, now);
+            } else if (item.type === "fpv") {
+              drawFpvSilhouette(ctx, item.targetX, item.targetY, item.scale, item.screenHeadingDeg, item.color, now);
+            } else if (item.type === "munition") {
+              drawMissileSilhouette(ctx, item.targetX, item.targetY, item.scale, item.screenHeadingDeg, item.color, now);
+            } else if (item.type === "helicopter") {
+              drawHelicopterSilhouette(ctx, item.targetX, item.targetY, item.scale, item.screenHeadingDeg, item.color, now);
+            } else {
+              drawAircraftSilhouette(ctx, item.targetX, item.targetY, item.scale, item.screenHeadingDeg, item.color, now);
+            }
+
+            if (item.isSelected) {
+              drawMilitaryCalloutPill(
+                ctx,
+                item.targetX,
+                item.targetY,
+                item.shortName,
+                item.speedKmh,
+                item.altMsl,
+                item.color,
+                true,
+                true,
+                placedPillBoxes
+              );
+            }
           }
         }
 

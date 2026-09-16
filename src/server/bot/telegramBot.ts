@@ -1,5 +1,6 @@
 import { Telegraf } from "telegraf";
 import { env } from "../config/env.js";
+import { messageDeletionService, SIX_HOURS_MS } from "./messageDeletionService.js";
 import { AiBriefingService } from "../core/aiBriefing.js";
 import { StorageManager } from "../core/storage.js";
 import { ThreatEngine } from "../core/threatEngine.js";
@@ -21,12 +22,6 @@ function findNearestOblast(lat: number, lon: number): { nameUk: string; oblast: 
   return { nameUk: closest.nameUk, oblast: closest.oblast || closest.nameUk };
 }
 
-interface PendingDeletion {
-  chatId: number;
-  messageId: number;
-  deleteAt: number;
-}
-
 export class EyeRadarBotManager {
   private bot: Telegraf | null = null;
   private readonly storage = new StorageManager();
@@ -36,7 +31,6 @@ export class EyeRadarBotManager {
   private trackCountProvider?: () => number;
   private tracksProvider?: () => TrackState[];
   private alertsSource?: AlertsInUaSource;
-  private readonly pendingDeletions: PendingDeletion[] = [];
   private deletionTimer?: NodeJS.Timeout;
 
   constructor() {
@@ -49,7 +43,7 @@ export class EyeRadarBotManager {
       this.bot = new Telegraf(env.botToken);
       this.setupHandlers();
 
-      // Periodic check to delete expired notification messages
+      // Periodic check to delete expired notification messages from database/queue
       this.deletionTimer = setInterval(() => {
         void this.processPendingDeletions();
       }, 60_000);
@@ -59,14 +53,8 @@ export class EyeRadarBotManager {
     }
   }
 
-  scheduleMessageDeletion(chatId: number, messageId: number, delayMs = 3600_000): void {
-    const deleteAt = Date.now() + delayMs;
-    this.pendingDeletions.push({ chatId, messageId, deleteAt });
-
-    // Direct timer for prompt 1-hour deletion
-    setTimeout(() => {
-      void this.deleteTelegramMessage(chatId, messageId);
-    }, delayMs).unref();
+  scheduleMessageDeletion(chatId: number, messageId: number, delayMs = SIX_HOURS_MS): void {
+    void messageDeletionService.scheduleDeletion(chatId, messageId, delayMs);
   }
 
   private async deleteTelegramMessage(chatId: number, messageId: number): Promise<void> {
@@ -74,20 +62,13 @@ export class EyeRadarBotManager {
     try {
       await this.bot.telegram.deleteMessage(chatId, messageId);
     } catch {
-      // Safely ignore if user already deleted message or chat was cleared
+      // Handled in messageDeletionService
     }
   }
 
   private async processPendingDeletions(): Promise<void> {
-    if (!this.bot || this.pendingDeletions.length === 0) return;
-    const now = Date.now();
-    for (let i = this.pendingDeletions.length - 1; i >= 0; i--) {
-      const item = this.pendingDeletions[i];
-      if (now >= item.deleteAt) {
-        this.pendingDeletions.splice(i, 1);
-        await this.deleteTelegramMessage(item.chatId, item.messageId);
-      }
-    }
+    if (!this.bot) return;
+    await messageDeletionService.processPendingDeletions(this.bot.telegram);
   }
 
   setHealthTracker(tracker: SourceHealthTracker, trackCountProvider: () => number, tracksProvider?: () => TrackState[]): void {
@@ -165,51 +146,42 @@ _Усі модулі, статус та налаштування — в інте
             }
           }
         );
-        // Schedule deletion after 1 hour
-        this.scheduleMessageDeletion(chatId, launchMsg.message_id);
-
+        if (launchMsg?.message_id) {
+          this.scheduleMessageDeletion(chatId, launchMsg.message_id, SIX_HOURS_MS);
+        }
       } catch (err) {
         console.error("Failed to send launch message:", err);
       }
     };
-
 
     const handleBriefing = async (ctx: any) => {
       const waitMsg = await ctx.reply("⏳ Аналіз повітряного простору та генерація AI-зведення...");
       const pref = this.storage.getPreference(ctx.chat.id);
       const tracks = this.tracksProvider ? this.tracksProvider() : [];
 
-        const summary = await this.aiBriefing.generateBriefing({
-          tracks,
-          userCity: pref ? `Координати ${pref.lat.toFixed(2)}, ${pref.lon.toFixed(2)} (радіус ${pref.radiusKm} км)` : undefined,
-          userCoords: pref ? { lat: pref.lat, lon: pref.lon } : undefined
-        });
+      const summary = await this.aiBriefing.generateBriefing({
+        tracks,
+        userCity: pref ? `Координати ${pref.lat.toFixed(2)}, ${pref.lon.toFixed(2)} (радіус ${pref.radiusKm} км)` : undefined,
+        userCoords: pref ? { lat: pref.lat, lon: pref.lon } : undefined
+      });
 
-        try {
-          await ctx.telegram.deleteMessage(ctx.chat.id, waitMsg.message_id);
-        } catch {}
+      try {
+        await ctx.telegram.deleteMessage(ctx.chat.id, waitMsg.message_id);
+      } catch {}
 
-        const briefingMsg = await ctx.reply(summary, {
-          parse_mode: "Markdown",
-          reply_markup: {
-            inline_keyboard: [[getRadarButton("🛰️ Відкрити 3D Радар")]]
-          }
-        });
-        // Schedule deletion after 1 hour
-        this.scheduleMessageDeletion(ctx.chat.id, briefingMsg.message_id);
-
+      const briefingMsg = await ctx.reply(summary, {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [[getRadarButton("🛰️ Відкрити 3D Радар")]]
+        }
+      });
+      if (briefingMsg?.message_id) {
+        this.scheduleMessageDeletion(ctx.chat.id, briefingMsg.message_id, SIX_HOURS_MS);
+      }
     };
 
     const replyAndSchedule = async (ctx: any, text: string, extra?: any) => {
-      try {
-        const sent = await ctx.reply(text, extra);
-        if (sent?.message_id && ctx.chat?.id) {
-          this.scheduleMessageDeletion(ctx.chat.id, sent.message_id, 3600_000);
-        }
-        return sent;
-      } catch (err) {
-        console.error("Failed to send bot reply:", err);
-      }
+      return messageDeletionService.replyAndSchedule(ctx, text, extra, SIX_HOURS_MS);
     };
 
     bot.command("briefing", handleBriefing);
@@ -431,7 +403,7 @@ _Усі модулі, статус та налаштування — в інте
           { parse_mode: "Markdown" }
         );
         if (sent?.message_id) {
-          this.scheduleMessageDeletion(chatId, sent.message_id, 3600_000);
+          this.scheduleMessageDeletion(chatId, sent.message_id, SIX_HOURS_MS);
         }
         return true;
       } catch (err) {
@@ -482,7 +454,7 @@ _Усі модулі, статус та налаштування — в інте
               { parse_mode: "Markdown" }
             );
             if (sent?.message_id) {
-              this.scheduleMessageDeletion(pref.chatId, sent.message_id, 3600_000);
+              this.scheduleMessageDeletion(pref.chatId, sent.message_id, SIX_HOURS_MS);
             }
           } else {
             const sent = await this.bot.telegram.sendMessage(
@@ -493,7 +465,7 @@ _Усі модулі, статус та налаштування — в інте
               { parse_mode: "Markdown" }
             );
             if (sent?.message_id) {
-              this.scheduleMessageDeletion(pref.chatId, sent.message_id, 3600_000);
+              this.scheduleMessageDeletion(pref.chatId, sent.message_id, SIX_HOURS_MS);
             }
           }
         } catch {
@@ -532,7 +504,7 @@ _Усі модулі, статус та налаштування — в інте
             try {
               const sent = await this.bot.telegram.sendMessage(pref.chatId, msg, { parse_mode: "Markdown" });
               if (sent?.message_id) {
-                this.scheduleMessageDeletion(pref.chatId, sent.message_id, 3600_000);
+                this.scheduleMessageDeletion(pref.chatId, sent.message_id, SIX_HOURS_MS);
               }
             } catch {
               // Ignore delivery errors
@@ -552,7 +524,7 @@ _Усі модулі, статус та налаштування — в інте
         try {
           const sentAdmin = await this.bot.telegram.sendMessage(Number(env.adminId), "🟢 Eye Radar bot онлайн.");
           if (sentAdmin?.message_id) {
-            this.scheduleMessageDeletion(Number(env.adminId), sentAdmin.message_id, 3600_000);
+            this.scheduleMessageDeletion(Number(env.adminId), sentAdmin.message_id, SIX_HOURS_MS);
           }
         } catch (err) {
           console.log("ℹ️ Повідомлення адміну не надіслано (необхідно спочатку натиснути /start в боті):", (err as Error).message);
