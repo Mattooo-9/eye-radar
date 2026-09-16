@@ -204,7 +204,8 @@ export class MutableTrackStore {
     tracksDecoded: 0,
     tracksStored: 0,
     tracksVisible: 0,
-    tracksCulled: 0
+    tracksCulled: 0,
+    frameCount: 0
   };
 
   recordDecoded(count: number): void {
@@ -216,6 +217,7 @@ export class MutableTrackStore {
     this.clientMetrics.tracksStored = this.tracks.size;
     this.clientMetrics.tracksVisible = visible;
     this.clientMetrics.tracksCulled = culled;
+    this.clientMetrics.frameCount++;
   }
 
   getClientMetrics() {
@@ -223,7 +225,8 @@ export class MutableTrackStore {
       tracksDecoded: this.clientMetrics.tracksDecoded,
       tracksStored: this.tracks.size,
       tracksVisible: this.clientMetrics.tracksVisible,
-      tracksCulled: this.clientMetrics.tracksCulled
+      tracksCulled: this.clientMetrics.tracksCulled,
+      frameCount: this.clientMetrics.frameCount
     };
   }
 

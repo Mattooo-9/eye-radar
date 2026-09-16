@@ -1712,6 +1712,7 @@ export const MapView = ({
     });
 
     mapRef.current = map;
+    (window as any).__eyeRadarMap = map;
     onMapReadyRef.current?.(map);
 
     // Hardware transform synchronization: attach overlay canvas inside MapLibre's canvas container
@@ -1881,6 +1882,7 @@ export const MapView = ({
       }
       map.remove();
       mapRef.current = null;
+      delete (window as any).__eyeRadarMap;
     };
   }, []);
 
@@ -2509,9 +2511,9 @@ export const MapView = ({
         // continue the rAF loop at adaptive tier rate.
         // Otherwise (stationary map and stationary/no targets), pause the rAF loop completely! (0% CPU/GPU idle load)
         const isMapMoving = map.isMoving() || map.isZooming() || map.isRotating();
-        const hasMovingTargets = currentPackets.some(p => p[5] > 2);
+        const hasMovingVisibleTargets = renderItems.length > 0 && renderItems.some(i => i.speedKmh > 7);
 
-        if (isMapMoving || hasMovingTargets || settleFramesLeft > 0) {
+        if (isMapMoving || hasMovingVisibleTargets || settleFramesLeft > 0) {
           if (settleFramesLeft > 0) settleFramesLeft--;
           isLoopRunning = true;
           animId = requestAnimationFrame((t) => render(t));
