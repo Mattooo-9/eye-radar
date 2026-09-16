@@ -1,11 +1,22 @@
 # Eye Radar — Project State & Architectural Baseline
 
-**Last Updated:** 2026-09-10  
-**Baseline Git Commit:** `6d46cba`  
-**Deployment Status:**
-- **Backend (Render):** `https://eye-radar.onrender.com/health` (Service ID: `srv-dagk9pgu01pc7388u35g`, Live, Healthy, Real Airborne Feeds Online, 145+ Active Tracks)
-- **Frontend (Vercel):** `https://eye-radar.vercel.app` (Production, Live)
-- **Telegram Bot:** `@EyeRadarUA_Bot` (Mini App embedded with cache-busting `?v=4.0.0&t=...`)
+**Last Updated:** 2026-09-16  
+**Baseline Git Commit:** `6fdfff3`  
+**Active Production Topology:**
+- **Frontend / Mini App / Webhook / Cron (Vercel):** `https://eye-radar.vercel.app` (Production Live)
+  - Vercel Serverless: Telegram Webhook (`/api/telegram/webhook`), 6-hour Auto-Deletion Cron (`/api/cron/cleanup-messages`), API proxies.
+- **Persistent State / Queues / Checkpoints (Neon Postgres):** `ep-rough-cloud-av1jwroi-pooler.c-11.us-east-1.aws.neon.tech/neondb` (PostgreSQL 18.6 AWS US-East-1, Single Source of Truth).
+  - Checkpoints: `radar_checkpoints` (monotonic sequence, atomic IMM state restoration).
+  - 6-Hour Message Deletion Queue: `bot_message_deletion_queue` (`FOR UPDATE SKIP LOCKED`).
+  - User Preferences: `user_preferences` (location, alert radius, notification state).
+  - Watchdog & Locks: `worker_watchdog` (4s heartbeat, status `healthy`), `worker_locks` (distributed lease locks).
+- **Backend Worker / Streaming (Render):** `https://eye-radar.onrender.com` (Service ID: `srv-dagk9pgu01pc7388u35g`, 24/7 dedicated worker).
+  - Continuous ingestion (`airplanes.live`, `adsb.lol`, `alerts.in.ua`, `open-meteo`).
+  - IMM Kalman filter fusion, threat engine, and high-performance binary WebSocket (`wss://eye-radar.onrender.com/ws`).
+  - Auto-restores tracks and sequence from Neon Postgres checkpoints on reboot.
+- **Future Migration Target (Railway):** `INACTIVE (deployment on hold due to expired trial)`.
+  - Configuration preserved in `railway.json`, `Procfile`, and `Dockerfile`.
+- **Telegram Bot:** `@AppEye_bot` (Auto-deletion queue via Neon Postgres, immediate Mini App launch).
 
 ---
 
@@ -78,7 +89,11 @@
 ## 2. Test & Quality Metrics
 
 - **TypeScript Check:** `npm run check` — 0 errors (`tsc --noEmit`).
-- **Vitest Unit & Benchmark Test Suite:** `npm test` — **46 tests passing across 15 test suites**:
+- **Vitest Unit & Benchmark Test Suite:** `npm test` — **71 tests passing across 21 test suites**:
+  - `checkpointAndWatchdog.test.ts` (Neon Postgres atomic checkpoints, IMM Kalman state restoration, watchdog heartbeats, lease locking, event deduplication)
+  - `messageDeletionService.test.ts` (6-hour bot message auto-deletion queue with `FOR UPDATE SKIP LOCKED`, rate limiting, retry backoff)
+  - `protocolBenchmark.test.ts` (Compact binary radar protocol encoding/decoding benchmarks, payload reduction >75%)
+  - `capabilityMatrix.test.ts` (Source capability matrix, positional feed isolation, contextual alerting segregation)
   - `locationLogic.test.ts` (Location setup onboarding, region geocoding, localStorage confirmation, prevention of accidental map click mutation)
   - `classificationAlternative.test.ts` (Shahed-136 vs Shahed-238 probabilistic classification, nearest alternative, hysteresis, UNKNOWN fallback)
   - `crossingTracks.test.ts` (Crossing tracks heading separation, speed gating, track reacquisition in COASTING state)
@@ -94,10 +109,15 @@
   - `pipeline.test.ts` (End-to-end ingestion and track output)
   - `replay.test.ts` (Replay robustness: delayed packets, crossing tracks, 60m/10m event TTLs)
   - `syntheticBenchmark.test.ts` (IMM position error $\le 350$m, 100% classification accuracy)
+  - `backendAiEngine.test.ts` (Multi-source threat briefing generator & NLP parser)
+  - `spatialIndex.test.ts` (RBush 2D spatial indexing for fast spatial bounding queries)
 
 ---
 
 ## 3. Production Verification
-- **Render Backend:** Live at `https://eye-radar.onrender.com/health` (Healthy multi-source status, `/api/audit`, `/api/tracks`, `/api/tracks/:id/diagnostic`).
-- **Vercel Frontend:** Live at `https://eye-radar.vercel.app` (React 19 Mini App with Logical Location Onboarding, Clean Vector Map, Live Timeline bar, Performance Tiers, and Track Inspector).
+- **Render Backend Worker:** Live at `https://eye-radar.onrender.com/health` (`database.ok: true`, `watchdog.ok: true`, monotonic `sequenceId`, live positional feeds `airplanes.live`, `adsb.lol`).
+- **Neon Postgres:** Live at `ep-rough-cloud-av1jwroi-pooler.c-11.us-east-1.aws.neon.tech/neondb` (PostgreSQL 18.6, single source of truth for checkpoints, watchdog, 6h queues, user preferences).
+- **Vercel Mini App:** Live at `https://eye-radar.vercel.app` (React 19 Mini App, `/api/cron/cleanup-messages` 200 OK, `/api/telegram/webhook` 200 OK).
+- **Railway:** `INACTIVE (deployment on hold due to expired trial)` — migration target files maintained in repo.
+
 
