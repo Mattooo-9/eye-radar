@@ -107,7 +107,9 @@ export class TrackManager {
     // Sanity check triggers: automatically reduce combat classConfidence to UNKNOWN
     if (!hasActiveAlert) {
       track.type = "unknown";
-      track.model = "Невідома повітряна ціль (тривога відсутня)";
+      if (!track.ewFlags?.includes("impossible_jump_rejected")) {
+        track.model = "Невідома повітряна ціль (тривога відсутня)";
+      }
       track.classConfidence = Math.min(track.classConfidence || 0.4, 0.25);
       track.alternativeType = "unknown";
       track.alternativeModel = "Непідтверджена загроза";
@@ -410,8 +412,17 @@ export class TrackManager {
       : (imm.headingDeg || previous.heading);
     const derivedSpeed = distanceMeters / elapsedSeconds;
 
-    const updatedSpeed = observation.speed ?? (derivedSpeed > 10 && derivedSpeed < 1100 ? derivedSpeed : (imm.speedMs || previous.speed));
-    const updatedHeading = observation.heading ?? derivedHeading;
+    // EW / Impossible Jump Detection (gated to non-synthetic movement jumps > 3000m):
+    const isImpossibleJump = !isSynthetic && (
+      (derivedSpeed > 1100 && distanceMeters > 3000) ||
+      (distanceMeters > 40_000 && elapsedSeconds < 30 && previous.speed < 300)
+    );
+    const effectiveLat = isImpossibleJump ? previous.lat : imm.lat;
+    const effectiveLon = isImpossibleJump ? previous.lon : imm.lon;
+    const updatedSpeed = isImpossibleJump
+      ? previous.speed
+      : (observation.speed ?? (derivedSpeed > 10 && derivedSpeed < 1100 ? derivedSpeed : (imm.speedMs || previous.speed)));
+    const updatedHeading = isImpossibleJump ? previous.heading : (observation.heading ?? derivedHeading);
 
     const mergedSources = new Set([...previous.sources, observation.source]);
     const mergedFamilies = new Set([...(previous.evidenceFamilies || []), sourceFamily]);
@@ -420,10 +431,14 @@ export class TrackManager {
     // adsb.lol and airplanes.live both belong to "adsb" (ADS-B/MLAT) - so no false independent confirmation is granted!
     const isMultiFamily = mergedFamilies.size > 1 && !mergedFamilies.has("simulation");
     const sourceDiversityBonus = isMultiFamily ? 0.15 : 0;
-    const updatedConfidence = Math.min(
+    let updatedConfidence = Math.min(
       0.99,
       previous.confidence * 0.4 + observation.confidence * 0.5 + sourceDiversityBonus
     );
+
+    if (isImpossibleJump) {
+      updatedConfidence = Math.min(updatedConfidence, 0.25);
+    }
 
     const rawThreat = (observation.meta as any)?.threatEvidence ?? observation.threatEvidence;
     const obsThreatEvidence: string[] = typeof rawThreat === "string"
@@ -477,23 +492,23 @@ export class TrackManager {
     existing.state = {
       ...previous,
       type: classification.resolvedType,
-      lat: imm.lat,
-      lon: imm.lon,
+      lat: effectiveLat,
+      lon: effectiveLon,
       heading: Math.round(updatedHeading * 10) / 10,
       speed: Math.round(updatedSpeed * 10) / 10,
       altitude: classification.estimatedAltitudeM,
       timestamp: observation.timestamp,
       confidence: Math.round(updatedConfidence * 100) / 100,
-      positionConfidence: classification.positionConfidence,
-      classConfidence: classification.classConfidence,
-      classEvidence: classification.classEvidence,
+      positionConfidence: isImpossibleJump ? 0.25 : classification.positionConfidence,
+      classConfidence: isImpossibleJump ? 0.20 : classification.classConfidence,
+      classEvidence: isImpossibleJump ? [...(classification.classEvidence || []), "impossible_jump_suppressed"] : classification.classEvidence,
       threatEvidence: classification.threatEvidence,
       sources: mergedSources,
       covLat: imm.covLat,
       covLon: imm.covLon,
       uncertaintyRadius: Math.round(imm.uncertaintyRadiusMeters),
       lastUpdated: now,
-      model: classification.resolvedModel,
+      model: isImpossibleJump ? "Невідома повітряна ціль (аномальний стрибок РЕБ)" : classification.resolvedModel,
       alternativeType: classification.alternative?.type,
       alternativeModel: classification.alternative?.model,
       alternativeConfidence: classification.alternative?.confidence,
@@ -509,6 +524,8 @@ export class TrackManager {
       evidenceFamilies: Array.from(mergedFamilies),
       propulsion: classification.propulsion,
       isSynthetic: previous.isSynthetic || isSynthetic,
+      isDegraded: isImpossibleJump || previous.isDegraded || false,
+      ewFlags: isImpossibleJump ? Array.from(new Set([...(previous.ewFlags || []), "impossible_jump_rejected"])) : previous.ewFlags,
       syntheticScenario: previous.syntheticScenario || syntheticScenario,
       provenanceChain: updatedProvenance
     };

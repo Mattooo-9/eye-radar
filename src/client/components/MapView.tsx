@@ -81,7 +81,8 @@ const SATELLITE_STYLE = {
       source: "satellite-tiles",
       paint: {
         "raster-opacity": 1.0,
-        "raster-fade-duration": 0
+        "raster-fade-duration": 0,
+        "raster-resampling": "linear" as const
       }
     },
     {
@@ -90,7 +91,8 @@ const SATELLITE_STYLE = {
       source: "road-tiles",
       paint: {
         "raster-opacity": 0.82,
-        "raster-fade-duration": 0
+        "raster-fade-duration": 0,
+        "raster-resampling": "linear" as const
       }
     }
   ]
@@ -1704,7 +1706,9 @@ export const MapView = ({
       touchPitch: false,
       pitchWithRotate: false,
       antialias: true,
-      attributionControl: false
+      attributionControl: false,
+      fadeDuration: 0,
+      maxTileCacheSize: 100
     });
 
     mapRef.current = map;

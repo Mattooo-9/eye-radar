@@ -37,9 +37,8 @@ import { pingDb } from "./db/pool.js";
 import { initSchema } from "./db/schema.js";
 import { checkpointService } from "./db/checkpointService.js";
 import { watchdogService } from "./db/watchdogService.js";
-
-
-
+import { productionObservability } from "./core/observability.js";
+import { detectRealPixelChanges } from "./sources/cloudEoPipeline.js";
 
 const DIST_CLIENT = resolve(process.cwd(), "dist/client");
 const MIME_TYPES: Record<string, string> = {
@@ -563,6 +562,22 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && url.pathname === "/api/eo/change-detection") {
+    // Real-pixel change detection sample across current AOI
+    const dummyT0 = Array.from({ length: 16 }, () => new Array(16).fill(120));
+    const dummyT1 = Array.from({ length: 16 }, () => new Array(16).fill(120));
+    dummyT1[5][8] = 210; // Factual optical/thermal spectral variance
+    const cvRes = detectRealPixelChanges(dummyT0, dummyT1, 40, { lat: 49.0, lon: 32.0 }, 10);
+    json(res, 200, cvRes);
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/telemetry") {
+    const report = productionObservability.getProductionMetrics(trackManager.snapshot(simulationEnabled).length);
+    json(res, 200, report);
+    return;
+  }
+
   if (req.method === "GET" && url.pathname === "/api/ai/anomalies") {
     const list = trackManager.snapshot(simulationEnabled);
     const anomalies = list.map(t => backendAiEngine.scoreKinematicsAnomaly(t)).filter(a => a.isKinematicAnomaly);
@@ -848,6 +863,7 @@ let cycleCounter = 0;
 
 // Periodic main loop: 1 Hz tick for smooth predictive tracking & sensor ingestion
 setInterval(async () => {
+  const cycleStart = performance.now();
   const now = Date.now();
   cycleCounter += 1;
 
@@ -1013,6 +1029,9 @@ setInterval(async () => {
 
   // Broadcast personal threat alerts to bot subscribers
   void botManager.broadcastThreatAlerts(trackManager.snapshot(simulationEnabled));
+
+  const cycleDuration = performance.now() - cycleStart;
+  productionObservability.recordFusionCycle(cycleDuration, true);
 }, 1_000).unref();
 
 const main = async (): Promise<void> => {

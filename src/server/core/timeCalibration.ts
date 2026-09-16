@@ -187,6 +187,13 @@ export class TimeCalibrationService {
     return res;
   }
 
+  isTimingDegraded(sourceId: string): boolean {
+    const stat = this.sources.get(sourceId);
+    if (!stat || stat.sampleCount < 2) return false;
+    // Degraded if extreme clock drift (> 5000ms) or excessive jitter (> 1500ms)
+    return Math.abs(stat.clockOffsetMs) > 5000 || stat.jitterMs > 1500;
+  }
+
   reset(): void {
     this.sources.clear();
   }

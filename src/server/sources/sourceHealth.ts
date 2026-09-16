@@ -1,5 +1,6 @@
 import type { TrackState } from "../domain/types.js";
 import { backendAiEngine } from "../core/backendAiEngine.js";
+import { timeCalibrationService } from "../core/timeCalibration.js";
 
 export type SourceAuditState = "LIVE" | "DEGRADED" | "STALE" | "OFFLINE";
 
@@ -184,8 +185,8 @@ export class SourceHealthTracker {
       return "OFFLINE";
     }
 
-    // 2. High error count = DEGRADED
-    if (s.errorCount >= 3) {
+    // 2. High error count or unstable sensor clock/jitter = DEGRADED
+    if (s.errorCount >= 3 || timeCalibrationService.isTimingDegraded(s.name)) {
       return "DEGRADED";
     }
 

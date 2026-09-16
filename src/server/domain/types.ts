@@ -79,6 +79,7 @@ export interface TrackState {
   heading: number;
   speed: number;
   timestamp: number;
+  firstSeen?: number;
   confidence: number;
   positionConfidence?: number;
   classConfidence?: number;
@@ -107,6 +108,8 @@ export interface TrackState {
   evidenceFamilies?: string[];
   propulsion?: string;
   isSynthetic?: boolean;
+  isDegraded?: boolean;
+  ewFlags?: string[];
   provenanceChain?: Array<{
     source: string;
     sourceFamily: string;
