@@ -486,6 +486,46 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && url.pathname === "/api/diagnostics/sources-test") {
+    const results: Record<string, any> = {};
+    const testEndpoints = [
+      { name: "adsb_lol_point", url: "https://api.adsb.lol/v2/point/49.0/31.0/500" },
+      { name: "adsb_lol_mil", url: "https://api.adsb.lol/v2/mil" },
+      { name: "adsb_fi_mil", url: "https://opendata.adsb.fi/api/v2/mil" },
+      { name: "opensky_ua", url: "https://opensky-network.org/api/states/all?lamin=44.0&lomin=22.0&lamax=54.0&lomax=42.0" }
+    ];
+    await Promise.allSettled(
+      testEndpoints.map(async (ep) => {
+        const t0 = Date.now();
+        try {
+          const r = await fetch(ep.url, {
+            headers: {
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+              "Accept": "application/json"
+            },
+            signal: AbortSignal.timeout(5000)
+          });
+          const text = await r.text();
+          let parsedLen = 0;
+          try {
+            const j = JSON.parse(text);
+            parsedLen = j.total || (j.ac || j.aircraft || j.states || []).length;
+          } catch {}
+          results[ep.name] = {
+            status: r.status,
+            latencyMs: Date.now() - t0,
+            parsedCount: parsedLen,
+            bodySnippet: text.slice(0, 150)
+          };
+        } catch (e: any) {
+          results[ep.name] = { error: e.message, latencyMs: Date.now() - t0 };
+        }
+      })
+    );
+    json(res, 200, results);
+    return;
+  }
+
   if ((req.method === "GET" || req.method === "POST") && url.pathname === "/api/cron/cleanup-messages") {
     const result = await messageDeletionService.processPendingDeletions();
     json(res, 200, {

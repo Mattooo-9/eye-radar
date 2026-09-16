@@ -102,7 +102,10 @@ export class AirplanesLiveSource {
       adsbFiEndpoints.map(async (url) => {
         try {
           const res = await fetch(url, {
-            headers: { "User-Agent": "EyeRadar/2.0 (Civil Aviation Safety; contact@eye-radar.ua)" },
+            headers: {
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+              "Accept": "application/json"
+            },
             signal: AbortSignal.timeout(4500)
           });
           if (res.ok) {
