@@ -66,6 +66,10 @@ function calculatePercentile(samples: number[], p: number): number {
 const DEFAULT_KNOWN_SOURCES = [
   "airplanes.live",
   "adsb.lol",
+  "opensky.live",
+  "sdr.receiver",
+  "ground.sensor",
+  "satellite.eo_coords",
   "alerts.in.ua",
   "open-meteo",
   "nasa-firms",

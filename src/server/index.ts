@@ -22,6 +22,11 @@ import { OpenMeteoWindSource } from "./sources/openMeteoWind.js";
 import { AirspaceSimulator } from "./sources/simulator.js";
 import { SourceHealthTracker } from "./sources/sourceHealth.js";
 import { AdsbUnifiedSource } from "./sources/adsbUnifiedSource.js";
+import { OpenSkyLiveSource } from "./sources/openskyLive.js";
+import { SdrReceiverSource } from "./sources/sdrReceiver.js";
+import { GroundSensorSource } from "./sources/groundSensor.js";
+import { SatelliteCoordinateSource } from "./sources/satelliteCoordinateSource.js";
+import { timeCalibrationService } from "./core/timeCalibration.js";
 import { impactManager } from "./core/impactManager.js";
 import { sourceRegistry } from "./sources/SourceRegistry.js";
 import { earthObservationService } from "./sources/earthObservation.js";
@@ -53,6 +58,10 @@ const firmsSource = new FirmsThermalSource();
 const windSource = new OpenMeteoWindSource();
 const airplanesSource = new AirplanesLiveSource();
 const openskyLolSource = new OpenskyAdsbLolSource();
+const openskyLiveSource = new OpenSkyLiveSource();
+const sdrReceiverSource = new SdrReceiverSource();
+const groundSensorSource = new GroundSensorSource();
+const satelliteCoordSource = new SatelliteCoordinateSource();
 const localReceiverSource = new LocalReceiverSource();
 const publicOsintSource = new PublicOsintFeedSource();
 const simulator = new AirspaceSimulator();
@@ -93,6 +102,74 @@ sourceRegistry.register(
     canProvideSpeed: true,
     evidenceFamily: "adsb_mlat",
     evidenceTypes: ["adsb", "mlat"],
+  }
+);
+
+sourceRegistry.register(
+  "opensky.live",
+  "adsb_mlat",
+  openskyLiveSource,
+  {
+    primaryCapability: "TRACK_POSITION",
+    capabilities: ["TRACK_POSITION"],
+    canCreateTrack: true,
+    canClassify: false,
+    canProvidePosition: true,
+    canProvideAltitude: true,
+    canProvideSpeed: true,
+    evidenceFamily: "adsb_mlat",
+    evidenceTypes: ["adsb", "mlat"],
+  }
+);
+
+sourceRegistry.register(
+  "sdr.receiver",
+  "sdr_local",
+  sdrReceiverSource,
+  {
+    primaryCapability: "TRACK_POSITION",
+    capabilities: ["TRACK_POSITION"],
+    canCreateTrack: true,
+    canClassify: false,
+    canProvidePosition: true,
+    canProvideAltitude: true,
+    canProvideSpeed: true,
+    evidenceFamily: "sdr_local",
+    evidenceTypes: ["sdr", "adsb"],
+  }
+);
+
+sourceRegistry.register(
+  "ground.sensor",
+  "radar_ground",
+  groundSensorSource,
+  {
+    primaryCapability: "TRACK_POSITION",
+    capabilities: ["TRACK_POSITION"],
+    canCreateTrack: true,
+    canClassify: true,
+    canProvidePosition: true,
+    canProvideAltitude: true,
+    canProvideSpeed: true,
+    evidenceFamily: "radar_ground",
+    evidenceTypes: ["radar", "acoustic", "optical"],
+  }
+);
+
+sourceRegistry.register(
+  "satellite.eo_coords",
+  "satellite_coords",
+  satelliteCoordSource,
+  {
+    primaryCapability: "TRACK_POSITION",
+    capabilities: ["TRACK_POSITION"],
+    canCreateTrack: true,
+    canClassify: false,
+    canProvidePosition: true,
+    canProvideAltitude: false,
+    canProvideSpeed: true,
+    evidenceFamily: "satellite_coords",
+    evidenceTypes: ["sar", "optical", "thermal"],
   }
 );
 
@@ -381,14 +458,18 @@ const server = createServer(async (req, res) => {
         testSources,
         offlineSources
       },
-      sources: audit.sources
+      sources: audit.sources,
+      timeCalibration: timeCalibrationService.getAllMetrics()
     });
     return;
   }
 
   if (req.method === "GET" && url.pathname === "/api/audit") {
     const audit = healthTracker.getAuditReport(trackManager.snapshot(simulationEnabled));
-    json(res, 200, audit);
+    json(res, 200, {
+      ...audit,
+      timeCalibration: timeCalibrationService.getAllMetrics()
+    });
     return;
   }
 
@@ -793,21 +874,64 @@ setInterval(async () => {
     } catch (err) {
       healthTracker.recordError("adsb.lol", err instanceof Error ? err : String(err));
     }
+    // OpenSky Network primary live coordinate feed
+    const tOpenSky = Date.now();
+    try {
+      const openSkyObs = await openskyLiveSource.fetchTracks();
+      for (const oso of openSkyObs) {
+        trackManager.ingest(toObservation(oso));
+      }
+      if (openSkyObs.length > 0) {
+        healthTracker.recordSuccess("opensky.live", Date.now() - tOpenSky, openSkyObs.length);
+      }
+    } catch (err) {
+      healthTracker.recordError("opensky.live", err instanceof Error ? err : String(err));
+    }
   }
 
-  // Poll Local SDR Receiver (dump1090/readsb) every 5 seconds if configured
+  // Poll Local / Network SDR Receiver (readsb/dump1090) every 5 seconds
   if (cycleCounter === 1 || cycleCounter % 5 === 0) {
     const tSdr = Date.now();
     try {
-      const sdrObs = await localReceiverSource.fetchLocalReceiverData();
+      const sdrObs = await sdrReceiverSource.fetchTracks();
       for (const so of sdrObs) {
         trackManager.ingest(toObservation(so));
       }
       if (sdrObs.length > 0) {
-        healthTracker.recordSuccess("local.sdr", Date.now() - tSdr);
+        healthTracker.recordSuccess("sdr.receiver", Date.now() - tSdr, sdrObs.length);
       }
     } catch (err) {
-      healthTracker.recordError("local.sdr", err instanceof Error ? err : String(err));
+      healthTracker.recordError("sdr.receiver", err instanceof Error ? err : String(err));
+    }
+
+    // Poll Tactical Ground Radar & Acoustic/Optical Sensor Feed every 5 seconds
+    const tGnd = Date.now();
+    try {
+      const gndObs = await groundSensorSource.fetchTracks();
+      for (const go of gndObs) {
+        trackManager.ingest(toObservation(go));
+      }
+      if (gndObs.length > 0) {
+        healthTracker.recordSuccess("ground.sensor", Date.now() - tGnd, gndObs.length);
+      }
+    } catch (err) {
+      healthTracker.recordError("ground.sensor", err instanceof Error ? err : String(err));
+    }
+  }
+
+  // Poll Satellite EO Direct Coordinate Feed every 30 seconds
+  if (cycleCounter === 1 || cycleCounter % 30 === 0) {
+    const tSat = Date.now();
+    try {
+      const satObs = await satelliteCoordSource.fetchTracks();
+      for (const so of satObs) {
+        trackManager.ingest(toObservation(so));
+      }
+      if (satObs.length > 0) {
+        healthTracker.recordSuccess("satellite.eo_coords", Date.now() - tSat, satObs.length);
+      }
+    } catch (err) {
+      healthTracker.recordError("satellite.eo_coords", err instanceof Error ? err : String(err));
     }
   }
 

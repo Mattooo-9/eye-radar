@@ -14,6 +14,9 @@ export type EvidenceFamily =
   | "earth_observation"
   | "test_simulation"
   | "sdr_local"
+  | "radar_ground"
+  | "acoustic_optical"
+  | "satellite_coords"
   | "osint";
 
 export interface SourceCapability {
@@ -76,6 +79,43 @@ export class SourceRegistry {
     if (typeof (instance as any).start === "function") {
       (instance as any).start();
     }
+  }
+
+  /**
+   * Validates a source using a real empirical packet payload.
+   * If valid, marks the source as active and records a success in the health tracker.
+   * If invalid, rejects activation and records an error.
+   */
+  validateAndActivate(name: string, sampleData: unknown, latencyMs = 25): boolean {
+    const src = this.sources.get(name);
+    if (!src) return false;
+
+    if (!sampleData || typeof sampleData !== "object") {
+      if (this.healthTracker?.recordError) {
+        this.healthTracker.recordError(name, "Empirical validation failed: payload missing or invalid");
+      }
+      return false;
+    }
+
+    // Basic structural validation
+    const hasValidPayload =
+      Boolean((sampleData as any).aircraft || (sampleData as any).ac ||
+              (sampleData as any).states || (sampleData as any).detections ||
+              (sampleData as any).observations || Array.isArray(sampleData) ||
+              (typeof (sampleData as any).lat === "number" && typeof (sampleData as any).lon === "number"));
+
+    if (!hasValidPayload) {
+      if (this.healthTracker?.recordError) {
+        this.healthTracker.recordError(name, "Empirical validation failed: no valid coordinate structure");
+      }
+      return false;
+    }
+
+    src.disabled = false;
+    if (this.healthTracker?.recordSuccess) {
+      this.healthTracker.recordSuccess(name, latencyMs, 1);
+    }
+    return true;
   }
 
   getSourceState(name: string): "LIVE" | "DEGRADED" | "STALE" | "OFFLINE" {

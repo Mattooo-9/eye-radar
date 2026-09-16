@@ -7,6 +7,7 @@ import { ImmFilter2D, type ImmResult } from "./immFilter.js";
 import { classifyAerialObject } from "./classificationEngine.js";
 import { TrackCorrelator } from "./trackCorrelator.js";
 import { encodeBinaryDelta, encodeBinarySnapshot } from "../../common/binaryCodec.js";
+import { timeCalibrationService } from "./timeCalibration.js";
 
 interface InternalTrack {
   state: TrackState;
@@ -105,6 +106,18 @@ export class TrackManager {
         return null;
       }
     }
+
+    // Source Time Calibration: measure clock offset, jitter, latency, and adjust observedAt
+    const srcId = (typeof observation.meta?.source_id === "string" ? observation.meta.source_id : observation.source) || "unknown";
+    const recAt = typeof observation.meta?.received_at === "number" ? (observation.meta.received_at as number) : now;
+    const pubAt = typeof (observation.meta as any)?.published_at === "number" ? ((observation.meta as any).published_at as number) : undefined;
+    const { calibratedTime, metrics: timeMetrics } = timeCalibrationService.recordAndCalibrate(srcId, observation.timestamp, recAt, pubAt);
+    observation.timestamp = calibratedTime;
+    if (observation.meta) {
+      (observation.meta as any).time_confidence = timeMetrics.timeConfidence;
+      (observation.meta as any).calibrated_latency_ms = timeMetrics.p50LatencyMs;
+    }
+
     // Drop outdated observations (older than 25s) to prevent ghost resurrection
     if (now - observation.timestamp > 25_000) {
       return this.tracks.get(observation.id)?.state ?? null;
@@ -189,6 +202,7 @@ export class TrackManager {
       sourceFamily = observation.meta.source_family as SourceFamily;
     }
 
+    const timeConf = typeof (observation.meta as any)?.time_confidence === "number" ? ((observation.meta as any).time_confidence as number) : 1.0;
     const provenanceEntry: ProvenanceRecord = {
       source: typeof observation.meta?.source_id === "string" ? observation.meta.source_id : observation.source,
       sourceFamily,
@@ -196,7 +210,7 @@ export class TrackManager {
       receivedAt: typeof observation.meta?.received_at === "number" ? (observation.meta.received_at as number) : now,
       processedAt: now,
       latencyMs: Math.max(0, now - observation.timestamp),
-      confidence: observation.confidence,
+      confidence: Math.round(observation.confidence * (0.8 + 0.2 * timeConf) * 100) / 100,
       evidence: typeof observation.meta?.evidence === "string" ? [observation.meta.evidence] : [],
       provenanceStr: typeof observation.meta?.provenance === "string" ? observation.meta.provenance : undefined,
       isSynthetic

@@ -8,6 +8,7 @@ import type { AlertRegion, TrackState, UserAlertPreference } from "../domain/typ
 import type { AlertsInUaSource } from "../sources/alertsInUa.js";
 import type { SourceHealthTracker } from "../sources/sourceHealth.js";
 import { findCityInText, UKRAINE_CITIES } from "../sources/ukraineGeo.js";
+import { alertStateMachine } from "../core/alertStateMachine.js";
 
 function findNearestOblast(lat: number, lon: number): { nameUk: string; oblast: string } {
   let closest = UKRAINE_CITIES.kyiv;
@@ -473,41 +474,55 @@ _Усі модулі, статус та налаштування — в інте
         }
       }
 
-      // 2. Direct aerial target approaching user's radius (Shahed / missile / KAB / FPV)
+      // 2. Direct aerial targets: Alert State Machine (NEW -> APPROACHING -> CRITICAL -> PASSED/CLEARED)
       if (tracks.length > 0) {
-        // Rate limit threat proximity warning: max 1 per 6 minutes unless critical
-        if (pref.lastNotified && now - pref.lastNotified < 6 * 60_000) {
-          continue;
-        }
+        for (const track of tracks) {
+          if (track.threatLevel === "critical" || track.threatLevel === "high" || track.type === "uav" || track.type === "munition") {
+            const evalResult = alertStateMachine.evaluateTrack(pref, track, now);
+            if (evalResult.shouldNotify) {
+              pref.lastNotified = now;
+              this.storage.savePreference(pref);
 
-        const threat = this.threatEngine.findHighestThreat(tracks, { lat: pref.lat, lon: pref.lon });
-        if (threat && (threat.threatLevel === "critical" || threat.threatLevel === "high")) {
-          const distanceKm = Math.round(threat.distanceMeters / 1000);
-          if (distanceKm <= pref.radiusKm) {
-            pref.lastNotified = now;
-            this.storage.savePreference(pref);
-
-            const matchedTrack = tracks.find((t) => t.id === threat.trackId);
-            const speedKmh = matchedTrack ? Math.round(matchedTrack.speed * 3.6) : undefined;
-            const headingDeg = matchedTrack ? Math.round(matchedTrack.heading) : undefined;
-            const targetName = matchedTrack?.model || matchedTrack?.type?.toUpperCase() || "ПОВІТРЯНА ЦІЛЬ";
-            const etaMin = threat.etaMinutes !== null && threat.etaMinutes !== undefined ? threat.etaMinutes : undefined;
-
-            const msg =
-              `⚠️ *УВАГА: НАБЛИЖЕННЯ ПОВІТРЯНОЇ ЦІЛІ!*\n\n` +
-              `🎯 Ціль: *${targetName}*\n` +
-              `📏 Відстань до вас: *~${distanceKm} км*\n` +
-              (speedKmh ? `🧭 Швидкість: *${speedKmh} км/год* | Курс: *${headingDeg}°*\n` : "") +
-              (etaMin ? `⏱️ Орієнтовний підліт (ETA): *~${etaMin} хв*\n\n` : "\n") +
-              `🚨 *Негайно перебувайте в укритті!*`;
-
-            try {
-              const sent = await this.bot.telegram.sendMessage(pref.chatId, msg, { parse_mode: "Markdown" });
-              if (sent?.message_id) {
-                this.scheduleMessageDeletion(pref.chatId, sent.message_id, SIX_HOURS_MS);
+              let msg = "";
+              if (evalResult.state === "CRITICAL") {
+                msg =
+                  `🔴 *КРИТИЧНА НЕБЕЗПЕКА: ЦІЛЬ ПОРУЧ!*\n\n` +
+                  `🎯 Ціль: *${evalResult.targetModel}*\n` +
+                  `📏 Відстань: *~${evalResult.distanceKm} км*\n` +
+                  `🧭 Швидкість: *${evalResult.speedKmh} км/год*\n` +
+                  (evalResult.etaMinutes !== null ? `⏱️ Орієнтовний підліт (ETA): *~${evalResult.etaMinutes} хв*\n\n` : "\n") +
+                  `🚨 *Негайно перебувайте в укритті!*`;
+              } else if (evalResult.state === "APPROACHING") {
+                msg =
+                  `⚠️ *УВАГА: НАБЛИЖЕННЯ ПОВІТРЯНОЇ ЦІЛІ!*\n\n` +
+                  `🎯 Ціль: *${evalResult.targetModel}*\n` +
+                  `📏 Відстань до вас: *~${evalResult.distanceKm} км*\n` +
+                  `🧭 Швидкість: *${evalResult.speedKmh} км/год*\n` +
+                  (evalResult.etaMinutes !== null ? `⏱️ Орієнтовний підліт (ETA): *~${evalResult.etaMinutes} хв*\n\n` : "\n") +
+                  `🛡️ Перейдіть у безпечне місце / правило двох стін!`;
+              } else if (evalResult.state === "PASSED") {
+                msg =
+                  `🛡️ *ЦІЛЬ ПРОЙШЛА ПОВЗ ВАШ СЕКТОР*\n\n` +
+                  `🎯 Ціль: *${evalResult.targetModel}*\n` +
+                  `📏 Відстань збільшується: *~${evalResult.distanceKm} км*\n` +
+                  `Безпосередня небезпека для поточної точки знизилась.`;
+              } else if (evalResult.state === "CLEARED") {
+                msg =
+                  `🟢 *ЗАГРОЗУ СКАСОВАНО / ЦІЛЬ ЗНИЩЕНО*\n\n` +
+                  `🎯 Ціль: *${evalResult.targetModel}*\n` +
+                  `Ціль зникла з радіолокаційного поля спостереження.`;
               }
-            } catch {
-              // Ignore delivery errors
+
+              if (msg) {
+                try {
+                  const sent = await this.bot.telegram.sendMessage(pref.chatId, msg, { parse_mode: "Markdown" });
+                  if (sent?.message_id) {
+                    this.scheduleMessageDeletion(pref.chatId, sent.message_id, SIX_HOURS_MS);
+                  }
+                } catch {
+                  // Ignore delivery errors
+                }
+              }
             }
           }
         }
