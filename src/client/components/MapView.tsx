@@ -2324,8 +2324,8 @@ export const MapView = ({
             }
 
             const mapCenter = map.getCenter();
-            const distKm = Math.round(haversineMeters(curLat, curLon, mapCenter.lat, mapCenter.lng) / 1000);
-            if (distKm > 120) {
+            const distKm = Math.round(haversineMeters({ lat: curLat, lon: curLon }, { lat: mapCenter.lat, lon: mapCenter.lng }) / 1000);
+            if (isNaN(distKm) || distKm > 120) {
               continue;
             }
 

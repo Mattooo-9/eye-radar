@@ -8,15 +8,32 @@ const EARTH_RADIUS_M = 6_371_000;
 const toRadians = (degrees: number): number => (degrees * Math.PI) / 180;
 const toDegrees = (radians: number): number => (radians * 180) / Math.PI;
 
-export const haversineMeters = (a: GeoPoint, b: GeoPoint): number => {
-  const dLat = toRadians(b.lat - a.lat);
-  const dLon = toRadians(b.lon - a.lon);
-  const lat1 = toRadians(a.lat);
-  const lat2 = toRadians(b.lat);
+export const haversineMeters = (
+  a: GeoPoint | number,
+  b: GeoPoint | number,
+  lat2?: number,
+  lon2?: number
+): number => {
+  let p1: GeoPoint;
+  let p2: GeoPoint;
+  if (typeof a === "number" && typeof b === "number" && lat2 !== undefined && lon2 !== undefined) {
+    p1 = { lat: a, lon: b };
+    p2 = { lat: lat2, lon: lon2 };
+  } else {
+    p1 = a as GeoPoint;
+    p2 = b as GeoPoint;
+  }
+  if (!p1 || !p2 || typeof p1.lat !== "number" || typeof p2.lat !== "number") {
+    return 0;
+  }
+  const dLat = toRadians(p2.lat - p1.lat);
+  const dLon = toRadians(p2.lon - p1.lon);
+  const lat1 = toRadians(p1.lat);
+  const lat2Rad = toRadians(p2.lat);
 
   const value =
     Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+    Math.cos(lat1) * Math.cos(lat2Rad) * Math.sin(dLon / 2) ** 2;
 
   return 2 * EARTH_RADIUS_M * Math.asin(Math.sqrt(value));
 };
