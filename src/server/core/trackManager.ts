@@ -10,6 +10,7 @@ import { encodeBinaryDelta, encodeBinarySnapshot } from "../../common/binaryCode
 import { timeCalibrationService } from "./timeCalibration.js";
 import { UKRAINE_CITIES } from "../sources/ukraineGeo.js";
 import { productionObservability } from "./observability.js";
+import { uncertaintyEventManager } from "./uncertaintyEventManager.js";
 
 export function findNearestOblast(lat: number, lon: number): { nameUk: string; oblast: string } {
   let minD = Infinity;
@@ -35,7 +36,7 @@ interface InternalTrack {
   lastStationarySince?: number;
 }
 
-const STALE_AFTER_MS = 15_000; // 15 seconds without fresh measurement = target pruned immediately
+const STALE_AFTER_MS = 45_000; // 45 seconds without fresh measurement = target pruned
 
 export class TrackManager {
   private readonly sourceRegistry: SourceRegistry;
@@ -238,9 +239,10 @@ export class TrackManager {
     // Capability Matrix Gating: Each source can ONLY influence its authorized capabilities
     const regSource = srcReg;
     if (regSource) {
-      // If source cannot provide position AND cannot create track, reject aerial track creation
+      // If source cannot provide position AND cannot create track, route to Layer 2 (Uncertainty Events)
       if (!regSource.capability.canProvidePosition && !regSource.capability.canCreateTrack) {
-        productionObservability.recordObservationRejected("capability_not_positional", 1);
+        uncertaintyEventManager.ingestObservation(observation, now);
+        productionObservability.recordObservationAccepted(1);
         return null;
       }
       if (!regSource.capability.canProvideAltitude) {
@@ -250,7 +252,9 @@ export class TrackManager {
         observation.speed = undefined;
       }
       if (!regSource.capability.canClassify && observation.type !== "thermal") {
-        observation.type = "unknown";
+        if (observation.type !== "aircraft" && observation.type !== "helicopter") {
+          observation.type = "unknown";
+        }
       }
     }
 
@@ -423,6 +427,7 @@ export class TrackManager {
         lastImmResult: imm,
         lastMahalanobisDistance: correlation.mahalanobisDistance
       });
+      productionObservability.recordObservationFused(1);
       return state;
     }
 
@@ -582,6 +587,7 @@ export class TrackManager {
     };
 
     this.applySanityCheckToTrack(existing.state);
+    productionObservability.recordObservationFused(1);
 
     return existing.state;
   }
@@ -705,7 +711,7 @@ export class TrackManager {
 
   toPackets(includeSynthetic = true): CompactTrackPacket[] {
     return this.snapshot(includeSynthetic)
-      .filter((track) => track.lifecycle !== "TENTATIVE" || track.confidence >= 0.85)
+      .filter((track) => track.lifecycle !== "TENTATIVE" || track.confidence >= 0.20)
       .map((track) => [
         track.id,
         track.type,

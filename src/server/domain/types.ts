@@ -230,3 +230,5 @@ export interface UserAlertPreference {
   soundEnabled?: boolean;
 }
 
+export * from "./uncertaintyEvent.js";
+

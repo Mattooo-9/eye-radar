@@ -40,7 +40,9 @@ export interface PipelineDiagnosticsReport {
   acceptedObservations: number;
   rejectedObservations: number;
   rejectedReasons: Record<string, number>;
+  fusedObservations: number;
   activeTracks: number;
+  uncertaintyEvents?: number;
   tracksSerialized: number;
   tracksSent: number;
   clientTelemetry?: {
@@ -70,6 +72,7 @@ export class ProductionObservability {
   private receivedObservationsCount = 0;
   private acceptedObservationsCount = 0;
   private rejectedObservationsCount = 0;
+  private fusedObservationsCount = 0;
   private rejectedReasons = new Map<string, number>();
   private tracksSerializedCount = 0;
   private tracksSentCount = 0;
@@ -86,6 +89,10 @@ export class ProductionObservability {
 
   recordObservationAccepted(count = 1): void {
     this.acceptedObservationsCount += count;
+  }
+
+  recordObservationFused(count = 1): void {
+    this.fusedObservationsCount += count;
   }
 
   recordObservationRejected(reason: string, count = 1): void {
@@ -110,7 +117,7 @@ export class ProductionObservability {
     this.clientTelemetryData = data;
   }
 
-  getPipelineDiagnostics(activeTracksCount = 0): PipelineDiagnosticsReport {
+  getPipelineDiagnostics(activeTracksCount = 0, uncertaintyEventsCount = 0): PipelineDiagnosticsReport {
     const reasons: Record<string, number> = {};
     for (const [k, v] of this.rejectedReasons.entries()) {
       reasons[k] = v;
@@ -121,7 +128,9 @@ export class ProductionObservability {
       acceptedObservations: this.acceptedObservationsCount,
       rejectedObservations: this.rejectedObservationsCount,
       rejectedReasons: reasons,
+      fusedObservations: this.fusedObservationsCount,
       activeTracks: activeTracksCount,
+      uncertaintyEvents: uncertaintyEventsCount,
       tracksSerialized: this.tracksSerializedCount,
       tracksSent: this.tracksSentCount,
       clientTelemetry: this.clientTelemetryData

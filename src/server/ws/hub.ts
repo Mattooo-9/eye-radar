@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { WebSocketServer, type RawData, type WebSocket } from "ws";
 import { applyDynamicJitter } from "../core/jitter.js";
 import type { ClientSession, CompactTrackPacket, ImpactEvent, UserLocation } from "../domain/types.js";
+import type { UncertaintyEvent } from "../domain/uncertaintyEvent.js";
 import { encodeBinarySnapshot, encodeBinaryDelta, encodeBinaryImpacts } from "../../common/binaryCodec.js";
 
 type ExtendedSession = ClientSession & {
@@ -35,6 +36,7 @@ export class RadarHub {
 
   private initialSnapshotProvider?: () => CompactTrackPacket[];
   private binarySnapshotProvider?: () => Uint8Array;
+  private initialUncertaintyProvider?: () => UncertaintyEvent[];
 
   constructor(private readonly wss: WebSocketServer) {
     this.wss.on("connection", (socket) => {
@@ -64,6 +66,16 @@ export class RadarHub {
         } catch {}
       }
 
+      // Send initial uncertainty events immediately
+      if (this.initialUncertaintyProvider) {
+        try {
+          const events = this.initialUncertaintyProvider();
+          if (events && events.length > 0) {
+            socket.send(JSON.stringify([3, Date.now(), events]), { binary: false });
+          }
+        } catch {}
+      }
+
       socket.on("message", (data) => this.onMessage(socket, data));
       socket.on("close", () => {
         this.sessions.delete(socket);
@@ -83,6 +95,10 @@ export class RadarHub {
 
   setBinarySnapshotProvider(provider: () => Uint8Array): void {
     this.binarySnapshotProvider = provider;
+  }
+
+  setInitialUncertaintyProvider(provider: () => UncertaintyEvent[]): void {
+    this.initialUncertaintyProvider = provider;
   }
 
   getClientCount(): number {
@@ -237,6 +253,20 @@ export class RadarHub {
         } else {
           socket.send(jsonPayload, { binary: false });
         }
+      }
+    }
+  }
+
+  broadcastUncertaintyEvents(events: UncertaintyEvent[]): void {
+    const now = Date.now();
+    const jsonPayload = JSON.stringify([3, now, events]);
+
+    for (const [socket] of this.sessions.entries()) {
+      if (socket.readyState === socket.OPEN) {
+        if (socket.bufferedAmount > 64 * 1024) {
+          continue;
+        }
+        socket.send(jsonPayload, { binary: false });
       }
     }
   }

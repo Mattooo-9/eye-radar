@@ -53,7 +53,7 @@ export const App = () => {
   } = useTrustedLocation();
   const [isPickingLocation, setIsPickingLocation] = useState(false);
   const [locationSetupOpen, setLocationSetupOpen] = useState(!isConfirmed);
-  const { packets, impacts, connectionState, mapStyleUrl } = useWsRadar(
+  const { packets, impacts, uncertaintyEvents, connectionState, mapStyleUrl } = useWsRadar(
     userId,
     location,
     trustScore,
@@ -355,6 +355,7 @@ export const App = () => {
       <TacticalTopBar
         threatCount={threatCount}
         activeAlertsCount={activeAlerts.length}
+        uncertaintyCount={uncertaintyEvents.length}
         onOpenMenu={() => setTacticalMenuOpen(true)}
         onOpenReport={() => setReportOpen(true)}
         onOpenAlerts={() => setAlertsModalOpen(true)}
@@ -389,6 +390,7 @@ export const App = () => {
           followingTargetId={followedTargetId}
           timelineOffsetSec={timelineOffsetSec}
           performanceTier={performanceTier}
+          activeAlerts={activeAlerts}
           onStopFollow={() => setFollowedTargetId(null)}
           onMapReady={(m) => {
             setMapInstance(m);

@@ -14,7 +14,7 @@ import type { FilterState } from "./StatusPanel";
 import FpsCounter from "./FpsCounter";
 import { SpatialIndex } from "../lib/spatialIndex.js";
 import { getTierConfig } from "../lib/hardwareBenchmark.js";
-import { trackStore } from "../lib/trackStore.js";
+import { trackStore, type ClientUncertaintyEvent } from "../lib/trackStore.js";
 import { renderTacticalGlyph } from "../lib/tacticalGlyphs.js";
 
 export type VisionMode = "satellite" | "nvg" | "flir" | "tactical";
@@ -45,6 +45,7 @@ interface MapViewProps {
   onSelectImpact?: (event: ImpactEvent) => void;
   timelineOffsetSec?: number;
   performanceTier?: "LOW" | "NORMAL" | "HIGH";
+  activeAlerts?: string[];
 }
 
 const SATELLITE_STYLE = {
@@ -1592,6 +1593,104 @@ const drawTacticalPerimeterIndicator = (
   ctx.restore();
 };
 
+const drawUncertaintyEvents = (
+  ctx: CanvasRenderingContext2D,
+  map: maplibregl.Map,
+  events: ClientUncertaintyEvent[],
+  now: number,
+  width: number,
+  height: number
+) => {
+  if (!events || events.length === 0) return;
+
+  const pulse = 0.5 + 0.5 * Math.sin(now / 700);
+
+  for (const ev of events) {
+    const pt = map.project([ev.lon, ev.lat]);
+    const offsetPt = map.project([ev.lon, ev.lat + (ev.uncertaintyRadius / 111139)]);
+    const radiusPx = Math.max(18, Math.abs(offsetPt.y - pt.y));
+
+    if (
+      pt.x < -radiusPx ||
+      pt.x > width + radiusPx ||
+      pt.y < -radiusPx ||
+      pt.y > height + radiusPx
+    ) {
+      continue;
+    }
+
+    ctx.save();
+    let strokeColor = "rgba(250, 204, 21, 0.75)";
+    let fillColor = "rgba(250, 204, 21, 0.08)";
+    let badgeText = "🎯 АКУСТИЧНИЙ СЕКТОР";
+
+    if (ev.sourceFamily === "thermal" || ev.source.includes("firms")) {
+      strokeColor = "rgba(239, 68, 68, 0.8)";
+      fillColor = "rgba(239, 68, 68, 0.09)";
+      badgeText = "🔥 ТЕПЛОВА АНОМАЛІЯ FIRMS";
+    } else if (ev.sourceFamily === "satellite" || ev.source.includes("satellite")) {
+      strokeColor = "rgba(56, 189, 248, 0.8)";
+      fillColor = "rgba(56, 189, 248, 0.09)";
+      badgeText = "🛰️ СУПУТНИКОВА ДЕТЕКЦІЯ";
+    } else if (ev.sourceFamily === "osint") {
+      strokeColor = "rgba(168, 85, 247, 0.8)";
+      fillColor = "rgba(168, 85, 247, 0.09)";
+      badgeText = "📡 МОНІТОРИНГОВИЙ РАПОРТ";
+    }
+
+    // Outer dashed ring
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, radiusPx, 0, Math.PI * 2);
+    ctx.fillStyle = fillColor;
+    ctx.fill();
+
+    ctx.lineWidth = 1.4;
+    ctx.setLineDash([6, 4]);
+    ctx.strokeStyle = strokeColor;
+    ctx.stroke();
+
+    // Inner pulsed wave
+    const innerRadius = radiusPx * (0.25 + 0.5 * pulse);
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, innerRadius, 0, Math.PI * 2);
+    ctx.setLineDash([2, 4]);
+    ctx.strokeStyle = strokeColor.replace(/[\d.]+\)$/, `${0.2 + 0.25 * pulse})`);
+    ctx.stroke();
+
+    // Center cross
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(pt.x - 5, pt.y); ctx.lineTo(pt.x + 5, pt.y);
+    ctx.moveTo(pt.x, pt.y - 5); ctx.lineTo(pt.x, pt.y + 5);
+    ctx.strokeStyle = strokeColor;
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+
+    // Label pill
+    const kmLabel = (ev.uncertaintyRadius / 1000).toFixed(ev.uncertaintyRadius >= 10000 ? 0 : 1);
+    const text = `${ev.label || badgeText} (±${kmLabel} км)`;
+    ctx.font = "bold 9px Inter, monospace";
+    const textW = ctx.measureText(text).width;
+    const badgeW = textW + 14;
+    const badgeH = 16;
+    const badgeX = pt.x - badgeW / 2;
+    const badgeY = pt.y - radiusPx - 11;
+
+    ctx.fillStyle = "rgba(11, 18, 32, 0.88)";
+    ctx.strokeStyle = strokeColor;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 4);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = "#f8fafc";
+    ctx.fillText(text, badgeX + 7, badgeY + 11);
+
+    ctx.restore();
+  }
+};
+
 export const MapView = ({
   packets,
   mapStyleUrl,
@@ -1616,7 +1715,8 @@ export const MapView = ({
   selectedImpact,
   onSelectImpact,
   timelineOffsetSec = 0,
-  performanceTier = "NORMAL"
+  performanceTier = "NORMAL",
+  activeAlerts = []
 }: MapViewProps) => {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -1626,6 +1726,9 @@ export const MapView = ({
   // Stable references to eliminate component re-render teardowns
   const packetsRef = useRef(packets);
   packetsRef.current = packets;
+
+  const activeAlertsRef = useRef(activeAlerts);
+  activeAlertsRef.current = activeAlerts;
 
   const spatialIndexRef = useRef<SpatialIndex<TrackPacket>>(new SpatialIndex<TrackPacket>(16));
 
@@ -2221,6 +2324,10 @@ export const MapView = ({
 
 
 
+        // 2.1 Draw Layer 2: Uncertainty / Sensor Detections (acoustic, FIRMS thermal, SAR/satellite, OSINT)
+        const uncertaintyEvents = trackStore.getUncertaintyEvents();
+        drawUncertaintyEvents(ctx, map, uncertaintyEvents, now, width, height);
+
         // 2.2 Draw Air Targets (Shahed, Missile, Recon, KAB, FPV, Jet, Helicopter) & Trajectory Vectors
         const placedPillBoxes: PillRect[] = [];
         const mapBearing = map.getBearing() || 0; // Hoisted: calculated once per animation frame
@@ -2290,6 +2397,18 @@ export const MapView = ({
             if (type === "fpv" && currentFilters.fpv === false) continue;
             if (type === "aircraft" && !currentFilters.aircraft) continue;
             if (type === "helicopter" && (currentFilters.helicopter !== undefined ? !currentFilters.helicopter : !currentFilters.aircraft)) continue;
+          }
+
+          // Operational Viewport Gating for Transponder / Border Flights:
+          // Distant aircraft or unconfirmed contacts (> 120 km from map center in Poland/Romania)
+          // do NOT clutter the local operational view. They are visible only when the user enables the aviation layer
+          // OR zooms out to regional overview (zoom <= 6.5).
+          if ((type === "aircraft" || type === "unknown") && !isOverview) {
+            const mapCenter = map.getCenter();
+            const distFromCenterKm = haversineMeters({ lat, lon }, { lat: mapCenter.lat, lon: mapCenter.lng }) / 1000;
+            if (distFromCenterKm > 120 && !currentFilters?.aircraft) {
+              continue;
+            }
           }
 
           // Fast equirectangular dead-reckoning extrapolation
@@ -2644,6 +2763,35 @@ export const MapView = ({
           }
         }
 
+        // 2.5 Truthful Operational Sector Status Watermark
+        const activeAlertsCount = activeAlertsRef.current?.length || 0;
+        const uncertaintyCount = trackStore.getUncertaintyCount();
+        const positionalCount = renderItems.length;
+
+        if (positionalCount === 0 && !isOverview) {
+          ctx.save();
+          const cityName = confirmedLocationRef.current?.name || "Ваш сектор";
+          const alertStatus = activeAlertsCount > 0 ? `🚨 ТРИВОГА: ${activeAlertsCount} ОБЛ.` : "🟢 НЕБО СПОКІЙНЕ";
+          const wmText = `🎯 ${cityName.toUpperCase()}: Позиційних цілей: 0 (ADS-B закрито) • ${alertStatus} • Сенсорних подій: ${uncertaintyCount}`;
+
+          ctx.font = "bold 10px Inter, monospace";
+          const wmWidth = ctx.measureText(wmText).width + 24;
+          const wmX = Math.max(12, (width - wmWidth) / 2);
+          const wmY = height - 92;
+
+          ctx.fillStyle = "rgba(11, 18, 32, 0.82)";
+          ctx.strokeStyle = activeAlertsCount > 0 ? "rgba(239, 68, 68, 0.45)" : "rgba(56, 189, 248, 0.35)";
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.roundRect(wmX, wmY, wmWidth, 22, 6);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = activeAlertsCount > 0 ? "#fca5a5" : "#94a3b8";
+          ctx.fillText(wmText, wmX + 12, wmY + 15);
+          ctx.restore();
+        }
+
         // 3. Draw Active Reconnaissance Satellites (Persona-3, Bars-M, Lotos-S1, Kondor-FKA) - throttled to 1s
         // Skip satellite recon layer in LOW performance tier
         if (performanceTierRef.current !== "LOW" && showSatellitesRef.current !== false) {
@@ -2655,13 +2803,14 @@ export const MapView = ({
         }
 
         // 4. Adaptive render scheduler:
-        // If map is moving/zooming/rotating/pitching, or if there are moving targets (speed > 2), or settle frames left:
+        // If map is moving/zooming/rotating/pitching, or if there are moving targets (speed > 2), or active sensor pulse, or settle frames left:
         // continue the rAF loop at adaptive tier rate.
         // Otherwise (stationary map and stationary/no targets), pause the rAF loop completely! (0% CPU/GPU idle load)
         const isMapMoving = map.isMoving() || map.isZooming() || map.isRotating();
         const hasMovingVisibleTargets = renderItems.length > 0 && renderItems.some(i => i.speedKmh > 7);
+        const hasActiveSensorEvents = uncertaintyCount > 0;
 
-        if (isMapMoving || hasMovingVisibleTargets || settleFramesLeft > 0) {
+        if (isMapMoving || hasMovingVisibleTargets || hasActiveSensorEvents || settleFramesLeft > 0) {
           if (settleFramesLeft > 0) settleFramesLeft--;
           isLoopRunning = true;
           animId = requestAnimationFrame((t) => render(t));

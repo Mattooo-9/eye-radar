@@ -10,6 +10,19 @@ export interface RingBufferTrail {
   head: number; // index of next write
 }
 
+export interface ClientUncertaintyEvent {
+  id: string;
+  lat: number;
+  lon: number;
+  uncertaintyRadius: number; // in meters
+  confidence: number;
+  source: string;
+  sourceFamily: string;
+  label: string;
+  timestamp: number;
+  details?: string;
+}
+
 export class MutableTrackStore {
   private tracks = new Map<string, TrackPacket>();
   private activeList: TrackPacket[] = [];
@@ -168,6 +181,19 @@ export class MutableTrackStore {
 
   getImpacts(): ImpactEvent[] {
     return this.impacts;
+  }
+
+  setUncertaintyEvents(events: ClientUncertaintyEvent[]): void {
+    this.uncertaintyEvents = events;
+    this.scheduleNotify();
+  }
+
+  getUncertaintyEvents(): ClientUncertaintyEvent[] {
+    return this.uncertaintyEvents;
+  }
+
+  getUncertaintyCount(): number {
+    return this.uncertaintyEvents.length;
   }
 
   /**

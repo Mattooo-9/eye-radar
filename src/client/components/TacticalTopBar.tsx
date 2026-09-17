@@ -3,6 +3,7 @@ import React from "react";
 interface TacticalTopBarProps {
   threatCount: number;
   activeAlertsCount: number;
+  uncertaintyCount?: number;
   onOpenMenu: () => void;
   onOpenReport: () => void;
   onOpenAlerts: () => void;
@@ -11,6 +12,7 @@ interface TacticalTopBarProps {
 export const TacticalTopBar: React.FC<TacticalTopBarProps> = ({
   threatCount,
   activeAlertsCount,
+  uncertaintyCount = 0,
   onOpenMenu,
   onOpenReport,
   onOpenAlerts
@@ -41,6 +43,11 @@ export const TacticalTopBar: React.FC<TacticalTopBarProps> = ({
         ) : (
           <div className="top-bar-calm-pill">
             <span className="calm-text">НЕБО СПОКІЙНЕ</span>
+          </div>
+        )}
+        {uncertaintyCount > 0 && (
+          <div className="top-bar-sensor-pill" title="Активні сенсорні спостереження та зони невизначеності">
+            <span className="sensor-pill-text">📡 СЕНСОРИ: {uncertaintyCount}</span>
           </div>
         )}
       </div>

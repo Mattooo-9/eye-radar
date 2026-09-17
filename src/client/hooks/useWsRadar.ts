@@ -21,21 +21,7 @@ export interface ImpactEvent {
   details?: string;
 }
 
-export type TrackPacket = [
-  id: string,
-  type: string,
-  lat: number,
-  lon: number,
-  heading: number,
-  speed: number,
-  timestamp: number,
-  confidence?: number,
-  uncertaintyRadius?: number,
-  threatLevel?: string,
-  altitude?: number,
-  model?: string,
-  callsign?: string
-];
+export type TrackPacket = CompactTrackPacket;
 
 interface ConfigResponse {
   wsUrl: string;
@@ -43,16 +29,15 @@ interface ConfigResponse {
 }
 
 interface TargetApiResponse {
-  count: number;
-  tracks: Array<{
+  tracks?: Array<{
     id: string;
-    type: string;
+    type: any;
     lat: number;
     lon: number;
     heading: number;
     speed: number;
     timestamp: number;
-    confidence: number;
+    confidence?: number;
     uncertaintyRadius?: number;
     threatLevel?: string;
     altitude?: number;
@@ -69,6 +54,7 @@ export const useWsRadar = (
 ) => {
   const [packets, setPackets] = useState<TrackPacket[]>([]);
   const [impacts, setImpacts] = useState<ImpactEvent[]>([]);
+  const [uncertaintyEvents, setUncertaintyEvents] = useState<ClientUncertaintyEvent[]>([]);
   const [connectionState, setConnectionState] = useState<"idle" | "connecting" | "open" | "closed">(
     "idle"
   );
@@ -177,12 +163,15 @@ export const useWsRadar = (
     const pollFallback = async () => {
       if (unmounted) return;
       try {
-        const [targetsRes, impactsRes] = await Promise.all([
+        const [targetsRes, impactsRes, uncertaintyRes] = await Promise.all([
           fetch(`/api/targets`, { signal: AbortSignal.timeout(3000) }).catch(() =>
             fetch(`${CLOUD_API_BASE}/api/targets`, { signal: AbortSignal.timeout(3000) })
           ),
           fetch(`/api/impacts`, { signal: AbortSignal.timeout(3000) }).catch(() =>
             fetch(`${CLOUD_API_BASE}/api/impacts`, { signal: AbortSignal.timeout(3000) })
+          ),
+          fetch(`/api/uncertainty-events`, { signal: AbortSignal.timeout(3000) }).catch(() =>
+            fetch(`${CLOUD_API_BASE}/api/uncertainty-events`, { signal: AbortSignal.timeout(3000) })
           )
         ]);
 
@@ -214,6 +203,14 @@ export const useWsRadar = (
           if (Array.isArray(impactData.events)) {
             trackStore.setImpacts(impactData.events);
             setImpacts(impactData.events);
+          }
+        }
+
+        if (uncertaintyRes && uncertaintyRes.ok) {
+          const uData = (await uncertaintyRes.json()) as { events?: ClientUncertaintyEvent[] };
+          if (Array.isArray(uData.events)) {
+            trackStore.setUncertaintyEvents(uData.events);
+            setUncertaintyEvents(uData.events);
           }
         }
       } catch {}
@@ -338,6 +335,9 @@ export const useWsRadar = (
                 setPackets(payload);
               } else if (kind === 2 && Array.isArray(payload)) {
                 setImpacts(payload);
+              } else if (kind === 3 && Array.isArray(payload)) {
+                trackStore.setUncertaintyEvents(payload);
+                setUncertaintyEvents(payload);
               }
             } catch {}
           }
@@ -369,15 +369,20 @@ export const useWsRadar = (
       document.addEventListener("visibilitychange", handleVisibilityChange);
     }
 
-    void pollFallback();
     void connect();
 
-    // Secondary resilient polling loop
-    pollTimerRef.current = window.setInterval(() => {
-      if (socketRef.current?.readyState !== WebSocket.OPEN) {
-        void pollFallback();
-      }
-    }, 4000);
+    // Periodic telemetry reporting to server
+    const telemetryInterval = setInterval(() => {
+      if (unmounted) return;
+      try {
+        const metrics = trackStore.getClientMetrics();
+        fetch("/api/diagnostics/client", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(metrics)
+        }).catch(() => {});
+      } catch {}
+    }, 10_000);
 
     return () => {
       unmounted = true;
@@ -386,6 +391,7 @@ export const useWsRadar = (
       }
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+      clearInterval(telemetryInterval);
       if (workerRef.current) {
         workerRef.current.terminate();
         workerRef.current = null;
@@ -419,9 +425,10 @@ export const useWsRadar = (
     () => ({
       packets,
       impacts,
+      uncertaintyEvents,
       connectionState,
       mapStyleUrl
     }),
-    [connectionState, impacts, mapStyleUrl, packets]
+    [connectionState, impacts, mapStyleUrl, packets, uncertaintyEvents]
   );
 };

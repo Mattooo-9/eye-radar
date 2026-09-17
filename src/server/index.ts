@@ -39,6 +39,7 @@ import { checkpointService } from "./db/checkpointService.js";
 import { watchdogService } from "./db/watchdogService.js";
 import { productionObservability } from "./core/observability.js";
 import { detectRealPixelChanges } from "./sources/cloudEoPipeline.js";
+import { uncertaintyEventManager } from "./core/uncertaintyEventManager.js";
 
 const DIST_CLIENT = resolve(process.cwd(), "dist/client");
 const MIME_TYPES: Record<string, string> = {
@@ -475,7 +476,8 @@ const server = createServer(async (req, res) => {
 
   if (req.method === "GET" && url.pathname === "/api/diagnostics/pipeline") {
     const pipeline = productionObservability.getPipelineDiagnostics(
-      trackManager.snapshot(simulationEnabled).length
+      trackManager.snapshot(simulationEnabled).length,
+      uncertaintyEventManager.getCount()
     );
     const audit = healthTracker.getAuditReport(trackManager.snapshot(simulationEnabled));
     json(res, 200, {
@@ -483,6 +485,24 @@ const server = createServer(async (req, res) => {
       sourcesSummary: audit.summary,
       timeCalibration: timeCalibrationService.getAllMetrics()
     });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/uncertainty-events") {
+    const events = uncertaintyEventManager.getActiveEvents();
+    json(res, 200, { count: events.length, events });
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/diagnostics/client") {
+    try {
+      const raw = await readBody(req);
+      const data = JSON.parse(raw);
+      productionObservability.recordClientTelemetry(data);
+      json(res, 200, { ok: true });
+    } catch {
+      json(res, 400, { error: "Invalid client telemetry payload" });
+    }
     return;
   }
 
@@ -892,6 +912,7 @@ const wss = new WebSocketServer({ noServer: true });
 const hub = new RadarHub(wss);
 hub.setInitialSnapshotProvider(() => trackManager.toPackets(simulationEnabled));
 hub.setBinarySnapshotProvider(() => trackManager.getBinarySnapshot(simulationEnabled));
+hub.setInitialUncertaintyProvider(() => uncertaintyEventManager.getActiveEvents());
 const botManager = createTelegramBot();
 botManager.setHealthTracker(
   healthTracker,
@@ -1001,6 +1022,7 @@ setInterval(async () => {
         const latency = Date.now() - tGnd;
         for (const go of gndObs) {
           trackManager.ingest(toObservation(go));
+          uncertaintyEventManager.ingestObservation(go, now);
         }
         healthTracker.recordSuccess("ground.sensor", latency, gndObs.length);
         if (gndObs.length > 0) {
@@ -1021,6 +1043,7 @@ setInterval(async () => {
         const latency = Date.now() - tSat;
         for (const so of satObs) {
           trackManager.ingest(toObservation(so));
+          uncertaintyEventManager.ingestObservation(so, now);
         }
         healthTracker.recordSuccess("satellite.eo_coords", latency, satObs.length);
       } catch (err) {
@@ -1063,6 +1086,7 @@ setInterval(async () => {
       const latency = Date.now() - t0;
       for (const t of thermals) {
         trackManager.ingest(t);
+        uncertaintyEventManager.ingestObservation(t, now);
       }
       healthTracker.recordSuccess("nasa-firms", latency, thermals.length);
     } catch (err) {
@@ -1082,6 +1106,7 @@ setInterval(async () => {
 
   trackManager.tick(now);
   trackManager.prune(now);
+  uncertaintyEventManager.pruneExpired(now);
 
   // Stage 5: Backend AI Engine - Auxiliary aerodynamic & kinematic envelope validation
   if (cycleCounter % 3 === 0) {
@@ -1103,6 +1128,7 @@ setInterval(async () => {
 
   if (cycleCounter % 3 === 0) {
     hub.broadcastImpacts(impactManager.getRecentEvents());
+    hub.broadcastUncertaintyEvents(uncertaintyEventManager.getActiveEvents(now));
   }
 
   // Broadcast personal threat alerts to bot subscribers
