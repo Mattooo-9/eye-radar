@@ -23,6 +23,14 @@
       "destination": "https://eye-radar.onrender.com/api/tracks/:match*"
     },
     {
+      "source": "/api/uncertainty-events",
+      "destination": "https://eye-radar.onrender.com/api/uncertainty-events"
+    },
+    {
+      "source": "/api/diagnostics/:match*",
+      "destination": "https://eye-radar.onrender.com/api/diagnostics/:match*"
+    },
+    {
       "source": "/api/config",
       "destination": "https://eye-radar.onrender.com/api/config"
     },
