@@ -270,7 +270,7 @@ export class TrackManager {
         observation.threatEvidence = [];
         if (!observation.meta) observation.meta = {};
         observation.meta.threatEvidence = [];
-        observation.meta.threatLevel = "low";
+        delete observation.meta.threatLevel;
       }
     }
 
@@ -383,7 +383,7 @@ export class TrackManager {
         covLat: imm.covLat,
         covLon: imm.covLon,
         uncertaintyRadius: imm.uncertaintyRadiusMeters,
-        threatLevel: (observation.meta?.threatLevel as ThreatLevel) || (classification.resolvedType === "aircraft" ? "low" : undefined),
+        threatLevel: (observation.meta?.threatLevel as ThreatLevel) || undefined,
         lastUpdated: now,
         model: classification.resolvedModel,
         alternativeType: classification.alternative?.type,

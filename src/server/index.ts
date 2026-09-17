@@ -1125,6 +1125,11 @@ const main = async (): Promise<void> => {
     );
   }, 5_000).unref();
 
+  // 5. Periodic Telegram message auto-deletion processor every 10 seconds
+  setInterval(() => {
+    void messageDeletionService.processPendingDeletions(botManager.getBotInstance()?.telegram);
+  }, 10_000).unref();
+
   server.listen(env.port, env.host, async () => {
     console.log(`📡 Eye Radar HTTP/WS listening on http://${env.host}:${env.port}`);
   });

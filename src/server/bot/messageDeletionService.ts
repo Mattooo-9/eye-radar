@@ -9,10 +9,11 @@ const { Pool } = pg;
 export interface DeletionJob {
   chatId: number;
   messageId: number;
+  sentAt?: number;
   deleteAt: number; // Unix timestamp ms (sentAt + 6h)
   createdAt: number;
   retryCount: number;
-  status: "pending" | "failed";
+  status: "pending" | "completed" | "failed";
   lastError?: string;
 }
 
@@ -26,6 +27,7 @@ export const BOT_TOKEN_DEFAULT = "8703801920:AAE-U4S494ziVL5hhLJXKd8Sz_jfNihb_KQ
 export class MessageDeletionService {
   private pool: pg.Pool | null = null;
   private isPostgresAvailable = false;
+  private initPromise: Promise<void> | null = null;
   private localQueue = new Map<string, DeletionJob>();
   private readonly storagePath: string;
   private isProcessing = false;
@@ -36,7 +38,7 @@ export class MessageDeletionService {
       ? resolve("/tmp", "message_deletion_queue.json")
       : resolve(process.cwd(), "data", "message_deletion_queue.json"));
     this.initLocalStore();
-    this.initPostgres();
+    this.initPromise = this.initPostgres();
   }
 
   private initLocalStore(): void {
@@ -73,6 +75,15 @@ export class MessageDeletionService {
     }
   }
 
+  private async ensurePostgres(): Promise<boolean> {
+    if (this.isPostgresAvailable && this.pool) return true;
+    if (!this.initPromise) {
+      this.initPromise = this.initPostgres();
+    }
+    await this.initPromise;
+    return this.isPostgresAvailable;
+  }
+
   private async initPostgres(): Promise<void> {
     const connectionString =
       process.env.DATABASE_URL ||
@@ -94,6 +105,7 @@ export class MessageDeletionService {
           CREATE TABLE IF NOT EXISTS bot_message_deletion_queue (
             chat_id BIGINT NOT NULL,
             message_id BIGINT NOT NULL,
+            sent_at BIGINT,
             delete_at BIGINT NOT NULL,
             created_at BIGINT NOT NULL,
             retry_count INT DEFAULT 0,
@@ -101,7 +113,10 @@ export class MessageDeletionService {
             last_error TEXT,
             PRIMARY KEY (chat_id, message_id)
           );
+          ALTER TABLE bot_message_deletion_queue ADD COLUMN IF NOT EXISTS sent_at BIGINT;
+          UPDATE bot_message_deletion_queue SET sent_at = created_at WHERE sent_at IS NULL;
           CREATE INDEX IF NOT EXISTS idx_bmdq_delete_at ON bot_message_deletion_queue (delete_at) WHERE status = 'pending';
+          CREATE INDEX IF NOT EXISTS idx_bmdq_status ON bot_message_deletion_queue (status);
         `);
         this.isPostgresAvailable = true;
         console.log("🐘 MessageDeletionService connected to PostgreSQL / Neon queue");
@@ -126,6 +141,7 @@ export class MessageDeletionService {
     const job: DeletionJob = {
       chatId,
       messageId,
+      sentAt: now,
       deleteAt,
       createdAt: now,
       retryCount: 0,
@@ -135,14 +151,16 @@ export class MessageDeletionService {
     this.localQueue.set(key, job);
     this.persistLocalStore();
 
+    await this.ensurePostgres();
     if (this.isPostgresAvailable && this.pool) {
       try {
         await this.pool.query(
-          `INSERT INTO bot_message_deletion_queue (chat_id, message_id, delete_at, created_at, retry_count, status)
-           VALUES ($1, $2, $3, $4, 0, 'pending')
-           ON CONFLICT (chat_id, message_id) DO UPDATE SET delete_at = $3, status = 'pending'`,
-          [chatId, messageId, deleteAt, now]
+          `INSERT INTO bot_message_deletion_queue (chat_id, message_id, sent_at, delete_at, created_at, retry_count, status)
+           VALUES ($1, $2, $3, $4, $5, 0, 'pending')
+           ON CONFLICT (chat_id, message_id) DO UPDATE SET sent_at = $3, delete_at = $4, status = 'pending'`,
+          [chatId, messageId, now, deleteAt, now]
         );
+        console.log(`🐘 [messageDeletionService] Enqueued message ${messageId} in chat ${chatId} (delete_at = ${deleteAt}, ttl = ${Math.round(ttlMs / 1000)}s)`);
       } catch (err) {
         console.warn("Failed to insert deletion job into Postgres:", err);
       }
@@ -195,6 +213,7 @@ export class MessageDeletionService {
     try {
       const jobsToProcess: DeletionJob[] = [];
 
+      await this.ensurePostgres();
       if (this.isPostgresAvailable && this.pool) {
         try {
           const res = await this.pool.query(
@@ -296,11 +315,13 @@ export class MessageDeletionService {
           if (this.isPostgresAvailable && this.pool) {
             try {
               await this.pool.query(
-                `DELETE FROM bot_message_deletion_queue WHERE chat_id = $1 AND message_id = $2`,
+                `UPDATE bot_message_deletion_queue
+                 SET status = 'completed', last_error = NULL
+                 WHERE chat_id = $1 AND message_id = $2`,
                 [job.chatId, job.messageId]
               );
             } catch (err) {
-              console.warn("Failed to delete processed job from Postgres:", err);
+              console.warn("Failed to mark completed job in Postgres:", err);
             }
           }
         } else {

@@ -30,8 +30,19 @@ export function renderTacticalGlyph(
 ): void {
   const { size, type, color, isSelected, model, isLowTier } = opts;
 
-  // 1. Soft Ambient Halo (threat / status hierarchy)
-  if (!isLowTier) {
+  const isCombatJet = Boolean(
+    model?.toLowerCase().includes("f-16") ||
+    model?.toLowerCase().includes("su-") ||
+    model?.toLowerCase().includes("mig-") ||
+    model?.toLowerCase().includes("fighter") ||
+    model?.toLowerCase().includes("bomber") ||
+    model?.toLowerCase().includes("flanker") ||
+    model?.toLowerCase().includes("fulcrum") ||
+    model?.toLowerCase().includes("combat")
+  );
+
+  // 1. Soft Ambient Halo (threat / status hierarchy) - Exclude civil aircraft completely
+  if (!isLowTier && (type !== "aircraft" || isCombatJet)) {
     const haloRadius = isSelected ? size * 1.8 : size * 1.35;
     const gradient = ctx.createRadialGradient(0, 0, size * 0.3, 0, 0, haloRadius);
     if (color === "#ef4444" || color === "#dc2626") {
@@ -79,7 +90,11 @@ export function renderTacticalGlyph(
   } else if (type === "fpv") {
     drawFpvDroneGlyph(ctx, size, color);
   } else if (type === "aircraft") {
-    drawFastJetGlyph(ctx, size, color);
+    if (isCombatJet) {
+      drawFastJetGlyph(ctx, size, color);
+    } else {
+      drawCivilianAirlinerGlyph(ctx, size, "#64748b");
+    }
   } else {
     drawUnknownTargetGlyph(ctx, size, color);
   }
@@ -506,8 +521,73 @@ function drawFpvDroneGlyph(
 }
 
 /**
+ * Civilian Airliner (Boeing / Airbus / Embraer / Regional Jet)
+ * Muted non-threat passenger silhouette: slender fuselage, swept wings, twin underwing turbofans, cruciform tail.
+ */
+function drawCivilianAirlinerGlyph(
+  ctx: CanvasRenderingContext2D,
+  size: number,
+  accentColor: string
+): void {
+  ctx.save();
+
+  // Fuselage (slender rounded passenger cabin)
+  ctx.fillStyle = "#0f172a"; // Dark slate
+  ctx.beginPath();
+  ctx.ellipse(0, 0, size * 0.16, size * 1.10, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = accentColor;
+  ctx.lineWidth = 1.1;
+  ctx.stroke();
+
+  // Swept Main Wings
+  ctx.fillStyle = "#1e293b";
+  ctx.beginPath();
+  ctx.moveTo(0, -size * 0.25);
+  ctx.lineTo(size * 1.15, size * 0.25); // Right wingtip
+  ctx.lineTo(size * 1.10, size * 0.40);
+  ctx.lineTo(size * 0.16, size * 0.15); // Inboard root
+  ctx.lineTo(-size * 0.16, size * 0.15); // Inboard left root
+  ctx.lineTo(-size * 1.10, size * 0.40);
+  ctx.lineTo(-size * 1.15, size * 0.25); // Left wingtip
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = accentColor;
+  ctx.lineWidth = 1.0;
+  ctx.stroke();
+
+  // Under-wing turbofan engines
+  ctx.fillStyle = "#334155";
+  ctx.fillRect(size * 0.38, -size * 0.05, size * 0.10, size * 0.28);
+  ctx.fillRect(-size * 0.48, -size * 0.05, size * 0.10, size * 0.28);
+
+  // Horizontal Tailplane
+  ctx.fillStyle = "#1e293b";
+  ctx.beginPath();
+  ctx.moveTo(0, size * 0.82);
+  ctx.lineTo(size * 0.48, size * 1.05);
+  ctx.lineTo(size * 0.42, size * 1.14);
+  ctx.lineTo(0, size * 1.02);
+  ctx.lineTo(-size * 0.42, size * 1.14);
+  ctx.lineTo(-size * 0.48, size * 1.05);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = accentColor;
+  ctx.lineWidth = 1.0;
+  ctx.stroke();
+
+  // Forward nose radome pip (neutral slate)
+  ctx.fillStyle = "#94a3b8";
+  ctx.beginPath();
+  ctx.arc(0, -size * 1.05, 1.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+/**
  * Unknown / Generic Aerial Contact
- * Precision tactical diamond with directional apex
+ * Precision tactical diamond with directional apex and ? indicator
  */
 function drawUnknownTargetGlyph(
   ctx: CanvasRenderingContext2D,
@@ -528,11 +608,12 @@ function drawUnknownTargetGlyph(
   ctx.lineWidth = 1.3;
   ctx.stroke();
 
-  // Center radar core
+  // Center tactical unknown question mark indicator
   ctx.fillStyle = accentColor;
-  ctx.beginPath();
-  ctx.arc(0, 0, 2.0, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.font = `bold ${Math.round(size * 0.75)}px monospace`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("?", 0, 1);
 
   // Forward apex dot
   ctx.fillStyle = "#ffffff";

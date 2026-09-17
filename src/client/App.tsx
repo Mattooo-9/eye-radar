@@ -121,7 +121,7 @@ export const App = () => {
     munition: true,
     bomb: true,
     fpv: true,
-    aircraft: true,
+    aircraft: false,
     helicopter: true,
     sound: soundEngine.isSoundEnabled()
   });
@@ -198,12 +198,17 @@ export const App = () => {
       if (type === "munition" && !filters.munition) return false;
       if (type === "bomb" && filters.bomb === false) return false;
       if (type === "fpv" && filters.fpv === false) return false;
-      if (type === "aircraft" && !filters.aircraft) return false;
+      if (type === "aircraft") {
+        if (!filters.aircraft) {
+          const currentZoom = mapInstance ? mapInstance.getZoom() : 8.5;
+          if (currentZoom >= 6.5) return false;
+        }
+      }
       if (type === "helicopter" && filters.helicopter === false) return false;
 
       return true;
     });
-  }, [packets, tacticalFilters, threatOnly, filters]);
+  }, [packets, tacticalFilters, threatOnly, filters, mapInstance]);
 
   // ── Auto-Sentinel: Proximity monitoring without unwanted auto-selection ───
   useEffect(() => {
@@ -231,6 +236,13 @@ export const App = () => {
     }
     return { uav, munition, bomb, fpv, aircraft, helo };
   }, [packets]);
+
+  const threatCount = useMemo(() => {
+    return filteredPackets.filter((p) => {
+      const type = p[1];
+      return type === "uav" || type === "munition" || type === "bomb" || type === "fpv";
+    }).length;
+  }, [filteredPackets]);
 
   const handleFitAllTargets = () => {
     if (!mapInstance) return;
@@ -341,7 +353,7 @@ export const App = () => {
     <main className="app-shell">
       {/* 1. Sleek, ultra-compact tactical top bar (44px height) */}
       <TacticalTopBar
-        threatCount={filteredPackets.length}
+        threatCount={threatCount}
         activeAlertsCount={activeAlerts.length}
         onOpenMenu={() => setTacticalMenuOpen(true)}
         onOpenReport={() => setReportOpen(true)}

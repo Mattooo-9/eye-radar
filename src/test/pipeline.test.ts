@@ -118,7 +118,7 @@ describe("E2E Pipeline Integration Test", () => {
     const state = trackManager.ingest(civilAirlinerObs, now);
     expect(state).not.toBeNull();
     expect(state?.type).toBe("aircraft");
-    expect(state?.threatLevel).toBe("low");
+    expect(state?.threatLevel).toBeUndefined();
     expect(state?.threatEvidence).toEqual([]);
     expect(state?.type).not.toBe("shahed");
     expect(state?.type).not.toBe("munition");

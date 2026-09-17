@@ -1533,7 +1533,7 @@ const TARGET_COLORS: Record<string, string> = {
   munition: "#f97316",
   bomb: "#ef4444",
   fpv: "#d946ef",
-  aircraft: "#38bdf8",
+  aircraft: "#64748b",
   helicopter: "#10b981",
   unknown: "#facc15"
 };
@@ -1748,12 +1748,24 @@ export const MapView = ({
     currentStyleRef.current = initialStyle;
 
     const isMobile = typeof window !== "undefined" && window.innerWidth < 600;
-    const initialZoom = isMobile ? 4.0 : 5.0;
+    const initialLoc = confirmedLocationRef.current || locationRef.current;
+    const isOverview = Boolean(initialLoc && "name" in initialLoc && initialLoc.name?.includes("Вся Україна"));
+
+    let initialCenter: [number, number] = [30.5234, 50.4501]; // Default operational district: Kyiv
+    let initialZoom = 8.5;
+
+    if (isOverview) {
+      initialCenter = [31.5, 48.8];
+      initialZoom = isMobile ? 4.2 : 5.0;
+    } else if (initialLoc) {
+      initialCenter = [initialLoc.lon, initialLoc.lat];
+      initialZoom = 8.5;
+    }
 
     const map = new maplibregl.Map({
       container: mapContainerRef.current,
       style: initialStyle,
-      center: [31.5, 48.8], // Center of Ukraine
+      center: initialCenter,
       zoom: initialZoom,
       minZoom: 1.5,
       maxZoom: 18.0,
@@ -2014,7 +2026,7 @@ export const MapView = ({
       (Math.abs(location.lat - 49.0) < 0.5 && Math.abs(location.lon - 31.5) < 0.5);
 
     const isMobile = typeof window !== "undefined" && window.innerWidth < 600;
-    const targetZoom = isOverview ? (isMobile ? 4.0 : 5.0) : 7.2;
+    const targetZoom = isOverview ? (isMobile ? 4.2 : 5.0) : 8.5;
 
     map.flyTo({
       center: [location.lon, location.lat],
@@ -2305,6 +2317,18 @@ export const MapView = ({
             groundPoint.y > height + cullingMargin;
 
           if (isOffScreen) {
+            // Exclude civilian aircraft from off-screen perimeter threat indicators completely.
+            // Tactical perimeter indicators are strictly for combat threats (uav, munition, bomb, fpv) and unverified contacts within operational range.
+            if (type === "aircraft") {
+              continue;
+            }
+
+            const mapCenter = map.getCenter();
+            const distKm = Math.round(haversineMeters(curLat, curLon, mapCenter.lat, mapCenter.lng) / 1000);
+            if (distKm > 120) {
+              continue;
+            }
+
             const cx = width / 2;
             const cy = height / 2;
             const dx = groundPoint.x - cx;
@@ -2319,8 +2343,6 @@ export const MapView = ({
             const edgeX = cx + t * Math.cos(angleRad);
             const edgeY = cy + t * Math.sin(angleRad);
 
-            const mapCenter = map.getCenter();
-            const distKm = Math.round(haversineMeters(curLat, curLon, mapCenter.lat, mapCenter.lng) / 1000);
             const color = TARGET_COLORS[type] ?? "#7dd3fc";
             const speedKmh = Math.round(speed * 3.6);
 
@@ -2408,21 +2430,24 @@ export const MapView = ({
                 .trim()
             : "";
 
-          const shortName = cleanModel || (
-            type === "uav"
-            ? "БПЛА"
-            : type === "bomb"
-            ? "КАБ"
-            : type === "fpv"
-            ? "FPV"
-            : type === "munition"
-            ? "Ракета"
-            : type === "helicopter"
-            ? "Гелікоптер"
-            : id.startsWith("adsb-")
-            ? id.slice(5).toUpperCase()
-            : "Ціль"
-          );
+          const isUnverified = type === "unknown" || (confidence !== undefined && confidence < 0.45);
+          const shortName = isUnverified
+            ? "UNVERIFIED"
+            : cleanModel || (
+              type === "uav"
+              ? "БПЛА"
+              : type === "bomb"
+              ? "КАБ"
+              : type === "fpv"
+              ? "FPV"
+              : type === "munition"
+              ? "Ракета"
+              : type === "helicopter"
+              ? "Гелікоптер"
+              : type === "aircraft"
+              ? (id.startsWith("adsb-") ? id.slice(5).toUpperCase() : "Борт")
+              : "UNKNOWN"
+            );
 
           renderItems.push({
             id,

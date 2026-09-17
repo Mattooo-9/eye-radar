@@ -53,6 +53,22 @@ export class ThreatEngine {
     let threatLevel: ThreatLevel = "low";
     let warningMessage: string | undefined;
 
+    const isCombat =
+      track.type !== "aircraft" ||
+      Boolean(track.model && /su-|mig-|f-16|fighter|bomber|flanker|fulcrum/i.test(track.model));
+
+    if (!isCombat) {
+      return {
+        trackId: track.id,
+        threatLevel: "low",
+        distanceMeters,
+        etaMinutes: null,
+        bearingToTarget,
+        isHeadingTowards: false,
+        warningMessage: undefined
+      };
+    }
+
     const distanceKm = Math.round(distanceMeters / 1000);
 
     if (isHeadingTowards) {
