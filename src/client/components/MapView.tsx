@@ -1742,7 +1742,12 @@ export const MapView = ({
     }));
     spatialIndexRef.current.clear();
     spatialIndexRef.current.load(items);
+    renderRef.current?.();
   }, [packets]);
+
+  useEffect(() => {
+    renderRef.current?.();
+  }, [activeAlerts]);
 
   const timelineOffsetRef = useRef(timelineOffsetSec);
   timelineOffsetRef.current = timelineOffsetSec;
