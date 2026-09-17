@@ -95,6 +95,10 @@
       "destination": "https://eye-radar.onrender.com/api/briefing"
     },
     {
+      "source": "/api/location",
+      "destination": "https://eye-radar.onrender.com/api/location"
+    },
+    {
       "source": "/api/location/:match*",
       "destination": "https://eye-radar.onrender.com/api/location/:match*"
     },

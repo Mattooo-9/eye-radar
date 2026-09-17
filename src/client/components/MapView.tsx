@@ -2405,10 +2405,11 @@ export const MapView = ({
           }
 
           // Operational Viewport Gating for Transponder / Border Flights:
-          // Distant aircraft or unconfirmed contacts (> 120 km from map center in Poland/Romania)
+          // Distant aircraft (> 120 km from map center in Poland/Romania)
           // do NOT clutter the local operational view. They are visible only when the user enables the aviation layer
           // OR zooms out to regional overview (zoom <= 6.5).
-          if ((type === "aircraft" || type === "unknown") && !isOverview) {
+          // Unconfirmed contacts / UNKNOWN objects are NEVER suppressed by this filter.
+          if (type === "aircraft" && !isOverview) {
             const mapCenter = map.getCenter();
             const distFromCenterKm = haversineMeters({ lat, lon }, { lat: mapCenter.lat, lon: mapCenter.lng }) / 1000;
             if (distFromCenterKm > 120 && !currentFilters?.aircraft) {

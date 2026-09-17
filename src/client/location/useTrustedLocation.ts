@@ -56,6 +56,39 @@ export const useTrustedLocation = () => {
   const [isManual, setIsManual] = useState(Boolean(confirmedLocation));
   const lastGpsRef = useRef<TrustedLocation | null>(null);
 
+  // Sync saved location from Neon PostgreSQL if not yet confirmed in local storage
+  useEffect(() => {
+    if (confirmedLocation) return;
+    const tgUserId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
+    const userId = tgUserId || localStorage.getItem("eye-radar-user-id");
+    if (!userId) return;
+
+    fetch(`/api/location?userId=${userId}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.ok && data?.location?.lat && data?.location?.lon) {
+          const loc = {
+            lat: data.location.lat,
+            lon: data.location.lon,
+            name: data.location.name || "Збережена локація"
+          };
+          localStorage.setItem("eye-radar-user-location", JSON.stringify(loc));
+          localStorage.setItem("eye-radar-user-location-confirmed", "true");
+          setConfirmedLocation(loc);
+          setIsConfirmed(true);
+          setLocation({
+            lat: loc.lat,
+            lon: loc.lon,
+            accuracy: data.location.accuracy || 15,
+            timestamp: Date.now()
+          });
+          setIsManual(true);
+          setNeedsManualConfirm(false);
+        }
+      })
+      .catch(() => {});
+  }, [confirmedLocation]);
+
   useEffect(() => {
     if (!("geolocation" in navigator)) {
       setNeedsManualConfirm(true);
@@ -182,17 +215,22 @@ export const useTrustedLocation = () => {
       setManualLocation({ lat: loc.lat, lon: loc.lon });
       setNeedsManualConfirm(false);
 
-      // Subscribe to bot alerts only when user explicitly saves location (once)
+      // Sync to Neon Postgres user_preferences / alerts subscription
       const tgUserId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
-      if (tgUserId) {
-        void fetch("/api/alerts/subscribe", {
+      const userId = tgUserId || localStorage.getItem("eye-radar-user-id");
+      if (userId) {
+        void fetch("/api/location", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            userId: tgUserId,
+            userId,
             lat: loc.lat,
             lon: loc.lon,
+            name: loc.name,
             cityName: loc.name,
+            accuracy: 15,
+            source: "manual",
+            trusted: true,
             radiusKm: 35
           })
         }).catch(() => {});

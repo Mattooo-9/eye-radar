@@ -405,6 +405,10 @@ export class EyeRadarBotManager {
     return true;
   }
 
+  getUserLocation(chatId: number): UserAlertPreference | undefined {
+    return this.storage.getPreference(chatId);
+  }
+
   async broadcastThreatAlerts(tracks: TrackState[]): Promise<void> {
     if (!this.bot) return;
 

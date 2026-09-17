@@ -686,6 +686,72 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && url.pathname === "/api/location") {
+    const rawUserId = url.searchParams.get("userId") || url.searchParams.get("chatId");
+    const chatId = rawUserId ? parseInt(rawUserId, 10) : NaN;
+    if (!isNaN(chatId)) {
+      const pref = botManager.getUserLocation(chatId);
+      if (pref) {
+        json(res, 200, {
+          ok: true,
+          location: {
+            lat: pref.lat,
+            lon: pref.lon,
+            name: pref.cityName || "Збережена локація",
+            radiusKm: pref.radiusKm || 30,
+            accuracy: 15,
+            source: "neon_database",
+            trusted: true,
+            updatedAt: pref.lastNotified || Date.now()
+          }
+        });
+        return;
+      }
+    }
+    json(res, 200, { ok: false, message: "No saved location in database" });
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/location") {
+    try {
+      const raw = await readBody(req);
+      const parsed = JSON.parse(raw) as {
+        userId?: string | number;
+        lat: number;
+        lon: number;
+        name?: string;
+        cityName?: string;
+        accuracy?: number;
+        source?: string;
+        trusted?: boolean;
+        radiusKm?: number;
+      };
+      const chatId = typeof parsed.userId === "number" ? parsed.userId : parseInt(String(parsed.userId || ""), 10);
+      if (!isNaN(chatId) && chatId > 0) {
+        const city = parsed.cityName || parsed.name || "Власна геопозиція";
+        await botManager.subscribeUserLocation(chatId, parsed.lat, parsed.lon, city, parsed.radiusKm || 35);
+        json(res, 200, {
+          ok: true,
+          saved: true,
+          location: {
+            lat: parsed.lat,
+            lon: parsed.lon,
+            name: city,
+            accuracy: parsed.accuracy ?? 15,
+            source: parsed.source ?? "manual",
+            trusted: parsed.trusted ?? true,
+            updatedAt: Date.now()
+          }
+        });
+      } else {
+        json(res, 400, { error: "Invalid user/chat ID" });
+      }
+    } catch {
+      json(res, 400, { error: "Invalid payload" });
+    }
+    return;
+  }
+
   if (req.method === "POST" && url.pathname === "/api/alerts/subscribe") {
     try {
       const raw = await readBody(req);
