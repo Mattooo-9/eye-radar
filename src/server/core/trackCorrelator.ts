@@ -28,7 +28,7 @@ export class TrackCorrelator {
     const obsAccuracy =
       typeof obs.meta?.measurement_accuracy === "number"
         ? (obs.meta.measurement_accuracy as number)
-        : 500;
+        : (obs.uncertaintyRadius || 500);
     const obsVarMetersSq = Math.max(50 ** 2, obsAccuracy ** 2);
 
     const totalVar = trackVarMetersSq + obsVarMetersSq;
@@ -99,10 +99,15 @@ export class TrackCorrelator {
 
       const distance = haversineMeters(referenceLat, referenceLon, observation.lat, observation.lon);
 
-      // Spatial gating threshold based on speed and time delta
+      // Spatial gating threshold based on speed, time delta, and spatial uncertainty of both track and observation
+      const trackUncertainty = track.uncertaintyRadius || 500;
+      const obsAccuracy =
+        typeof observation.meta?.measurement_accuracy === "number"
+          ? (observation.meta.measurement_accuracy as number)
+          : (observation.uncertaintyRadius || 500);
       const allowedGate = Math.max(
         this.maxAssociationDistanceMeters,
-        (track.speed || 50) * timeDiffSec + 10_000
+        (track.speed || 50) * timeDiffSec + trackUncertainty + obsAccuracy
       );
 
       if (distance > allowedGate) {
@@ -119,11 +124,17 @@ export class TrackCorrelator {
       }
 
       // 7. Directional compatibility gating: crossing tracks heading separation
+      // Only apply heading gating if BOTH track and observation have directional vectors
+      const effectiveTrackHeading = typeof track.measuredHeading === "number"
+        ? track.measuredHeading
+        : (track.measuredHeading === undefined && !track.evidenceFamilies?.includes("acoustic") ? track.heading : undefined);
+
       if (
         typeof observation.heading === "number" &&
-        typeof track.heading === "number"
+        typeof effectiveTrackHeading === "number" &&
+        (track.speed || 0) > 10
       ) {
-        const headingDiff = Math.abs(observation.heading - track.heading);
+        const headingDiff = Math.abs(observation.heading - effectiveTrackHeading);
         const normalizedDiff = Math.min(headingDiff, 360 - headingDiff);
         if (normalizedDiff > 70) {
           // Divergent headings; likely separate crossing objects

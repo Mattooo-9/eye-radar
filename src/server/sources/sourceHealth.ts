@@ -2,12 +2,12 @@ import type { TrackState } from "../domain/types.js";
 import { backendAiEngine } from "../core/backendAiEngine.js";
 import { timeCalibrationService } from "../core/timeCalibration.js";
 
-export type SourceAuditState = "LIVE" | "DEGRADED" | "STALE" | "OFFLINE";
+export type SourceAuditState = "LIVE" | "AVAILABLE" | "DEGRADED" | "OFFLINE";
 
 export interface SourceAuditDetail {
   name: string;
   state: SourceAuditState;
-  status: "online" | "degraded" | "offline";
+  status: "online" | "available" | "degraded" | "offline";
   lastSuccess: number;
   lastObservedAt: number;
   lastReceivedAt: number;
@@ -31,8 +31,9 @@ export interface SourceAuditReport {
   summary: {
     totalSources: number;
     liveSources: number;
+    availableSources: number;
     degradedSources: number;
-    staleSources: number;
+    staleSources?: number;
     offlineSources: number;
     overallHealth: "HEALTHY" | "DEGRADED" | "CRITICAL";
     livePositionalSources?: string[];
@@ -52,6 +53,7 @@ interface SourceInternalStats {
   errorCount: number;
   successCount: number;
   totalObservations: number;
+  recentObservationsCount?: number;
   lastError?: string;
   latencies: number[]; // circular buffer of last 60 latencies
   updateTimestamps: number[]; // timestamps of last 30 updates to compute Hz
@@ -110,6 +112,7 @@ export class SourceHealthTracker {
         errorCount: 0,
         successCount: 0,
         totalObservations: 0,
+        recentObservationsCount: 0,
         latencies: [],
         updateTimestamps: []
       });
@@ -132,13 +135,17 @@ export class SourceHealthTracker {
       errorCount: 0,
       successCount: 0,
       totalObservations: 0,
+      recentObservationsCount: 0,
       latencies: [],
       updateTimestamps: []
     };
 
     s.lastSuccess = now;
     s.lastReceivedAt = now;
-    s.lastObservedAt = observedAt ?? (now - latencyMs);
+    s.recentObservationsCount = observationsCount;
+    if (observationsCount > 0) {
+      s.lastObservedAt = observedAt ?? (now - latencyMs);
+    }
     s.lastLatencyMs = latencyMs;
     s.successCount += 1;
     s.totalObservations += observationsCount;
@@ -170,6 +177,7 @@ export class SourceHealthTracker {
       errorCount: 0,
       successCount: 0,
       totalObservations: 0,
+      recentObservationsCount: 0,
       latencies: [],
       updateTimestamps: []
     };
@@ -180,28 +188,33 @@ export class SourceHealthTracker {
   }
 
   calculateState(s: SourceInternalStats, now = Date.now()): SourceAuditState {
-    // 1. Never successfully connected in current session = OFFLINE
-    if (s.successCount === 0 || s.lastSuccess === 0) {
+    // 1. Never successfully connected or no successful contact for > 60 seconds = OFFLINE
+    if (s.successCount === 0 || s.lastSuccess === 0 || now - s.lastSuccess > 60_000) {
       return "OFFLINE";
     }
 
-    // 2. High error count or unstable sensor clock/jitter = DEGRADED
-    if (s.errorCount >= 3 || timeCalibrationService.isTimingDegraded(s.name)) {
+    // 2. High error count, excessive latency, or unstable sensor clock/jitter = DEGRADED
+    if (s.errorCount >= 3 || s.lastLatencyMs > 5000 || timeCalibrationService.isTimingDegraded(s.name)) {
       return "DEGRADED";
     }
 
-    // 3. Stale: no successful update in over 45 seconds
-    if (now - s.lastSuccess > 45_000) {
-      return "STALE";
+    // 3. LIVE vs AVAILABLE:
+    // Real LIVE status strictly requires an active stream with recent observations received in sector
+    const hasRecentObs = s.lastObservedAt > 0 && now - s.lastObservedAt <= 45_000;
+    const hasObsCount = (s.recentObservationsCount !== undefined ? s.recentObservationsCount > 0 : s.totalObservations > 0);
+
+    if (hasRecentObs && hasObsCount) {
+      return "LIVE";
     }
 
-    // 4. Fully operational with recent successful data
-    return "LIVE";
+    // Endpoint is reachable, healthy, valid payload schema, but currently 0 active targets in monitored sector
+    return "AVAILABLE";
   }
 
   calculateTrustScore(s: SourceInternalStats, state: SourceAuditState): number {
     if (state === "OFFLINE") return 0.0;
-    if (state === "STALE") return 0.3;
+    if (state === "DEGRADED") return 0.4;
+    if (state === "AVAILABLE") return 0.85;
     const p95 = calculatePercentile(s.latencies, 95);
     return backendAiEngine.scoreSourceQuality(s.name, s.successCount, s.errorCount, p95);
   }
@@ -211,8 +224,8 @@ export class SourceHealthTracker {
     if (!s) return 0.5;
     const state = this.calculateState(s);
     if (state === "OFFLINE") return 0.1;
-    if (state === "STALE") return 0.3;
     if (state === "DEGRADED") return 0.5;
+    if (state === "AVAILABLE") return 0.75;
 
     const p95 = calculatePercentile(s.latencies, 95);
     if (p95 > 5000) return 0.6;
@@ -260,8 +273,8 @@ export class SourceHealthTracker {
     const details: SourceAuditDetail[] = [];
 
     let liveCount = 0;
+    let availableCount = 0;
     let degradedCount = 0;
-    let staleCount = 0;
     let offlineCount = 0;
 
     for (const s of this.sources.values()) {
@@ -275,12 +288,12 @@ export class SourceHealthTracker {
       const activeTracksHelped = this.countActiveTracksHelped(s.name, tracks);
 
       if (state === "LIVE") liveCount++;
+      else if (state === "AVAILABLE") availableCount++;
       else if (state === "DEGRADED") degradedCount++;
-      else if (state === "STALE") staleCount++;
       else if (state === "OFFLINE") offlineCount++;
 
-      const status: "online" | "degraded" | "offline" =
-        state === "LIVE" ? "online" : state === "DEGRADED" ? "degraded" : "offline";
+      const status: "online" | "available" | "degraded" | "offline" =
+        state === "LIVE" ? "online" : state === "AVAILABLE" ? "available" : state === "DEGRADED" ? "degraded" : "offline";
 
       details.push({
         name: s.name,
@@ -306,9 +319,9 @@ export class SourceHealthTracker {
     }
 
     const overallHealth =
-      liveCount >= 3 && degradedCount === 0
+      (liveCount + availableCount) >= 3 && degradedCount === 0
         ? "HEALTHY"
-        : liveCount > 0
+        : (liveCount > 0 || availableCount > 0)
         ? "DEGRADED"
         : "CRITICAL";
 
@@ -317,8 +330,9 @@ export class SourceHealthTracker {
       summary: {
         totalSources: this.sources.size,
         liveSources: liveCount,
+        availableSources: availableCount,
         degradedSources: degradedCount,
-        staleSources: staleCount,
+        staleSources: 0,
         offlineSources: offlineCount,
         overallHealth
       },

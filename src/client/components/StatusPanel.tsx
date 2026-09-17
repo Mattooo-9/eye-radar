@@ -107,13 +107,18 @@ export const StatusPanel = ({
             </div>
 
             <div className="source-row">
-              <span className="source-label">🚨 alerts.in.ua (Сирени областей)</span>
+              <span className="source-label">🚨 alerts.in.ua (Офіційні тривоги)</span>
               <span className="source-badge online">🟢 ОНЛАЙН (100% покриття)</span>
             </div>
 
             <div className="source-row">
-              <span className="source-label">airplanes.live (ADS-B радари)</span>
+              <span className="source-label">airplanes.live / adsb.lol (ADS-B / MLAT)</span>
               <span className="source-badge online">ОНЛАЙН (~350 мс)</span>
+            </div>
+
+            <div className="source-row">
+              <span className="source-label">readsb / SDR мережі (1090 / 978 МГц)</span>
+              <span className="source-badge online">ГОТОВИЙ (Резерв)</span>
             </div>
 
             <div className="source-row">

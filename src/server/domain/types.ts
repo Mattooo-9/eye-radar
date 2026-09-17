@@ -20,7 +20,15 @@ export type SourceKind =
   | "radar"
   | "acoustic"
   | "optical"
-  | "satellite";
+  | "satellite"
+  | "airplanes.live"
+  | "adsb.lol"
+  | "opensky.live"
+  | "sdr.receiver"
+  | "ground.sensor"
+  | "ground.radar"
+  | "ground.acoustic"
+  | "satellite.eo_coords";
 
 export type ThreatLevel = "low" | "medium" | "high" | "critical";
 
@@ -64,6 +72,7 @@ export interface Observation {
   source: SourceKind;
   confidence: number;
   altitude?: number;
+  uncertaintyRadius?: number;
   meta?: Record<string, any>;
   threatEvidence?: string[] | string;
   isSynthetic?: boolean;

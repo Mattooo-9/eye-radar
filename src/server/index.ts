@@ -927,12 +927,13 @@ setInterval(async () => {
         const tAdsb = Date.now();
         try {
           const flightObs = await openskyLolSource.fetchFlightObservations();
+          const latency = Date.now() - tAdsb;
           for (const fo of flightObs) {
             trackManager.ingest(toObservation(fo));
           }
+          healthTracker.recordSuccess("adsb.lol", latency, flightObs.length);
           if (flightObs.length > 0) {
-            healthTracker.recordSuccess("adsb.lol", Date.now() - tAdsb, flightObs.length);
-            sourceRegistry.validateAndActivate("adsb.lol", flightObs, Date.now() - tAdsb);
+            sourceRegistry.validateAndActivate("adsb.lol", flightObs, latency);
           }
         } catch (err) {
           healthTracker.recordError("adsb.lol", err instanceof Error ? err : String(err));
@@ -942,12 +943,13 @@ setInterval(async () => {
         const t0 = Date.now();
         try {
           const flights = await airplanesSource.fetchBorderFlights();
+          const latency = Date.now() - t0;
           for (const f of flights) {
             trackManager.ingest(f);
           }
+          healthTracker.recordSuccess("airplanes.live", latency, flights.length);
           if (flights.length > 0) {
-            healthTracker.recordSuccess("airplanes.live", Date.now() - t0, flights.length);
-            sourceRegistry.validateAndActivate("airplanes.live", flights, Date.now() - t0);
+            sourceRegistry.validateAndActivate("airplanes.live", flights, latency);
           }
         } catch (err) {
           healthTracker.recordError("airplanes.live", err instanceof Error ? err : String(err));
@@ -957,12 +959,13 @@ setInterval(async () => {
         const tOpenSky = Date.now();
         try {
           const openSkyObs = await openskyLiveSource.fetchTracks();
+          const latency = Date.now() - tOpenSky;
           for (const oso of openSkyObs) {
             trackManager.ingest(toObservation(oso));
           }
+          healthTracker.recordSuccess("opensky.live", latency, openSkyObs.length);
           if (openSkyObs.length > 0) {
-            healthTracker.recordSuccess("opensky.live", Date.now() - tOpenSky, openSkyObs.length);
-            sourceRegistry.validateAndActivate("opensky.live", openSkyObs, Date.now() - tOpenSky);
+            sourceRegistry.validateAndActivate("opensky.live", openSkyObs, latency);
           }
         } catch (err) {
           healthTracker.recordError("opensky.live", err instanceof Error ? err : String(err));
@@ -973,47 +976,56 @@ setInterval(async () => {
 
   // Poll Local / Network SDR Receiver (readsb/dump1090) every 5 seconds
   if (cycleCounter === 1 || cycleCounter % 5 === 0) {
-    const tSdr = Date.now();
-    try {
-      const sdrObs = await sdrReceiverSource.fetchTracks();
-      for (const so of sdrObs) {
-        trackManager.ingest(toObservation(so));
+    if (sdrReceiverSource.isConfigured()) {
+      const tSdr = Date.now();
+      try {
+        const sdrObs = await sdrReceiverSource.fetchTracks();
+        const latency = Date.now() - tSdr;
+        for (const so of sdrObs) {
+          trackManager.ingest(toObservation(so));
+        }
+        healthTracker.recordSuccess("sdr.receiver", latency, sdrObs.length);
+        if (sdrObs.length > 0) {
+          sourceRegistry.validateAndActivate("sdr.receiver", sdrObs, latency);
+        }
+      } catch (err) {
+        healthTracker.recordError("sdr.receiver", err instanceof Error ? err : String(err));
       }
-      if (sdrObs.length > 0) {
-        healthTracker.recordSuccess("sdr.receiver", Date.now() - tSdr, sdrObs.length);
-      }
-    } catch (err) {
-      healthTracker.recordError("sdr.receiver", err instanceof Error ? err : String(err));
     }
 
     // Poll Tactical Ground Radar & Acoustic/Optical Sensor Feed every 5 seconds
-    const tGnd = Date.now();
-    try {
-      const gndObs = await groundSensorSource.fetchTracks();
-      for (const go of gndObs) {
-        trackManager.ingest(toObservation(go));
+    if (groundSensorSource.isConfigured()) {
+      const tGnd = Date.now();
+      try {
+        const gndObs = await groundSensorSource.fetchTracks();
+        const latency = Date.now() - tGnd;
+        for (const go of gndObs) {
+          trackManager.ingest(toObservation(go));
+        }
+        healthTracker.recordSuccess("ground.sensor", latency, gndObs.length);
+        if (gndObs.length > 0) {
+          sourceRegistry.validateAndActivate("ground.sensor", gndObs, latency);
+        }
+      } catch (err) {
+        healthTracker.recordError("ground.sensor", err instanceof Error ? err : String(err));
       }
-      if (gndObs.length > 0) {
-        healthTracker.recordSuccess("ground.sensor", Date.now() - tGnd, gndObs.length);
-      }
-    } catch (err) {
-      healthTracker.recordError("ground.sensor", err instanceof Error ? err : String(err));
     }
   }
 
   // Poll Satellite EO Direct Coordinate Feed every 30 seconds
   if (cycleCounter === 1 || cycleCounter % 30 === 0) {
-    const tSat = Date.now();
-    try {
-      const satObs = await satelliteCoordSource.fetchTracks();
-      for (const so of satObs) {
-        trackManager.ingest(toObservation(so));
+    if (satelliteCoordSource.isConfigured()) {
+      const tSat = Date.now();
+      try {
+        const satObs = await satelliteCoordSource.fetchTracks();
+        const latency = Date.now() - tSat;
+        for (const so of satObs) {
+          trackManager.ingest(toObservation(so));
+        }
+        healthTracker.recordSuccess("satellite.eo_coords", latency, satObs.length);
+      } catch (err) {
+        healthTracker.recordError("satellite.eo_coords", err instanceof Error ? err : String(err));
       }
-      if (satObs.length > 0) {
-        healthTracker.recordSuccess("satellite.eo_coords", Date.now() - tSat, satObs.length);
-      }
-    } catch (err) {
-      healthTracker.recordError("satellite.eo_coords", err instanceof Error ? err : String(err));
     }
   }
 
@@ -1021,9 +1033,10 @@ setInterval(async () => {
   if (cycleCounter === 1 || cycleCounter % 15 === 0) {
     const t0 = Date.now();
     try {
-      await alertsSource.fetchAlerts();
+      const activeAlerts = await alertsSource.fetchAlerts();
+      const latency = Date.now() - t0;
       trackManager.setActiveAlertOblasts(alertsSource.getActiveAlertOblastNames());
-      healthTracker.recordSuccess("alerts.in.ua", Date.now() - t0);
+      healthTracker.recordSuccess("alerts.in.ua", latency, activeAlerts.length);
     } catch (err) {
       healthTracker.recordError("alerts.in.ua", err instanceof Error ? err : String(err));
     }
@@ -1034,7 +1047,7 @@ setInterval(async () => {
     const t0 = Date.now();
     try {
       await windSource.fetchWind();
-      healthTracker.recordSuccess("open-meteo", Date.now() - t0);
+      healthTracker.recordSuccess("open-meteo", Date.now() - t0, 1);
     } catch (err) {
       healthTracker.recordError("open-meteo", err instanceof Error ? err : String(err));
     }
@@ -1047,10 +1060,11 @@ setInterval(async () => {
     const t0 = Date.now();
     try {
       const thermals = await firmsSource.fetchThermalObservations();
+      const latency = Date.now() - t0;
       for (const t of thermals) {
         trackManager.ingest(t);
       }
-      healthTracker.recordSuccess("nasa-firms", Date.now() - t0, thermals.length);
+      healthTracker.recordSuccess("nasa-firms", latency, thermals.length);
     } catch (err) {
       healthTracker.recordError("nasa-firms", err instanceof Error ? err : String(err));
     }
@@ -1081,7 +1095,8 @@ setInterval(async () => {
 
   const delta = trackManager.getDeltaPacket(simulationEnabled, cycleCounter);
   const livePositional = sourceRegistry.hasLivePositionalSource();
-  const tracksToBroadcast = (delta.tracks.length > 0 || livePositional || simulationEnabled) ? delta.tracks : [];
+  const availablePositional = sourceRegistry.hasAvailablePositionalSource();
+  const tracksToBroadcast = (delta.tracks.length > 0 || livePositional || availablePositional || simulationEnabled) ? delta.tracks : [];
   hub.broadcastTracks(tracksToBroadcast, delta.seq, delta.binaryBuffer, delta.removedIds);
   productionObservability.recordTracksSerialized(delta.tracks.length);
   productionObservability.recordTracksSent(tracksToBroadcast.length);

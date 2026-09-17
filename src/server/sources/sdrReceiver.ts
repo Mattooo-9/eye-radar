@@ -54,8 +54,8 @@ export class SdrReceiverSource implements Source {
     this.endpointUrl = endpointUrl || process.env.SDR_RECEIVER_URL || process.env.LOCAL_SDR_URL || null;
   }
 
-  setEndpoint(url: string): void {
-    this.endpointUrl = url;
+  isConfigured(): boolean {
+    return Boolean(this.endpointUrl);
   }
 
   async fetchTracks(): Promise<UnifiedObservation[]> {

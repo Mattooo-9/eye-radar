@@ -23,6 +23,7 @@ export interface ClassificationInput {
   isSynthetic?: boolean;
   positionConfidence?: number;
   hasActiveRegionalAlert?: boolean;
+  isCorroborated?: boolean;
 }
 
 export interface ClassificationOutput {
@@ -236,7 +237,7 @@ export function classifyAerialObject(input: ClassificationInput): Classification
     const classEv = [...baseEvidence, "insufficient_threat_evidence", "kinematics_unconfirmed"];
     return {
       resolvedType: "unknown",
-      resolvedModel: "Невідома повітряна ціль",
+      resolvedModel: input.modelHint || "Невідома повітряна ціль",
       confidence: Math.min(posConf, 0.40),
       positionConfidence: posConf,
       classConfidence: 0.35,
@@ -245,6 +246,38 @@ export function classifyAerialObject(input: ClassificationInput): Classification
       alternative: speedKmh > 350
         ? { type: "aircraft", model: "Літак (висока швидкість)", confidence: 0.35 }
         : { type: "unknown", model: "Повітряний об'єкт", confidence: 0.25 },
+      evidence: classEv,
+      propulsion: "unknown",
+      isMeasuredSpeed,
+      isMeasuredAltitude,
+      speedKmh,
+      estimatedAltitudeM: alt
+    };
+  }
+
+  // 4B. UNKNOWN CLAIMED TYPE WITH UNCORROBORATED SENSOR EVIDENCE:
+  // An isolated acoustic or indirect sensor detection without independent corroboration (isCorroborated: false)
+  // MUST NOT be classified as a confirmed combat drone (Shahed) or missile.
+  // It remains strictly UNKNOWN / UNCONFIRMED with true uncertainty radius.
+  if (input.claimedType === "unknown" && !input.isCorroborated && !input.isSynthetic) {
+    const isAcoustic = threatEvidenceList.some(e => e.includes("acoustic"));
+    const model = isAcoustic
+      ? "Непідтверджена повітряна ціль (акустичний контакт)"
+      : (input.modelHint || "Непідтверджена повітряна ціль");
+    const classEv = [...baseEvidence, ...threatEvidenceList, "unconfirmed_single_sensor_contact"];
+    return {
+      resolvedType: "unknown",
+      resolvedModel: model,
+      confidence: Math.min(posConf, 0.40),
+      positionConfidence: posConf,
+      classConfidence: 0.35,
+      classEvidence: classEv,
+      threatEvidence: threatEvidenceList,
+      alternative: {
+        type: "uav",
+        model: "Можливий БПЛА (непідтверджено)",
+        confidence: 0.30
+      },
       evidence: classEv,
       propulsion: "unknown",
       isMeasuredSpeed,

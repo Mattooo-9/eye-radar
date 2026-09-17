@@ -358,11 +358,18 @@ export class TrackManager {
         evidence: typeof observation.meta?.evidence === "string" ? [observation.meta.evidence] : undefined,
         threatEvidence: obsThreatEvidence,
         isSynthetic,
-        positionConfidence: observation.confidence
+        positionConfidence: observation.confidence,
+        isCorroborated: false
       });
 
-      // High-quality or multi-sensor source immediately becomes CONFIRMED; others start TENTATIVE
-      const isHighConfidence = observation.confidence >= 0.88 || observation.source === "sdr" || isSynthetic;
+      // Maintain explicit spatial uncertainty from observation (e.g. 12km for acoustic, 250m for optical, 30m for radar)
+      const obsUncertainty = typeof observation.meta?.measurement_accuracy === "number"
+        ? (observation.meta.measurement_accuracy as number)
+        : (observation.uncertaintyRadius || imm.uncertaintyRadiusMeters);
+      const effectiveUncertainty = Math.max(obsUncertainty, imm.uncertaintyRadiusMeters);
+
+      // Positional sources with transponder or radar start CONFIRMED; isolated indirect acoustic/optical start TENTATIVE
+      const isHighConfidence = (observation.confidence >= 0.88 && sourceFamily !== "acoustic") || observation.source === "sdr" || isSynthetic;
       const initialLifecycle: TrackLifecycle = isHighConfidence ? "CONFIRMED" : "TENTATIVE";
 
       const state: TrackState = {
@@ -382,7 +389,7 @@ export class TrackManager {
         altitude: classification.estimatedAltitudeM,
         covLat: imm.covLat,
         covLon: imm.covLon,
-        uncertaintyRadius: imm.uncertaintyRadiusMeters,
+        uncertaintyRadius: Math.round(effectiveUncertainty),
         threatLevel: (observation.meta?.threatLevel as ThreatLevel) || undefined,
         lastUpdated: now,
         model: classification.resolvedModel,
@@ -451,7 +458,7 @@ export class TrackManager {
     // Source diversity bonus strictly requires independent evidence families.
     // adsb.lol and airplanes.live both belong to "adsb" (ADS-B/MLAT) - so no false independent confirmation is granted!
     const isMultiFamily = mergedFamilies.size > 1 && !mergedFamilies.has("simulation");
-    const sourceDiversityBonus = isMultiFamily ? 0.15 : 0;
+    const sourceDiversityBonus = isMultiFamily ? 0.20 : 0;
     let updatedConfidence = Math.min(
       0.99,
       previous.confidence * 0.4 + observation.confidence * 0.5 + sourceDiversityBonus
@@ -459,6 +466,25 @@ export class TrackManager {
 
     if (isImpossibleJump) {
       updatedConfidence = Math.min(updatedConfidence, 0.25);
+    }
+
+    const obsUncertainty = typeof observation.meta?.measurement_accuracy === "number"
+      ? (observation.meta.measurement_accuracy as number)
+      : (observation.uncertaintyRadius || imm.uncertaintyRadiusMeters);
+
+    // Multi-sensor uncertainty covariance intersection:
+    // Independent sensor families cross-corroborating shrink the spatial uncertainty radius.
+    let updatedUncertainty: number;
+    if (isMultiFamily) {
+      const prevVar = Math.max(100 ** 2, (previous.uncertaintyRadius || 1000) ** 2);
+      const obsVar = Math.max(100 ** 2, obsUncertainty ** 2);
+      const fusedVar = 1 / (1 / prevVar + 1 / obsVar);
+      updatedUncertainty = Math.max(75, Math.sqrt(fusedVar));
+    } else if (sourceFamily === "acoustic") {
+      // Single uncorroborated acoustic sensor maintains wide uncertainty area
+      updatedUncertainty = Math.max(previous.uncertaintyRadius || 12_000, obsUncertainty);
+    } else {
+      updatedUncertainty = imm.uncertaintyRadiusMeters;
     }
 
     const rawThreat = (observation.meta as any)?.threatEvidence ?? observation.threatEvidence;
@@ -494,11 +520,15 @@ export class TrackManager {
       evidence: previous.evidence,
       threatEvidence: mergedThreatEvidence,
       isSynthetic: previous.isSynthetic || isSynthetic,
-      positionConfidence: updatedConfidence
+      positionConfidence: updatedConfidence,
+      isCorroborated: isMultiFamily || previous.isSynthetic || isSynthetic
     });
 
-    // Lifecycle promotion: 2 hits confirms tentative tracks
-    const updatedLifecycle: TrackLifecycle = existing.hitsCount >= 2 ? "CONFIRMED" : previous.lifecycle || "CONFIRMED";
+    // Lifecycle promotion: independent multi-family corroboration confirms tentative tracks
+    const updatedLifecycle: TrackLifecycle =
+      isMultiFamily || (existing.hitsCount >= 2 && sourceFamily !== "acoustic")
+        ? "CONFIRMED"
+        : (sourceFamily === "acoustic" && !isMultiFamily ? "TENTATIVE" : (previous.lifecycle || "CONFIRMED"));
 
     // Update measured history ring buffer (keep last 5 measured points)
     const updatedHistory = previous.measuredHistory ? [...previous.measuredHistory] : [];
@@ -527,7 +557,7 @@ export class TrackManager {
       sources: mergedSources,
       covLat: imm.covLat,
       covLon: imm.covLon,
-      uncertaintyRadius: Math.round(imm.uncertaintyRadiusMeters),
+      uncertaintyRadius: Math.round(updatedUncertainty),
       lastUpdated: now,
       model: isImpossibleJump ? "Невідома повітряна ціль (аномальний стрибок РЕБ)" : classification.resolvedModel,
       alternativeType: classification.alternative?.type,

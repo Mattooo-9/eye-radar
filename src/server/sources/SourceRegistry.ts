@@ -118,7 +118,7 @@ export class SourceRegistry {
     return true;
   }
 
-  getSourceState(name: string): "LIVE" | "DEGRADED" | "STALE" | "OFFLINE" {
+  getSourceState(name: string): "LIVE" | "AVAILABLE" | "DEGRADED" | "OFFLINE" {
     const src = this.sources.get(name);
     if (!src || src.disabled) return "OFFLINE";
     if (this.healthTracker) {
@@ -133,7 +133,7 @@ export class SourceRegistry {
       if (src.disabled) continue;
       const health = this.healthTracker?.sources?.get?.(src.name);
       const state = health?.state ?? "LIVE";
-      if (state === "LIVE" || src.family === "test" || !this.healthTracker) {
+      if (state === "LIVE" || state === "AVAILABLE" || src.family === "test" || !this.healthTracker) {
         active.push(src);
       }
     }
@@ -141,8 +141,8 @@ export class SourceRegistry {
   }
 
   /**
-   * Real LIVE positional sources: strictly provides coordinate observations (ADS-B / MLAT).
-   * E.g. adsb.lol, airplanes.live. Alerts and simulation are NEVER included.
+   * Real LIVE positional sources: strictly provides coordinate observations (ADS-B / MLAT / SDR / Radar).
+   * E.g. adsb.lol, airplanes.live, sdr.receiver. Alerts and simulation are NEVER included.
    */
   getLivePositionalSources(): RegisteredSource[] {
     return Array.from(this.sources.values()).filter(src => {
@@ -150,6 +150,18 @@ export class SourceRegistry {
       if (src.capability.primaryCapability !== "TRACK_POSITION") return false;
       if (src.capability.capabilities.includes("TEST_SIMULATION")) return false;
       return this.getSourceState(src.name) === "LIVE";
+    });
+  }
+
+  /**
+   * Available positional sources (connected and monitored, but 0 transponders currently in sector).
+   */
+  getAvailablePositionalSources(): RegisteredSource[] {
+    return Array.from(this.sources.values()).filter(src => {
+      if (src.disabled) return false;
+      if (src.capability.primaryCapability !== "TRACK_POSITION") return false;
+      if (src.capability.capabilities.includes("TEST_SIMULATION")) return false;
+      return this.getSourceState(src.name) === "AVAILABLE";
     });
   }
 
@@ -164,6 +176,16 @@ export class SourceRegistry {
       const isContext = cap === "THREAT_ALERT" || cap === "WEATHER" || cap === "EARTH_OBSERVATION";
       if (!isContext) return false;
       return this.getSourceState(src.name) === "LIVE";
+    });
+  }
+
+  /**
+   * Available sources (endpoints healthy, but 0 active detections in sector).
+   */
+  getAvailableSources(): RegisteredSource[] {
+    return Array.from(this.sources.values()).filter(src => {
+      if (src.disabled) return false;
+      return this.getSourceState(src.name) === "AVAILABLE";
     });
   }
 
@@ -183,12 +205,16 @@ export class SourceRegistry {
     return Array.from(this.sources.values()).filter(src => {
       if (src.disabled) return true;
       const state = this.getSourceState(src.name);
-      return state === "OFFLINE" || state === "STALE";
+      return state === "OFFLINE";
     });
   }
 
   hasLivePositionalSource(): boolean {
     return this.getLivePositionalSources().length > 0;
+  }
+
+  hasAvailablePositionalSource(): boolean {
+    return this.getAvailablePositionalSources().length > 0;
   }
 }
 

@@ -88,4 +88,27 @@ describe('SourceHealthTracker & Pipeline Telemetry', () => {
     const sdrDetail = report.sources.find((s) => s.name === 'sdr');
     expect(sdrDetail?.activeTracksHelped).toBe(1);
   });
+
+  it('distinguishes LIVE (active target stream) from AVAILABLE (endpoint healthy, 0 targets in sector)', () => {
+    const tracker = new SourceHealthTracker();
+    tracker.registerSource('adsb.test');
+
+    // Polled successfully (200 OK, valid schema), but 0 targets in sector
+    tracker.recordSuccess('adsb.test', 85, 0);
+
+    let report = tracker.getAuditReport();
+    let detail = report.sources.find((s) => s.name === 'adsb.test');
+    expect(detail?.state).toBe('AVAILABLE');
+    expect(detail?.status).toBe('available');
+    expect(report.summary.availableSources).toBe(1);
+    expect(report.summary.liveSources).toBe(0);
+
+    // Later, active targets appear in sector (observationsCount > 0)
+    tracker.recordSuccess('adsb.test', 90, 3);
+    report = tracker.getAuditReport();
+    detail = report.sources.find((s) => s.name === 'adsb.test');
+    expect(detail?.state).toBe('LIVE');
+    expect(detail?.status).toBe('online');
+    expect(report.summary.liveSources).toBe(1);
+  });
 });

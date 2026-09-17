@@ -66,6 +66,10 @@ export class GroundSensorSource implements Source {
     return true;
   }
 
+  isConfigured(): boolean {
+    return Boolean(this.endpointUrl || this.memoryDetections.length > 0);
+  }
+
   async fetchTracks(): Promise<UnifiedObservation[]> {
     const now = Date.now();
     if (now - this.lastFetch < 3000 && this.cache.length > 0) {
@@ -95,7 +99,20 @@ export class GroundSensorSource implements Source {
     for (const d of detections) {
       if (d.lat >= 43 && d.lat <= 54 && d.lon >= 22 && d.lon <= 42) {
         const family = d.sensorType === "acoustic" ? "acoustic" : "radar";
-        const accuracy = d.sensorType === "ground_radar" ? 35 : 120;
+        // Realistic uncertainty radius: acoustic arrays have wide area (12km), optical tracker (250m), radar (35m)
+        const accuracy = d.sensorType === "ground_radar" ? 35 : d.sensorType === "optical_tracker" ? 250 : 12_000;
+        const confidence = d.sensorType === "acoustic"
+          ? Math.min(0.45, Math.max(0.2, d.confidence))
+          : Math.min(0.95, Math.max(0.3, d.confidence));
+        
+        // Never fabricate confirmed combat classes without corroboration
+        const resolvedType = d.sensorType === "acoustic" ? "unknown" : d.targetType;
+        const model = d.sensorType === "acoustic"
+          ? "Непідтверджена повітряна ціль (акустичний контакт)"
+          : d.sensorType === "optical_tracker"
+          ? (d.targetType === "uav" ? "БПЛА (оптичний контакт)" : "Повітряна ціль")
+          : (d.targetType === "uav" ? "БПЛА (радіолокація)" : "TARGET");
+
         const evidence = [
           `sensor_${d.sensorId}`,
           `type_${d.sensorType}`,
@@ -117,13 +134,13 @@ export class GroundSensorSource implements Source {
             speed: d.speedMs,
             heading: d.headingDeg,
             altitude: d.altitudeMeters,
-            object_type: d.targetType,
+            object_type: resolvedType,
             measurement_accuracy: accuracy,
-            source_quality: 0.95,
-            confidence: Math.min(1, Math.max(0.1, d.confidence)),
+            source_quality: d.sensorType === "ground_radar" ? 0.95 : 0.70,
+            confidence,
             evidence,
             provenance: `Tactical Ground Sensor [${d.sensorType.toUpperCase()}]`,
-            model: d.targetType === "uav" ? "Shahed-136" : "TARGET"
+            model
           })
         );
       }

@@ -49,6 +49,10 @@ export class SatelliteCoordinateSource implements Source {
     return true;
   }
 
+  isConfigured(): boolean {
+    return this.memoryRecords.length > 0;
+  }
+
   async fetchTracks(): Promise<UnifiedObservation[]> {
     const now = Date.now();
     if (now - this.lastFetch < 10000 && this.cache.length > 0) {
