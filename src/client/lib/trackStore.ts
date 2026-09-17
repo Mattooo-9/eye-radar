@@ -204,8 +204,10 @@ export class MutableTrackStore {
     tracksDecoded: 0,
     tracksStored: 0,
     tracksVisible: 0,
+    tracksPerimeter: 0,
     tracksCulled: 0,
-    frameCount: 0
+    frameCount: 0,
+    cullReason: "none"
   };
 
   recordDecoded(count: number): void {
@@ -213,10 +215,12 @@ export class MutableTrackStore {
     this.clientMetrics.tracksStored = this.tracks.size;
   }
 
-  recordRenderFrame(visible: number, culled: number): void {
+  recordRenderFrame(visible: number, perimeter: number, culled: number, cullReason = "none"): void {
     this.clientMetrics.tracksStored = this.tracks.size;
     this.clientMetrics.tracksVisible = visible;
+    this.clientMetrics.tracksPerimeter = perimeter;
     this.clientMetrics.tracksCulled = culled;
+    this.clientMetrics.cullReason = cullReason;
     this.clientMetrics.frameCount++;
   }
 
@@ -225,7 +229,9 @@ export class MutableTrackStore {
       tracksDecoded: this.clientMetrics.tracksDecoded,
       tracksStored: this.tracks.size,
       tracksVisible: this.clientMetrics.tracksVisible,
+      tracksPerimeter: this.clientMetrics.tracksPerimeter,
       tracksCulled: this.clientMetrics.tracksCulled,
+      cullReason: this.clientMetrics.cullReason,
       frameCount: this.clientMetrics.frameCount
     };
   }

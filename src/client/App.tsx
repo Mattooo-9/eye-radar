@@ -188,7 +188,8 @@ export const App = () => {
         type !== "uav" &&
         type !== "munition" &&
         type !== "bomb" &&
-        type !== "fpv"
+        type !== "fpv" &&
+        type !== "unknown"
       ) {
         return false;
       }
@@ -284,10 +285,11 @@ export const App = () => {
     saveUserLocation(newLoc);
     setLocationSetupOpen(false);
     if (mapInstance) {
-      const isOverview = newLoc.name.includes("Вся Україна") || (newLoc.lat === 49.0 && newLoc.lon === 31.5);
+      const isOverview = newLoc.name.includes("Вся Україна") || Math.abs(newLoc.lat - 48.9) < 0.3;
+      const isMobile = typeof window !== "undefined" && window.innerWidth < 600;
       mapInstance.flyTo({
         center: [newLoc.lon, newLoc.lat],
-        zoom: isOverview ? 6.0 : 7.0,
+        zoom: isOverview ? (isMobile ? 4.0 : 5.0) : 7.0,
         pitch: 0,
         bearing: 0,
         duration: 1200

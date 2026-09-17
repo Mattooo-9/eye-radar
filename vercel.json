@@ -15,12 +15,44 @@
       "destination": "https://eye-radar.onrender.com/api/targets"
     },
     {
+      "source": "/api/tracks",
+      "destination": "https://eye-radar.onrender.com/api/tracks"
+    },
+    {
+      "source": "/api/tracks/:match*",
+      "destination": "https://eye-radar.onrender.com/api/tracks/:match*"
+    },
+    {
+      "source": "/api/config",
+      "destination": "https://eye-radar.onrender.com/api/config"
+    },
+    {
+      "source": "/api/alerts",
+      "destination": "https://eye-radar.onrender.com/api/alerts"
+    },
+    {
+      "source": "/api/alerts/:match*",
+      "destination": "https://eye-radar.onrender.com/api/alerts/:match*"
+    },
+    {
+      "source": "/api/report",
+      "destination": "https://eye-radar.onrender.com/api/report"
+    },
+    {
       "source": "/api/impacts",
       "destination": "https://eye-radar.onrender.com/api/impacts"
     },
     {
+      "source": "/api/status",
+      "destination": "https://eye-radar.onrender.com/api/status"
+    },
+    {
       "source": "/api/drill",
       "destination": "https://eye-radar.onrender.com/api/drill"
+    },
+    {
+      "source": "/api/drill/:match*",
+      "destination": "https://eye-radar.onrender.com/api/drill/:match*"
     },
     {
       "source": "/api/replay",
@@ -29,6 +61,34 @@
     {
       "source": "/api/sources",
       "destination": "https://eye-radar.onrender.com/api/sources"
+    },
+    {
+      "source": "/api/sources-test",
+      "destination": "https://eye-radar.onrender.com/api/sources-test"
+    },
+    {
+      "source": "/api/wind",
+      "destination": "https://eye-radar.onrender.com/api/wind"
+    },
+    {
+      "source": "/api/thermal",
+      "destination": "https://eye-radar.onrender.com/api/thermal"
+    },
+    {
+      "source": "/api/telemetry",
+      "destination": "https://eye-radar.onrender.com/api/telemetry"
+    },
+    {
+      "source": "/api/ai/:match*",
+      "destination": "https://eye-radar.onrender.com/api/ai/:match*"
+    },
+    {
+      "source": "/api/briefing",
+      "destination": "https://eye-radar.onrender.com/api/briefing"
+    },
+    {
+      "source": "/api/location/:match*",
+      "destination": "https://eye-radar.onrender.com/api/location/:match*"
     },
     {
       "source": "/health",
@@ -86,7 +146,7 @@
         },
         {
           "key": "Content-Security-Policy",
-          "value": "worker-src 'self'"
+          "value": "default-src 'self' https: data: blob: wss:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://telegram.org; style-src 'self' 'unsafe-inline' https:; img-src 'self' https: data: blob:; connect-src 'self' https: wss:; worker-src 'self' blob:; font-src 'self' https: data:;"
         }
       ]
     }

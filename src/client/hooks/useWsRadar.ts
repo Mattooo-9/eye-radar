@@ -96,7 +96,7 @@ export const useWsRadar = (
         });
         worker.onmessage = (e: MessageEvent) => {
           if (unmounted) return;
-          const { type, tracks, removedIds, events, expectedSeq } = e.data;
+          const { type, tracks, removedIds, events, expectedSeq, message } = e.data;
           if (type === "TRACKS_UPDATED" && Array.isArray(tracks)) {
             trackStore.recordDecoded((tracks as TrackPacket[]).length);
             trackStore.ingestDelta(tracks as TrackPacket[], removedIds || []);
@@ -107,6 +107,11 @@ export const useWsRadar = (
           } else if (type === "RESYNC_NEEDED") {
             if (socketRef.current?.readyState === WebSocket.OPEN) {
               socketRef.current.send(JSON.stringify([8, expectedSeq || 0]));
+            }
+          } else if (type === "ERROR") {
+            console.warn("[worker] decode error reported:", message);
+            if (socketRef.current?.readyState === WebSocket.OPEN) {
+              socketRef.current.send(JSON.stringify([8, 0]));
             }
           }
         };
@@ -173,11 +178,15 @@ export const useWsRadar = (
       if (unmounted) return;
       try {
         const [targetsRes, impactsRes] = await Promise.all([
-          fetch(`${CLOUD_API_BASE}/api/targets`, { signal: AbortSignal.timeout(3000) }),
-          fetch(`${CLOUD_API_BASE}/api/impacts`, { signal: AbortSignal.timeout(3000) })
+          fetch(`/api/targets`, { signal: AbortSignal.timeout(3000) }).catch(() =>
+            fetch(`${CLOUD_API_BASE}/api/targets`, { signal: AbortSignal.timeout(3000) })
+          ),
+          fetch(`/api/impacts`, { signal: AbortSignal.timeout(3000) }).catch(() =>
+            fetch(`${CLOUD_API_BASE}/api/impacts`, { signal: AbortSignal.timeout(3000) })
+          )
         ]);
 
-        if (targetsRes.ok) {
+        if (targetsRes && targetsRes.ok) {
           const data = (await targetsRes.json()) as TargetApiResponse;
           if (Array.isArray(data.tracks)) {
             const converted: TrackPacket[] = data.tracks.map((t) => [
@@ -200,7 +209,7 @@ export const useWsRadar = (
           }
         }
 
-        if (impactsRes.ok) {
+        if (impactsRes && impactsRes.ok) {
           const impactData = (await impactsRes.json()) as { events?: ImpactEvent[] };
           if (Array.isArray(impactData.events)) {
             trackStore.setImpacts(impactData.events);
@@ -252,56 +261,70 @@ export const useWsRadar = (
         socket.onmessage = (event: MessageEvent) => {
           if (unmounted) return;
 
+          const processBinaryPayload = (buffer: ArrayBuffer) => {
+            if (buffer.byteLength < 4) return;
+            const view = new DataView(buffer);
+            const magic = view.getUint16(0, true);
+            if (magic !== BINARY_MAGIC) return;
+            const version = view.getUint8(2);
+            if (version !== PROTOCOL_VERSION) {
+              console.warn(`[ws] Incompatible binary protocol version: ${version} (expected ${PROTOCOL_VERSION}), requesting resync fallback`);
+              if (socketRef.current?.readyState === WebSocket.OPEN) {
+                socketRef.current.send(JSON.stringify([8, 0]));
+              }
+              return;
+            }
+            const kind = view.getUint8(3);
+
+            if (workerRef.current) {
+              // Offload decoding to Web Worker using transferable ArrayBuffer
+              if (kind === 0x00 || kind === 0x01) {
+                workerRef.current.postMessage({ type: "PROCESS_BINARY", buffer }, [buffer]);
+              } else if (kind === 0x02) {
+                workerRef.current.postMessage({ type: "PROCESS_IMPACTS", buffer }, [buffer]);
+              }
+              return;
+            }
+
+            // Main-thread fallback if Web Worker is disabled
+            if (kind === 0x00 || kind === 0x01) {
+              const decoded = decodeBinaryTracks(buffer, fallbackTracksMap.current);
+              if (decoded.kind === 0x00) {
+                fallbackTracksMap.current.clear();
+              }
+              for (const t of decoded.tracks) {
+                fallbackTracksMap.current.set(t[0], t);
+              }
+              for (const rid of decoded.removedIds) {
+                fallbackTracksMap.current.delete(rid);
+              }
+              const activeTracks = Array.from(fallbackTracksMap.current.values());
+              trackStore.recordDecoded(decoded.tracks.length);
+              trackStore.ingestDelta(decoded.tracks, decoded.removedIds);
+              setPackets(activeTracks);
+            } else if (kind === 0x02) {
+              const decoded = decodeBinaryImpacts(buffer);
+              trackStore.setImpacts(decoded.events);
+              setImpacts(decoded.events);
+            }
+          };
+
           // 1. Binary payload (High performance, low bandwidth)
           if (event.data instanceof ArrayBuffer) {
-            const buffer = event.data;
-            if (buffer.byteLength >= 4) {
-              const view = new DataView(buffer);
-              const magic = view.getUint16(0, true);
-              if (magic === BINARY_MAGIC) {
-                const version = view.getUint8(2);
-                if (version !== PROTOCOL_VERSION) {
-                  console.warn(`[ws] Incompatible binary protocol version: ${version} (expected ${PROTOCOL_VERSION}), requesting resync fallback`);
-                  if (socketRef.current?.readyState === WebSocket.OPEN) {
-                    socketRef.current.send(JSON.stringify([8, 0]));
-                  }
-                  return;
-                }
-                const kind = view.getUint8(3);
+            processBinaryPayload(event.data);
+            return;
+          }
 
-                if (workerRef.current) {
-                  // Offload decoding to Web Worker using transferable ArrayBuffer
-                  if (kind === 0x00 || kind === 0x01) {
-                    workerRef.current.postMessage({ type: "PROCESS_BINARY", buffer }, [buffer]);
-                  } else if (kind === 0x02) {
-                    workerRef.current.postMessage({ type: "PROCESS_IMPACTS", buffer }, [buffer]);
-                  }
-                  return;
-                }
-
-                // Main-thread fallback if Web Worker is disabled
-                if (kind === 0x00 || kind === 0x01) {
-                  const decoded = decodeBinaryTracks(buffer, fallbackTracksMap.current);
-                  if (decoded.kind === 0x00) {
-                    fallbackTracksMap.current.clear();
-                  }
-                  for (const t of decoded.tracks) {
-                    fallbackTracksMap.current.set(t[0], t);
-                  }
-                  for (const rid of decoded.removedIds) {
-                    fallbackTracksMap.current.delete(rid);
-                  }
-                  const activeTracks = Array.from(fallbackTracksMap.current.values());
-                  trackStore.ingestDelta(decoded.tracks, decoded.removedIds);
-                  setPackets(activeTracks);
-                } else if (kind === 0x02) {
-                  const decoded = decodeBinaryImpacts(buffer);
-                  trackStore.setImpacts(decoded.events);
-                  setImpacts(decoded.events);
-                }
-                return;
-              }
-            }
+          // 1b. Mobile WebView Blob payload
+          if (event.data instanceof Blob) {
+            readBlobAsArrayBuffer(event.data)
+              .then((buf) => {
+                if (!unmounted) processBinaryPayload(buf);
+              })
+              .catch((err) => {
+                console.warn("[ws] Failed to read Blob frame", err);
+              });
+            return;
           }
 
           // 2. Legacy JSON fallback
@@ -332,7 +355,11 @@ export const useWsRadar = (
         if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
           // App returned from background: request fresh snapshot resync immediately
           socketRef.current.send(JSON.stringify([8, 0]));
-        } else if (!socketRef.current || socketRef.current.readyState === WebSocket.CLOSED) {
+        } else {
+          try {
+            socketRef.current?.close();
+          } catch {}
+          socketRef.current = null;
           void connect();
         }
       }

@@ -1533,7 +1533,63 @@ const TARGET_COLORS: Record<string, string> = {
   munition: "#f97316",
   bomb: "#ef4444",
   fpv: "#d946ef",
-  helicopter: "#10b981"
+  aircraft: "#38bdf8",
+  helicopter: "#10b981",
+  unknown: "#facc15"
+};
+
+interface PerimeterItem {
+  id: string;
+  type: string;
+  edgeX: number;
+  edgeY: number;
+  angleRad: number;
+  color: string;
+  distKm: number;
+  shortName: string;
+  speedKmh: number;
+}
+
+const drawTacticalPerimeterIndicator = (
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  angleRad: number,
+  color: string,
+  distKm: number,
+  shortName: string
+) => {
+  ctx.save();
+  ctx.translate(x, y);
+
+  // 1. Directional tactical pointer
+  ctx.rotate(angleRad);
+  ctx.beginPath();
+  ctx.moveTo(8, 0);
+  ctx.lineTo(-6, -5);
+  ctx.lineTo(-3, 0);
+  ctx.lineTo(-6, 5);
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.strokeStyle = "rgba(0, 0, 0, 0.9)";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // 2. Compact distance badge (upright)
+  ctx.rotate(-angleRad);
+  ctx.font = "bold 9px Inter, system-ui, sans-serif";
+  const label = `${distKm}км`;
+  const tw = ctx.measureText(label).width;
+  ctx.fillStyle = "rgba(11, 18, 32, 0.85)";
+  ctx.fillRect(-tw / 2 - 3, 7, tw + 6, 12);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(-tw / 2 - 3, 7, tw + 6, 12);
+  ctx.fillStyle = "#f8fafc";
+  ctx.fillText(label, -tw / 2, 16);
+
+  ctx.restore();
 };
 
 export const MapView = ({
@@ -1691,11 +1747,14 @@ export const MapView = ({
     const initialStyle = isSat ? SATELLITE_STYLE : mapStyleUrl;
     currentStyleRef.current = initialStyle;
 
+    const isMobile = typeof window !== "undefined" && window.innerWidth < 600;
+    const initialZoom = isMobile ? 4.0 : 5.0;
+
     const map = new maplibregl.Map({
       container: mapContainerRef.current,
       style: initialStyle,
-      center: [31.5, 49.0], // Center of Ukraine
-      zoom: 6.2,
+      center: [31.5, 48.8], // Center of Ukraine
+      zoom: initialZoom,
       minZoom: 1.5,
       maxZoom: 18.0,
       pitch: 0, // Direct orthographic 2D top-down view (zero parallax perspective drift!)
@@ -2188,6 +2247,9 @@ export const MapView = ({
           confidence?: number;
         }
         const renderItems: RenderItem[] = [];
+        const perimeterItems: PerimeterItem[] = [];
+        const isOverview = zoom <= 6.5;
+        const cullingMargin = isOverview ? 120 : cullingThreshold;
 
         // Periodic pruning of interpolation cache for expired targets
         if (now - lastInterpPruneRef.current > 6000) {
@@ -2229,12 +2291,43 @@ export const MapView = ({
           }
           const groundPoint = map.project([curLon, curLat]);
 
-          if (
-            groundPoint.x < -cullingThreshold ||
-            groundPoint.x > width + cullingThreshold ||
-            groundPoint.y < -cullingThreshold ||
-            groundPoint.y > height + cullingThreshold
-          ) {
+          const isOffScreen =
+            groundPoint.x < -cullingMargin ||
+            groundPoint.x > width + cullingMargin ||
+            groundPoint.y < -cullingMargin ||
+            groundPoint.y > height + cullingMargin;
+
+          if (isOffScreen) {
+            const cx = width / 2;
+            const cy = height / 2;
+            const dx = groundPoint.x - cx;
+            const dy = groundPoint.y - cy;
+            const angleRad = Math.atan2(dy, dx);
+            const margin = 24;
+            const halfW = (width - 2 * margin) / 2;
+            const halfH = (height - 2 * margin) / 2;
+            const absCos = Math.abs(Math.cos(angleRad)) || 1e-6;
+            const absSin = Math.abs(Math.sin(angleRad)) || 1e-6;
+            const t = Math.min(halfW / absCos, halfH / absSin);
+            const edgeX = cx + t * Math.cos(angleRad);
+            const edgeY = cy + t * Math.sin(angleRad);
+
+            const mapCenter = map.getCenter();
+            const distKm = Math.round(haversineMeters(curLat, curLon, mapCenter.lat, mapCenter.lng) / 1000);
+            const color = TARGET_COLORS[type] ?? "#7dd3fc";
+            const speedKmh = Math.round(speed * 3.6);
+
+            perimeterItems.push({
+              id,
+              type,
+              edgeX,
+              edgeY,
+              angleRad,
+              color,
+              distKm,
+              shortName: type.toUpperCase(),
+              speedKmh
+            });
             continue;
           }
 
@@ -2341,7 +2434,12 @@ export const MapView = ({
           });
         }
 
-        trackStore.recordRenderFrame(renderItems.length, Math.max(0, currentPackets.length - renderItems.length));
+        trackStore.recordRenderFrame(
+          renderItems.length,
+          perimeterItems.length,
+          Math.max(0, currentPackets.length - (renderItems.length + perimeterItems.length)),
+          perimeterItems.length > 0 ? "offscreen_viewport" : "none"
+        );
 
         // Pass 2: Subtle fading historical motion trail (only selected target or close zoom >= 9.5, disabled on LOW tier)
         if (!isLowTier) {
@@ -2473,6 +2571,24 @@ export const MapView = ({
                 placedPillBoxes
               );
             }
+          }
+        }
+
+        // Pass 4: Draw tactical perimeter indicators for off-screen targets
+        if (perimeterItems.length > 0) {
+          const sortedPerimeter = perimeterItems
+            .sort((a, b) => a.distKm - b.distKm)
+            .slice(0, 12);
+          for (const pItem of sortedPerimeter) {
+            drawTacticalPerimeterIndicator(
+              ctx,
+              pItem.edgeX,
+              pItem.edgeY,
+              pItem.angleRad,
+              pItem.color,
+              pItem.distKm,
+              pItem.shortName
+            );
           }
         }
 
