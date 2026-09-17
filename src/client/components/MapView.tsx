@@ -2103,26 +2103,10 @@ export const MapView = ({
     }
   }, [showFrontline, visionMode]);
 
-  // 5. Smooth flyTo user location on first GPS acquisition
+  // 5. Initial viewport is preserved at Ukraine + 120km operational border buffer
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !location || centeredRef.current) return;
-
-    const isOverview =
-      (confirmedLocation && confirmedLocation.name.includes("Вся Україна")) ||
-      (Math.abs(location.lat - 49.0) < 0.5 && Math.abs(location.lon - 31.5) < 0.5);
-
-    const isMobile = typeof window !== "undefined" && window.innerWidth < 600;
-    const targetZoom = isOverview ? (isMobile ? 4.2 : 5.0) : 8.5;
-
-    map.flyTo({
-      center: [location.lon, location.lat],
-      zoom: targetZoom,
-      pitch: 0,
-      duration: 1500
-    });
     centeredRef.current = true;
-  }, [location, confirmedLocation]);
+  }, []);
 
   // 5.5 Trigger immediate redraw of canvas overlay when packets, filters, or impacts change
   useEffect(() => {
@@ -2358,7 +2342,7 @@ export const MapView = ({
         }
         const renderItems: RenderItem[] = [];
         const perimeterItems: PerimeterItem[] = [];
-        const isOverview = zoom <= 6.5;
+        const isOverview = zoom <= 7.0;
         const cullingMargin = isOverview ? 120 : cullingThreshold;
 
         // Periodic pruning of interpolation cache for expired targets
@@ -2603,9 +2587,9 @@ export const MapView = ({
           }
         }
 
-        // Pass 3: Draw aerospace-grade tactical glyphs and callout pills (with LOD clustering for zoom < 7 & > 80 targets)
-        const lodThreshold = isLowTier ? 50 : 80;
-        const shouldCluster = zoom < 7.0 && renderItems.length > lodThreshold;
+        // Pass 3: Draw aerospace-grade tactical glyphs and callout pills (LOD clustering only at continental zoom < 4.5)
+        const lodThreshold = isLowTier ? 120 : 250;
+        const shouldCluster = zoom < 4.5 && renderItems.length > lodThreshold;
 
         if (shouldCluster) {
           const gridSize = 45; // 45px spatial clustering cell

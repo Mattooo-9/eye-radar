@@ -1,4 +1,5 @@
 import type { Observation, TrackType } from "../domain/types.js";
+import { getDistanceToUkraineBorderKm } from "../domain/geo.js";
 
 interface AdsbFiAircraft {
   hex: string;
@@ -126,6 +127,14 @@ export class AirplanesLiveSource {
                 const flightCode = (a.flight ?? "").trim().replace(/\s+/g, "");
                 const callsign = flightCode || a.t || a.hex;
                 const isCivil = this.isCivilAirliner(callsign, a.desc, a.t);
+
+                // Operational Sector Gating: civil airliners beyond 120 km from border are excluded
+                if (isCivil) {
+                  const distKm = getDistanceToUkraineBorderKm(a.lat, a.lon);
+                  if (distKm > 120) {
+                    continue;
+                  }
+                }
 
                 const id = flightCode ? `adsb-${flightCode}` : `adsb-${a.hex}`;
                 const model = a.desc ?? a.t ?? (isCivil ? "Civilian Aircraft" : "MIL_AIRCRAFT");

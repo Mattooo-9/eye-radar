@@ -1,5 +1,6 @@
 import { createUnifiedObservation, type UnifiedObservation } from "../domain/unifiedObservation.js";
 import type { TrackType } from "../domain/types.js";
+import { getDistanceToUkraineBorderKm } from "../domain/geo.js";
 
 interface AdsbAircraft {
   hex: string;
@@ -131,6 +132,18 @@ export class OpenskyAdsbLolSource {
                 const flight = (a.flight ?? "").trim().replace(/\s+/g, "");
                 const callsign = flight || a.t || a.hex.toUpperCase();
                 const isCivil = this.isCivilAirliner(callsign, a.desc, a.t);
+
+                // Operational Sector Gating:
+                // Distant foreign civil airliners (> 120 km from Ukraine's border, e.g. Serbia, Bulgaria, Central Poland)
+                // must not clutter the tactical view. The 120 km border buffer (Rzeszow, Lublin, Suceava, Danube, Black Sea)
+                // and everything inside Ukraine is strictly preserved.
+                // Military, recon, helicopter, or unknown contacts are NEVER dropped.
+                if (isCivil) {
+                  const distKm = getDistanceToUkraineBorderKm(a.lat, a.lon);
+                  if (distKm > 120) {
+                    continue;
+                  }
+                }
 
                 const speedMs = a.gs * 0.514444; // knots to m/s
                 const isHeli = this.isHelicopter(a.desc, a.t);

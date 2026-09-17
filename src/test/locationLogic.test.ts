@@ -103,5 +103,31 @@ describe('Location Logic & Confirmation Rules', () => {
     expect(resEw.flags).toContain('ew_interference');
     expect(resEw.isDegraded).toBe(true);
   });
+
+  it('accurately calculates distance to Ukraine state border and gates operational buffer', async () => {
+    const { getDistanceToUkraineBorderKm, isPointInPolygon } = await import('../server/domain/geo.js');
+
+    // 1. Inside Ukraine
+    expect(isPointInPolygon(50.45, 30.52, (await import('../server/domain/geo.js')).UKRAINE_BORDER_POLYGON)).toBe(true);
+    expect(getDistanceToUkraineBorderKm(50.4501, 30.5234)).toBe(0); // Kyiv
+    expect(getDistanceToUkraineBorderKm(49.8397, 24.0297)).toBe(0); // Lviv
+    expect(getDistanceToUkraineBorderKm(46.4825, 30.7233)).toBe(0); // Odesa
+
+    // 2. Tactical Border Buffer (<= 120 km)
+    const rzeszowDist = getDistanceToUkraineBorderKm(50.04, 22.00); // Rzeszow, Poland
+    expect(rzeszowDist).toBeGreaterThan(40);
+    expect(rzeszowDist).toBeLessThanOrEqual(120);
+
+    const suceavaDist = getDistanceToUkraineBorderKm(47.65, 26.25); // Suceava, Romania
+    expect(suceavaDist).toBeGreaterThan(20);
+    expect(suceavaDist).toBeLessThanOrEqual(120);
+
+    // 3. Deep foreign airways (> 120 km from border, should be gated for civil flights)
+    const bucharestDist = getDistanceToUkraineBorderKm(44.43, 26.10); // Bucharest, Romania
+    expect(bucharestDist).toBeGreaterThan(120);
+
+    const belgradeDist = getDistanceToUkraineBorderKm(44.78, 20.44); // Belgrade, Serbia
+    expect(belgradeDist).toBeGreaterThan(200);
+  });
 });
 
