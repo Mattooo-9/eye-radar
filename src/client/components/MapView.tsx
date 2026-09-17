@@ -1097,7 +1097,7 @@ const drawUserHomeBeacon = (
   ctx: CanvasRenderingContext2D,
   map: maplibregl.Map,
   loc: { lat: number; lon: number },
-  name: string | undefined,
+  _name: string | undefined,
   _timeMs: number,
   width: number,
   height: number
@@ -1115,17 +1115,6 @@ const drawUserHomeBeacon = (
   ctx.strokeStyle = "#ffffff";
   ctx.lineWidth = 1.5;
   ctx.stroke();
-
-  const label = name ? name : "Моя локація";
-  drawTextWithOutline(
-    ctx,
-    label,
-    pt.x + 9,
-    pt.y + 4,
-    "#38bdf8",
-    "rgba(2, 6, 23, 0.95)",
-    "bold 10px Inter, system-ui, sans-serif"
-  );
   ctx.restore();
 };
 
@@ -1856,19 +1845,9 @@ export const MapView = ({
     currentStyleRef.current = initialStyle;
 
     const isMobile = typeof window !== "undefined" && window.innerWidth < 600;
-    const initialLoc = confirmedLocationRef.current || locationRef.current;
-    const isOverview = Boolean(initialLoc && "name" in initialLoc && initialLoc.name?.includes("Вся Україна"));
-
-    let initialCenter: [number, number] = [30.5234, 50.4501]; // Default operational district: Kyiv
-    let initialZoom = 8.5;
-
-    if (isOverview) {
-      initialCenter = [31.5, 48.8];
-      initialZoom = isMobile ? 4.2 : 5.0;
-    } else if (initialLoc) {
-      initialCenter = [initialLoc.lon, initialLoc.lat];
-      initialZoom = 8.5;
-    }
+    // Operational Theater Viewport: Ukraine + operational border buffer
+    const initialCenter: [number, number] = [31.2, 48.8];
+    const initialZoom = isMobile ? 5.2 : 5.8;
 
     const map = new maplibregl.Map({
       container: mapContainerRef.current,

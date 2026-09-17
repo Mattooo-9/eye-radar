@@ -2,6 +2,7 @@ import React from "react";
 
 interface TacticalTopBarProps {
   threatCount: number;
+  totalTracksCount?: number;
   activeAlertsCount: number;
   uncertaintyCount?: number;
   onOpenMenu: () => void;
@@ -11,6 +12,7 @@ interface TacticalTopBarProps {
 
 export const TacticalTopBar: React.FC<TacticalTopBarProps> = ({
   threatCount,
+  totalTracksCount,
   activeAlertsCount,
   uncertaintyCount = 0,
   onOpenMenu,
@@ -70,7 +72,9 @@ export const TacticalTopBar: React.FC<TacticalTopBarProps> = ({
         >
           <span className="menu-icon">☰</span>
           <span className="menu-text">ОПЦІЇ</span>
-          <span className="menu-count-badge">{threatCount}</span>
+          <span className={`menu-count-badge ${threatCount > 0 ? "has-threats" : ""}`}>
+            {threatCount > 0 ? threatCount : (totalTracksCount ?? 0)}
+          </span>
           <span className="menu-chevron">▼</span>
         </button>
       </div>
