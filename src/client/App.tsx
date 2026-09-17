@@ -127,6 +127,7 @@ export const App = () => {
   });
 
   const [showFrontline, setShowFrontline] = useState(true);
+  const [currentZoom, setCurrentZoom] = useState(8.5);
 
   useEffect(() => {
     try {
@@ -200,7 +201,6 @@ export const App = () => {
       if (type === "fpv" && filters.fpv === false) return false;
       if (type === "aircraft") {
         if (!filters.aircraft) {
-          const currentZoom = mapInstance ? mapInstance.getZoom() : 8.5;
           if (currentZoom >= 6.5) return false;
         }
       }
@@ -208,7 +208,7 @@ export const App = () => {
 
       return true;
     });
-  }, [packets, tacticalFilters, threatOnly, filters, mapInstance]);
+  }, [packets, tacticalFilters, threatOnly, filters, currentZoom]);
 
   // ── Auto-Sentinel: Proximity monitoring without unwanted auto-selection ───
   useEffect(() => {
@@ -409,6 +409,10 @@ export const App = () => {
           onMapReady={(m) => {
             setMapInstance(m);
             (window as any).__eyeRadarMap = m;
+            setCurrentZoom(m.getZoom());
+            m.on("zoom", () => {
+              setCurrentZoom(m.getZoom());
+            });
           }}
           onPickLocation={handlePickLocation}
           onSelectTarget={(target) => {
