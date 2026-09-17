@@ -361,6 +361,20 @@ export const App = () => {
         onOpenAlerts={() => setAlertsModalOpen(true)}
       />
 
+      {/* 1.1 Truthful Operational Sector Status Watermark / Badge */}
+      {filteredPackets.length === 0 && (
+        <div className="operational-sector-badge">
+          <span className="badge-sector-name">🎯 {confirmedLocation?.name?.toUpperCase() || "КИЇВ"}:</span>
+          <span className="badge-targets">Позиційні цілі: 0 <span className="badge-subtext">(ADS-B закрито)</span></span>
+          <span className="badge-divider">•</span>
+          <span className={`badge-alerts ${activeAlerts.length > 0 ? "has-alerts" : ""}`}>
+            {activeAlerts.length > 0 ? `🚨 ТРИВОГА: ${activeAlerts.length} ОБЛ.` : "🟢 НЕБО СПОКІЙНЕ"}
+          </span>
+          <span className="badge-divider">•</span>
+          <span className="badge-sensors">Сенсорних подій: {uncertaintyEvents.length}</span>
+        </div>
+      )}
+
       {/* 2. Live Tactical Timeline & Performance Optimizer Bar */}
       <LiveTimelineBar
         selectedOffsetSec={timelineOffsetSec}

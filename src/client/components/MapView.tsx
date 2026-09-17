@@ -2768,34 +2768,7 @@ export const MapView = ({
           }
         }
 
-        // 2.5 Truthful Operational Sector Status Watermark
-        const activeAlertsCount = activeAlertsRef.current?.length || 0;
-        const uncertaintyCount = trackStore.getUncertaintyCount();
-        const positionalCount = renderItems.length;
-
-        if (positionalCount === 0 && !isOverview) {
-          ctx.save();
-          const cityName = confirmedLocationRef.current?.name || "Ваш сектор";
-          const alertStatus = activeAlertsCount > 0 ? `🚨 ТРИВОГА: ${activeAlertsCount} ОБЛ.` : "🟢 НЕБО СПОКІЙНЕ";
-          const wmText = `🎯 ${cityName.toUpperCase()}: Позиційних цілей: 0 (ADS-B закрито) • ${alertStatus} • Сенсорних подій: ${uncertaintyCount}`;
-
-          ctx.font = "bold 10px Inter, monospace";
-          const wmWidth = Math.min(width - 24, ctx.measureText(wmText).width + 24);
-          const wmX = Math.max(12, (width - wmWidth) / 2);
-          const wmY = 54;
-
-          ctx.fillStyle = "rgba(11, 18, 32, 0.82)";
-          ctx.strokeStyle = activeAlertsCount > 0 ? "rgba(239, 68, 68, 0.45)" : "rgba(56, 189, 248, 0.35)";
-          ctx.lineWidth = 1;
-          ctx.beginPath();
-          ctx.roundRect(wmX, wmY, wmWidth, 22, 6);
-          ctx.fill();
-          ctx.stroke();
-
-          ctx.fillStyle = activeAlertsCount > 0 ? "#fca5a5" : "#94a3b8";
-          ctx.fillText(wmText, wmX + 12, wmY + 15);
-          ctx.restore();
-        }
+        // 2.5 Active layer status is handled by HTML operational-sector-badge in App.tsx
 
         // 3. Draw Active Reconnaissance Satellites (Persona-3, Bars-M, Lotos-S1, Kondor-FKA) - throttled to 1s
         // Skip satellite recon layer in LOW performance tier
