@@ -2395,8 +2395,8 @@ export const MapView = ({
             if (type === "munition" && !currentFilters.munition) continue;
             if (type === "bomb" && currentFilters.bomb === false) continue;
             if (type === "fpv" && currentFilters.fpv === false) continue;
-            if (type === "aircraft" && !currentFilters.aircraft) continue;
-            if (type === "helicopter" && (currentFilters.helicopter !== undefined ? !currentFilters.helicopter : !currentFilters.aircraft)) continue;
+            if (type === "aircraft" && !currentFilters.aircraft && !isOverview) continue;
+            if (type === "helicopter" && (currentFilters.helicopter !== undefined ? !currentFilters.helicopter : !currentFilters.aircraft) && !isOverview) continue;
           }
 
           // Operational Viewport Gating for Transponder / Border Flights:
@@ -2775,9 +2775,9 @@ export const MapView = ({
           const wmText = `🎯 ${cityName.toUpperCase()}: Позиційних цілей: 0 (ADS-B закрито) • ${alertStatus} • Сенсорних подій: ${uncertaintyCount}`;
 
           ctx.font = "bold 10px Inter, monospace";
-          const wmWidth = ctx.measureText(wmText).width + 24;
+          const wmWidth = Math.min(width - 24, ctx.measureText(wmText).width + 24);
           const wmX = Math.max(12, (width - wmWidth) / 2);
-          const wmY = height - 92;
+          const wmY = 54;
 
           ctx.fillStyle = "rgba(11, 18, 32, 0.82)";
           ctx.strokeStyle = activeAlertsCount > 0 ? "rgba(239, 68, 68, 0.45)" : "rgba(56, 189, 248, 0.35)";
