@@ -32,6 +32,7 @@ export class EyeRadarBotManager {
   private trackCountProvider?: () => number;
   private tracksProvider?: () => TrackState[];
   private alertsSource?: AlertsInUaSource;
+  private lastLaunchMessageMap = new Map<number, number>();
   private deletionTimer?: NodeJS.Timeout;
 
   constructor() {
@@ -102,6 +103,8 @@ export class EyeRadarBotManager {
       { command: "setlocation", description: "Встановити місто чи координати для сповіщень" },
       { command: "radius", description: "Встановити радіус тривоги (наприклад: /radius 30)" },
       { command: "status", description: "Діагностика та статус системи eye-radar" },
+      { command: "clean", description: "Очистити попередні повідомлення бота" },
+      { command: "testdelete", description: "Тест автовидалення повідомлення (5 сек)" },
       { command: "report", description: "Повідомити про звук або спостереження БПЛА" }
     ]).catch(() => {});
 
@@ -125,11 +128,20 @@ export class EyeRadarBotManager {
 
     const sendLaunchMessage = async (chatId: number) => {
       try {
+        // Automatically delete previous launch message in this chat to prevent duplicate message clutter!
+        const prevLaunchId = this.lastLaunchMessageMap.get(chatId);
+        if (prevLaunchId) {
+          try {
+            await bot.telegram.deleteMessage(chatId, prevLaunchId);
+            await messageDeletionService.markCompleted(chatId, prevLaunchId);
+          } catch {}
+        }
+
         const primaryBtn = isHttps
           ? { text: "🛰️ ВІДКРИТИ EYE RADAR", web_app: { url: webAppUrl } }
           : { text: "🛰️ ВІДКРИТИ EYE RADAR", url: webAppUrl };
 
-        await sendBotMessage(
+        const msgRes = await sendBotMessage(
           chatId,
           `🛰️ *EYE RADAR // ТАКТИЧНА СИСТЕМА МОНІТОРИНГУ*\n\n` +
           `• Живі повітряні цілі: Шахеди, ракети, бойова авіація\n` +
@@ -144,6 +156,10 @@ export class EyeRadarBotManager {
             ttlMs: SIX_HOURS_MS
           }
         );
+
+        if (msgRes.ok && msgRes.messageId) {
+          this.lastLaunchMessageMap.set(chatId, msgRes.messageId);
+        }
       } catch (err) {
         console.error("Failed to send launch message:", err);
       }
@@ -206,6 +222,24 @@ export class EyeRadarBotManager {
 
     bot.command("radar", async (ctx) => {
       await sendLaunchMessage(ctx.chat.id);
+    });
+
+    bot.command(["clean", "clear"], async (ctx) => {
+      const chatId = ctx.chat.id;
+      const purgedCount = await messageDeletionService.purgeChatMessages(chatId, bot.telegram);
+      const notice = await ctx.reply(`🧹 Очищено ${purgedCount} повідомлень бота.`);
+      setTimeout(() => {
+        bot.telegram.deleteMessage(chatId, notice.message_id).catch(() => {});
+      }, 4000);
+    });
+
+    bot.command("testdelete", async (ctx) => {
+      const chatId = ctx.chat.id;
+      await sendBotMessage(
+        chatId,
+        "⏱️ *Тест автовидалення*: це повідомлення зникне автоматично через 5 секунд.",
+        { parse_mode: "Markdown", ttlMs: 5000 }
+      );
     });
 
     bot.command("radius", async (ctx) => {

@@ -9,7 +9,6 @@ import { findNearestLandmark } from "../lib/landmarks";
 import { getLiveWeatherRadarTileUrl } from "../lib/weatherRadar";
 import { calculateSatellitePositions, type SatelliteTrack } from "../lib/satelliteRecon";
 import { getFrontlineGeoJSON } from "../lib/ukraineBorders";
-import { drawNightCityLights } from "../lib/nightCityLights";
 import type { FilterState } from "./StatusPanel";
 import FpsCounter from "./FpsCounter";
 import { SpatialIndex } from "../lib/spatialIndex.js";
@@ -1523,7 +1522,7 @@ const TARGET_COLORS: Record<string, string> = {
   munition: "#f97316",
   bomb: "#ef4444",
   fpv: "#d946ef",
-  aircraft: "#64748b",
+  aircraft: "#38bdf8",
   helicopter: "#10b981",
   unknown: "#facc15"
 };
@@ -1845,9 +1844,9 @@ export const MapView = ({
     currentStyleRef.current = initialStyle;
 
     const isMobile = typeof window !== "undefined" && window.innerWidth < 600;
-    // Operational Theater Viewport: Ukraine + operational border buffer
-    const initialCenter: [number, number] = [31.2, 48.8];
-    const initialZoom = isMobile ? 5.2 : 5.8;
+    // Operational Theater Viewport: Comprehensive view encompassing Ukraine and western border buffer
+    const initialCenter: [number, number] = [28.8, 49.2];
+    const initialZoom = isMobile ? 4.9 : 5.4;
 
     const map = new maplibregl.Map({
       container: mapContainerRef.current,
@@ -2221,12 +2220,6 @@ export const MapView = ({
           }
           ctx.restore();
 
-          // C. Living Night City Lights Illumination (Authentic soft NASA Black Marble glow)
-          if (elev < 0 && performanceTierRef.current !== "LOW") {
-            const nightFactor = Math.min(1, Math.max(0, -elev / 10));
-            drawNightCityLights(ctx, map, nightFactor, now, width, height);
-          }
-
           // Physical MapLibre satellite tile brightness synchronization (throttled to 2.5s)
           if (now - lastBrightnessCheckRef.current > 2500) {
             lastBrightnessCheckRef.current = now;
@@ -2249,12 +2242,15 @@ export const MapView = ({
           }
         }
 
-        // 1. Draw User Confirmed Home Location Beacon & Range Rings (Always visible on map)
-        const activeHome = confirmedLocationRef.current
+        // 1. Draw User Confirmed Home Location Beacon & Range Rings (Strictly anchored inside Ukraine)
+        const isLocInUkraine = (l: { lat: number; lon: number }) =>
+          l.lat >= 44.0 && l.lat <= 52.5 && l.lon >= 22.0 && l.lon <= 40.5;
+
+        const activeHome = confirmedLocationRef.current && isLocInUkraine(confirmedLocationRef.current)
           ? { lat: confirmedLocationRef.current.lat, lon: confirmedLocationRef.current.lon }
-          : currentLoc
+          : currentLoc && isLocInUkraine(currentLoc)
           ? { lat: currentLoc.lat, lon: currentLoc.lon }
-          : null;
+          : { lat: 50.4501, lon: 30.5234 }; // Canonical Kyiv default
         if (activeHome) {
           drawUserHomeBeacon(
             ctx,
@@ -2405,15 +2401,9 @@ export const MapView = ({
             groundPoint.y > height + cullingMargin;
 
           if (isOffScreen) {
-            // Exclude civilian aircraft from off-screen perimeter threat indicators completely.
-            // Tactical perimeter indicators are strictly for combat threats (uav, munition, bomb, fpv) and unverified contacts within operational range.
-            if (type === "aircraft") {
-              continue;
-            }
-
             const mapCenter = map.getCenter();
             const distKm = Math.round(haversineMeters({ lat: curLat, lon: curLon }, { lat: mapCenter.lat, lon: mapCenter.lng }) / 1000);
-            if (isNaN(distKm) || distKm > 120) {
+            if (isNaN(distKm) || distKm > 250) {
               continue;
             }
 
@@ -2643,7 +2633,8 @@ export const MapView = ({
             });
             ctx.restore();
 
-            if (item.isSelected) {
+            const showPill = item.isSelected || renderItems.length <= 40;
+            if (showPill) {
               drawMilitaryCalloutPill(
                 ctx,
                 item.targetX,
@@ -2652,7 +2643,7 @@ export const MapView = ({
                 item.speedKmh,
                 item.altMsl,
                 item.color,
-                true,
+                item.isSelected,
                 true,
                 placedPillBoxes
               );
@@ -2677,7 +2668,8 @@ export const MapView = ({
             });
             ctx.restore();
 
-            if (item.isSelected) {
+            const showPill = item.isSelected || renderItems.length <= 40;
+            if (showPill) {
               drawMilitaryCalloutPill(
                 ctx,
                 item.targetX,
@@ -2686,7 +2678,7 @@ export const MapView = ({
                 item.speedKmh,
                 item.altMsl,
                 item.color,
-                true,
+                item.isSelected,
                 true,
                 placedPillBoxes
               );

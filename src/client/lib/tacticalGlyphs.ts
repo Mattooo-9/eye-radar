@@ -41,8 +41,8 @@ export function renderTacticalGlyph(
     model?.toLowerCase().includes("combat")
   );
 
-  // 1. Soft Ambient Halo (threat / status hierarchy) - Exclude civil aircraft completely
-  if (!isLowTier && (type !== "aircraft" || isCombatJet)) {
+  // 1. Soft Ambient Halo (threat / status hierarchy)
+  if (!isLowTier) {
     const haloRadius = isSelected ? size * 1.8 : size * 1.35;
     const gradient = ctx.createRadialGradient(0, 0, size * 0.3, 0, 0, haloRadius);
     if (color === "#ef4444" || color === "#dc2626") {
@@ -54,8 +54,8 @@ export function renderTacticalGlyph(
       gradient.addColorStop(0.5, "rgba(245, 158, 11, 0.08)");
       gradient.addColorStop(1, "rgba(245, 158, 11, 0.0)");
     } else {
-      gradient.addColorStop(0, "rgba(56, 189, 248, 0.20)");
-      gradient.addColorStop(0.5, "rgba(56, 189, 248, 0.06)");
+      gradient.addColorStop(0, "rgba(56, 189, 248, 0.28)");
+      gradient.addColorStop(0.5, "rgba(56, 189, 248, 0.10)");
       gradient.addColorStop(1, "rgba(56, 189, 248, 0.0)");
     }
     ctx.fillStyle = gradient;
@@ -93,7 +93,7 @@ export function renderTacticalGlyph(
     if (isCombatJet) {
       drawFastJetGlyph(ctx, size, color);
     } else {
-      drawCivilianAirlinerGlyph(ctx, size, "#64748b");
+      drawCivilianAirlinerGlyph(ctx, size, color || "#38bdf8");
     }
   } else {
     drawUnknownTargetGlyph(ctx, size, color);
@@ -530,56 +530,74 @@ function drawCivilianAirlinerGlyph(
   accentColor: string
 ): void {
   ctx.save();
+  const strokeColor = accentColor || "#38bdf8";
+
+  // Forward Heading Velocity Vector (indicates flight trajectory)
+  ctx.beginPath();
+  ctx.moveTo(0, -size * 1.15);
+  ctx.lineTo(0, -size * 1.95);
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth = 1.6;
+  ctx.stroke();
+
+  // Directional arrowhead on vector tip
+  ctx.beginPath();
+  ctx.moveTo(-size * 0.22, -size * 1.70);
+  ctx.lineTo(0, -size * 1.98);
+  ctx.lineTo(size * 0.22, -size * 1.70);
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth = 1.6;
+  ctx.stroke();
 
   // Fuselage (slender rounded passenger cabin)
-  ctx.fillStyle = "#0f172a"; // Dark slate
+  ctx.fillStyle = "rgba(15, 23, 42, 0.92)"; // Dark navy slate with high contrast against map
   ctx.beginPath();
-  ctx.ellipse(0, 0, size * 0.16, size * 1.10, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, 0, size * 0.18, size * 1.15, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = accentColor;
-  ctx.lineWidth = 1.1;
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth = 1.6;
   ctx.stroke();
 
   // Swept Main Wings
-  ctx.fillStyle = "#1e293b";
+  ctx.fillStyle = "rgba(30, 41, 59, 0.95)";
   ctx.beginPath();
   ctx.moveTo(0, -size * 0.25);
-  ctx.lineTo(size * 1.15, size * 0.25); // Right wingtip
-  ctx.lineTo(size * 1.10, size * 0.40);
-  ctx.lineTo(size * 0.16, size * 0.15); // Inboard root
-  ctx.lineTo(-size * 0.16, size * 0.15); // Inboard left root
-  ctx.lineTo(-size * 1.10, size * 0.40);
-  ctx.lineTo(-size * 1.15, size * 0.25); // Left wingtip
+  ctx.lineTo(size * 1.25, size * 0.28); // Right wingtip
+  ctx.lineTo(size * 1.18, size * 0.44);
+  ctx.lineTo(size * 0.18, size * 0.18); // Inboard root
+  ctx.lineTo(-size * 0.18, size * 0.18); // Inboard left root
+  ctx.lineTo(-size * 1.18, size * 0.44);
+  ctx.lineTo(-size * 1.25, size * 0.28); // Left wingtip
   ctx.closePath();
   ctx.fill();
-  ctx.strokeStyle = accentColor;
-  ctx.lineWidth = 1.0;
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth = 1.4;
   ctx.stroke();
 
   // Under-wing turbofan engines
-  ctx.fillStyle = "#334155";
-  ctx.fillRect(size * 0.38, -size * 0.05, size * 0.10, size * 0.28);
-  ctx.fillRect(-size * 0.48, -size * 0.05, size * 0.10, size * 0.28);
+  ctx.fillStyle = strokeColor;
+  ctx.fillRect(size * 0.42, -size * 0.05, size * 0.12, size * 0.28);
+  ctx.fillRect(-size * 0.54, -size * 0.05, size * 0.12, size * 0.28);
 
   // Horizontal Tailplane
-  ctx.fillStyle = "#1e293b";
+  ctx.fillStyle = "rgba(30, 41, 59, 0.95)";
   ctx.beginPath();
   ctx.moveTo(0, size * 0.82);
-  ctx.lineTo(size * 0.48, size * 1.05);
-  ctx.lineTo(size * 0.42, size * 1.14);
-  ctx.lineTo(0, size * 1.02);
-  ctx.lineTo(-size * 0.42, size * 1.14);
-  ctx.lineTo(-size * 0.48, size * 1.05);
+  ctx.lineTo(size * 0.52, size * 1.08);
+  ctx.lineTo(size * 0.46, size * 1.18);
+  ctx.lineTo(0, size * 1.05);
+  ctx.lineTo(-size * 0.46, size * 1.18);
+  ctx.lineTo(-size * 0.52, size * 1.08);
   ctx.closePath();
   ctx.fill();
-  ctx.strokeStyle = accentColor;
-  ctx.lineWidth = 1.0;
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth = 1.3;
   ctx.stroke();
 
-  // Forward nose radome pip (neutral slate)
-  ctx.fillStyle = "#94a3b8";
+  // Forward nose radome pip (bright tactical dot)
+  ctx.fillStyle = "#ffffff";
   ctx.beginPath();
-  ctx.arc(0, -size * 1.05, 1.5, 0, Math.PI * 2);
+  ctx.arc(0, -size * 1.12, 2.0, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.restore();

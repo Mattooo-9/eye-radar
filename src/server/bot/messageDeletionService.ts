@@ -348,6 +348,72 @@ export class MessageDeletionService {
     return { deleted: deletedCount, errors: errorCount };
   }
 
+  async markCompleted(chatId: number, messageId: number): Promise<void> {
+    const key = `${chatId}:${messageId}`;
+    this.localQueue.delete(key);
+    this.persistLocalStore();
+
+    await this.ensurePostgres();
+    if (this.isPostgresAvailable && this.pool) {
+      try {
+        await this.pool.query(
+          `UPDATE bot_message_deletion_queue
+           SET status = 'completed', last_error = NULL
+           WHERE chat_id = $1 AND message_id = $2`,
+          [chatId, messageId]
+        );
+      } catch {}
+    }
+  }
+
+  async purgeChatMessages(chatId: number, botOrTelegram?: any): Promise<number> {
+    const tg = botOrTelegram?.telegram ?? botOrTelegram;
+    let purged = 0;
+    const messageIds: number[] = [];
+
+    await this.ensurePostgres();
+    if (this.isPostgresAvailable && this.pool) {
+      try {
+        const res = await this.pool.query(
+          `SELECT message_id as "messageId" FROM bot_message_deletion_queue WHERE chat_id = $1 AND status = 'pending'`,
+          [chatId]
+        );
+        for (const row of res.rows) {
+          messageIds.push(Number(row.messageId));
+        }
+      } catch {}
+    }
+
+    for (const job of this.localQueue.values()) {
+      if (job.chatId === chatId && job.status === "pending") {
+        if (!messageIds.includes(job.messageId)) {
+          messageIds.push(job.messageId);
+        }
+      }
+    }
+
+    for (const msgId of messageIds) {
+      try {
+        if (tg) {
+          await tg.deleteMessage(chatId, msgId);
+        } else {
+          const token = process.env.TELEGRAM_BOT_TOKEN || process.env.BOT_TOKEN || BOT_TOKEN_DEFAULT;
+          await fetch(`https://api.telegram.org/bot${token}/deleteMessage`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ chat_id: chatId, message_id: msgId })
+          });
+        }
+        await this.markCompleted(chatId, msgId);
+        purged++;
+      } catch {
+        await this.markCompleted(chatId, msgId);
+      }
+    }
+
+    return purged;
+  }
+
   getQueueSize(): number {
     return this.localQueue.size;
   }

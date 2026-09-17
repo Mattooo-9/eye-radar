@@ -33,7 +33,14 @@ export const useTrustedLocation = () => {
     return Boolean(localStorage.getItem("eye-radar-user-location-confirmed"));
   });
 
-  const [location, setLocation] = useState<TrustedLocation | null>(() => {
+  const CANONICAL_DEFAULT_LOCATION: TrustedLocation = {
+    lat: 50.4501,
+    lon: 30.5234,
+    accuracy: 15,
+    timestamp: Date.now()
+  };
+
+  const [location, setLocation] = useState<TrustedLocation>(() => {
     if (confirmedLocation) {
       return {
         lat: confirmedLocation.lat,
@@ -42,7 +49,7 @@ export const useTrustedLocation = () => {
         timestamp: Date.now()
       };
     }
-    return null;
+    return CANONICAL_DEFAULT_LOCATION;
   });
 
   const [trustScore, setTrustScore] = useState(100);
@@ -114,11 +121,23 @@ export const useTrustedLocation = () => {
         };
         lastGpsRef.current = gpsLoc;
 
+        const isInsideUkraine =
+          sample.lat >= 44.0 && sample.lat <= 52.5 && sample.lon >= 22.0 && sample.lon <= 40.5;
+
         const anomaly = detectLocationAnomaly(
           previousRef.current,
           sample,
           confirmedLocation ? { lat: confirmedLocation.lat, lon: confirmedLocation.lon } : null
         );
+
+        if (!isInsideUkraine) {
+          anomaly.isSpoofed = true;
+          anomaly.isDegraded = true;
+          if (!anomaly.flags.includes("foreign_vpn_or_spoofing")) {
+            anomaly.flags.push("foreign_vpn_or_spoofing");
+          }
+          anomaly.trustScore = Math.min(anomaly.trustScore, 30);
+        }
 
         setTrustScore(anomaly.trustScore);
         setFlags(anomaly.flags);
@@ -130,7 +149,7 @@ export const useTrustedLocation = () => {
           if (anomaly.isSpoofed || anomaly.isDegraded) {
             setTrustStatus(anomaly.isSpoofed ? "SPOOFED_FALLBACK" : "DEGRADED");
             setNeedsManualConfirm(true);
-            if (lastTrustedLocationRef.current) {
+            if (lastTrustedLocationRef.current && isInsideUkraine) {
               setLocation(lastTrustedLocationRef.current);
             } else if (confirmedLocation) {
               setLocation({
@@ -139,11 +158,13 @@ export const useTrustedLocation = () => {
                 accuracy: 100,
                 timestamp: Date.now()
               });
+            } else {
+              setLocation(CANONICAL_DEFAULT_LOCATION);
             }
             return;
           }
 
-          // Healthy GNSS sample
+          // Healthy GNSS sample inside Ukraine
           previousRef.current = sample;
           lastTrustedLocationRef.current = gpsLoc;
           setTrustStatus("TRUSTED");
