@@ -2009,14 +2009,21 @@ export const MapView = ({
     const map = mapRef.current;
     if (!map || !location || centeredRef.current) return;
 
+    const isOverview =
+      (confirmedLocation && confirmedLocation.name.includes("Вся Україна")) ||
+      (Math.abs(location.lat - 49.0) < 0.5 && Math.abs(location.lon - 31.5) < 0.5);
+
+    const isMobile = typeof window !== "undefined" && window.innerWidth < 600;
+    const targetZoom = isOverview ? (isMobile ? 4.0 : 5.0) : 7.2;
+
     map.flyTo({
       center: [location.lon, location.lat],
-      zoom: 7.2,
+      zoom: targetZoom,
       pitch: 0,
       duration: 1500
     });
     centeredRef.current = true;
-  }, [location]);
+  }, [location, confirmedLocation]);
 
   // 5.5 Trigger immediate redraw of canvas overlay when packets, filters, or impacts change
   useEffect(() => {
