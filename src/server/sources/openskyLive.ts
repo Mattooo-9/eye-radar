@@ -86,7 +86,7 @@ export class OpenSkyLiveSource implements Source {
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
           Accept: "application/json"
         },
-        signal: AbortSignal.timeout(3500)
+        signal: AbortSignal.timeout(9000)
       });
 
       if (!res.ok) {
@@ -122,6 +122,19 @@ export class OpenSkyLiveSource implements Source {
           velocity > 20 &&
           lat >= 43 && lat <= 54 && lon >= 22 && lon <= 42
         ) {
+          const upperCall = (callsign || "").toUpperCase();
+          const isMilCallsign =
+            upperCall.includes("FORTE") ||
+            upperCall.includes("HOMER") ||
+            upperCall.includes("JAKE") ||
+            upperCall.includes("LAGR") ||
+            upperCall.includes("RED") ||
+            upperCall.includes("VIPER") ||
+            upperCall.includes("NATO") ||
+            upperCall.includes("K35R") ||
+            upperCall.includes("AWACS");
+          const assignedModel = isMilCallsign ? "MIL_AIRCRAFT" : "Civilian Aircraft";
+
           observations.push(
             createUnifiedObservation({
               source_id: "opensky.live",
@@ -143,7 +156,7 @@ export class OpenSkyLiveSource implements Source {
               evidence: [`hex_${hex}`, `sensor_count_${st[12]?.length ?? 1}`, "opensky_adsb"],
               provenance: `OpenSky Network Live [${st[2] || "INTL"}]`,
               callsign: callsign || hex.toUpperCase(),
-              model: "MIL_AIRCRAFT"
+              model: assignedModel
             })
           );
         }

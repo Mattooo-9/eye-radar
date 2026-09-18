@@ -1164,6 +1164,52 @@ const drawTacticalClusterNode = (
   ctx.restore();
 };
 
+const drawCivilAviationCluster = (
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  count: number
+) => {
+  ctx.save();
+  const radius = Math.min(15, 10 + Math.log2(count) * 1.8);
+  ctx.fillStyle = "rgba(15, 23, 42, 0.75)";
+  ctx.strokeStyle = "rgba(148, 163, 184, 0.5)";
+  ctx.lineWidth = 1.0;
+
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = "#94a3b8";
+  ctx.font = "bold 9px 'JetBrains Mono', monospace, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(`✈ ${count}`, x, y + 0.5);
+  ctx.restore();
+};
+
+const drawCivilAviationMuted = (
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  screenHeadingDeg: number
+) => {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate((screenHeadingDeg * Math.PI) / 180);
+  ctx.fillStyle = "#94a3b8";
+  ctx.globalAlpha = 0.32;
+  ctx.beginPath();
+  ctx.moveTo(0, -5);
+  ctx.lineTo(3.5, 4);
+  ctx.lineTo(0, 2);
+  ctx.lineTo(-3.5, 4);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+};
+
 const drawMilitaryCalloutPill = (
   ctx: CanvasRenderingContext2D,
   targetX: number,
@@ -2485,6 +2531,8 @@ export const MapView = ({
           confidence?: number;
         }
         const renderItems: RenderItem[] = [];
+        const civilItems: RenderItem[] = [];
+        const tacticalItems: RenderItem[] = [];
         const perimeterItems: PerimeterItem[] = [];
         const isOverview = zoom <= 7.0;
         const cullingMargin = isOverview ? 120 : cullingThreshold;
@@ -2554,6 +2602,7 @@ export const MapView = ({
             groundPoint.y > height + cullingMargin;
 
           if (isOffScreen) {
+            if (isCivil) continue;
             const mapCenter = map.getCenter();
             const distKm = Math.round(haversineMeters({ lat: curLat, lon: curLon }, { lat: mapCenter.lat, lon: mapCenter.lng }) / 1000);
             if (isNaN(distKm) || distKm > 250) {
@@ -2681,7 +2730,7 @@ export const MapView = ({
               : "UNKNOWN"
             );
 
-          renderItems.push({
+          const rItem: RenderItem = {
             id,
             type,
             targetX: renderX,
@@ -2695,7 +2744,14 @@ export const MapView = ({
             shortName,
             altMsl,
             confidence
-          });
+          };
+
+          renderItems.push(rItem);
+          if (isCivil) {
+            civilItems.push(rItem);
+          } else {
+            tacticalItems.push(rItem);
+          }
         }
 
         trackStore.recordRenderFrame(
@@ -2732,16 +2788,125 @@ export const MapView = ({
           }
         }
 
-        // Pass 3: Draw aerospace-grade tactical glyphs and callout pills (LOD clustering only at continental zoom < 4.5)
+        // Pass 2.5: Background Civil Aviation (Layer 2)
+        // Muted #94a3b8, opacity 0.28-0.35, clustered into compact badges at overview zoom < 7.5
+        if (showAviationRef.current !== false && civilItems.length > 0) {
+          if (zoom < 7.5) {
+            const gridSize = 50;
+            const civilGrid: Record<string, RenderItem[]> = {};
+            const civilStandalone: RenderItem[] = [];
+
+            for (const cItem of civilItems) {
+              if (cItem.isSelected) {
+                civilStandalone.push(cItem);
+                continue;
+              }
+              const gx = Math.floor(cItem.targetX / gridSize);
+              const gy = Math.floor(cItem.targetY / gridSize);
+              const key = `${gx}:${gy}`;
+              if (!civilGrid[key]) civilGrid[key] = [];
+              civilGrid[key].push(cItem);
+            }
+
+            for (const cell of Object.values(civilGrid)) {
+              if (cell.length === 1) {
+                civilStandalone.push(cell[0]);
+              } else {
+                let avgX = 0;
+                let avgY = 0;
+                for (const it of cell) {
+                  avgX += it.targetX;
+                  avgY += it.targetY;
+                }
+                avgX /= cell.length;
+                avgY /= cell.length;
+                drawCivilAviationCluster(ctx, avgX, avgY, cell.length);
+              }
+            }
+
+            for (const cItem of civilStandalone) {
+              if (cItem.isSelected) {
+                ctx.save();
+                ctx.translate(cItem.targetX, cItem.targetY);
+                ctx.rotate((cItem.screenHeadingDeg * Math.PI) / 180);
+                renderTacticalGlyph(ctx, {
+                  size: cItem.scale,
+                  rotationDeg: 0,
+                  type: "aircraft",
+                  color: "#94a3b8",
+                  isSelected: true,
+                  model: cItem.packetModel,
+                  speedKmh: cItem.speedKmh,
+                  isLowTier,
+                  confidence: cItem.confidence,
+                  timeMs: now
+                });
+                ctx.restore();
+                drawMilitaryCalloutPill(
+                  ctx,
+                  cItem.targetX,
+                  cItem.targetY,
+                  cItem.shortName,
+                  cItem.speedKmh,
+                  cItem.altMsl,
+                  "#94a3b8",
+                  false,
+                  false,
+                  placedPillBoxes
+                );
+              } else {
+                drawCivilAviationMuted(ctx, cItem.targetX, cItem.targetY, cItem.screenHeadingDeg);
+              }
+            }
+          } else {
+            // High zoom (>= 7.5): muted 12px civil silhouettes
+            for (const cItem of civilItems) {
+              ctx.save();
+              ctx.globalAlpha = cItem.isSelected ? 1.0 : 0.32;
+              ctx.translate(cItem.targetX, cItem.targetY);
+              ctx.rotate((cItem.screenHeadingDeg * Math.PI) / 180);
+              renderTacticalGlyph(ctx, {
+                size: Math.max(12, cItem.scale * 0.75),
+                rotationDeg: 0,
+                type: "aircraft",
+                color: "#94a3b8",
+                isSelected: cItem.isSelected,
+                model: cItem.packetModel,
+                speedKmh: cItem.speedKmh,
+                isLowTier,
+                confidence: cItem.confidence,
+                timeMs: now
+              });
+              ctx.restore();
+
+              if (cItem.isSelected) {
+                drawMilitaryCalloutPill(
+                  ctx,
+                  cItem.targetX,
+                  cItem.targetY,
+                  cItem.shortName,
+                  cItem.speedKmh,
+                  cItem.altMsl,
+                  "#94a3b8",
+                  false,
+                  false,
+                  placedPillBoxes
+                );
+              }
+            }
+          }
+        }
+
+        // Pass 3: Primary Tactical LiveTracks (Layer 1: uav, munition, bomb, fpv, military, unknown)
         const lodThreshold = isLowTier ? 120 : 250;
-        const shouldCluster = zoom < 4.5 && renderItems.length > lodThreshold;
+        const shouldCluster = zoom < 4.5 && tacticalItems.length > lodThreshold;
 
         if (shouldCluster) {
           const gridSize = 45; // 45px spatial clustering cell
           const grid: Record<string, RenderItem[]> = {};
           const standalone: RenderItem[] = [];
 
-          for (const item of renderItems) {
+          for (const item of tacticalItems) {
             if (item.isSelected) {
               standalone.push(item);
               continue;
@@ -2805,7 +2970,7 @@ export const MapView = ({
             }
           }
         } else {
-          for (const item of renderItems) {
+          for (const item of tacticalItems) {
             ctx.save();
             ctx.translate(item.targetX, item.targetY);
             ctx.rotate((item.screenHeadingDeg * Math.PI) / 180);

@@ -47,11 +47,6 @@ export const TacticalTopBar: React.FC<TacticalTopBarProps> = ({
             <span className="calm-text">НЕБО СПОКІЙНЕ</span>
           </div>
         )}
-        {uncertaintyCount > 0 && (
-          <div className="top-bar-sensor-pill" title="Активні сенсорні спостереження та зони невизначеності">
-            <span className="sensor-pill-text">📡 СЕНСОРИ: {uncertaintyCount}</span>
-          </div>
-        )}
       </div>
 
       <div className="top-bar-right">

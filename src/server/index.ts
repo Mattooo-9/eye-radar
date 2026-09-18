@@ -697,10 +697,6 @@ const server = createServer(async (req, res) => {
 
   if (req.method === "GET" && url.pathname === "/api/thermal") {
     const thermals = await firmsSource.fetchThermalObservations();
-    const now = Date.now();
-    for (const t of thermals) {
-      uncertaintyEventManager.ingestObservation(t, now);
-    }
     json(res, 200, { thermals, count: thermals.length });
     return;
   }
@@ -1276,9 +1272,6 @@ setInterval(async () => {
     try {
       const thermals = await firmsSource.fetchThermalObservations();
       const latency = Date.now() - t0;
-      for (const t of thermals) {
-        uncertaintyEventManager.ingestObservation(t, now);
-      }
       healthTracker.recordSuccess("nasa-firms", latency, thermals.length);
       if (thermals.length > 0) {
         sourceRegistry.validateAndActivate("nasa-firms", thermals, latency);

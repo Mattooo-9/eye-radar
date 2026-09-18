@@ -96,7 +96,8 @@ export class AirplanesLiveSource {
 
     // 1. Fetch strictly from military feeds to exclude foreign civil passenger airways
     const adsbFiEndpoints = [
-      "https://opendata.adsb.fi/api/v2/mil" // Regional Military & Reconnaissance Aircraft
+      "https://opendata.adsb.fi/api/v2/mil",
+      "https://api.adsb.lol/v2/mil"
     ];
 
     await Promise.allSettled(
@@ -107,7 +108,7 @@ export class AirplanesLiveSource {
               "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
               "Accept": "application/json"
             },
-            signal: AbortSignal.timeout(4500)
+            signal: AbortSignal.timeout(8000)
           });
           if (res.ok) {
             const data = (await res.json()) as AdsbFiResponse;

@@ -63,29 +63,8 @@ export const isCivilAviation = (packet: TrackPacket): boolean => {
     return false;
   }
 
-  // Known commercial airlines and passenger airframes
-  if (
-    model.includes("CIVIL") ||
-    model.includes("PASSENGER") ||
-    /^(RYR|WZZ|WUK|LOT|DLH|KLM|AFR|BAW|THY|AUA|SXS|PGT|EZY|BTI|ENT|TOM|FDB|ETH|ROT|CAI|ISR|PIA|FDX|UPS|BOX|CGF|MNB|UTN|LBT|NMA|GJT|ASL|EXS|CCA|SIA|RYS|NSZ)/.test(callsign) ||
-    model.includes("AIRBUS") ||
-    model.includes("BOEING") ||
-    model.includes("EMBRAER") ||
-    model.includes("B73") ||
-    model.includes("A32") ||
-    model.includes("A33") ||
-    model.includes("A35") ||
-    model.includes("B77") ||
-    model.includes("B78") ||
-    model.includes("BCS3") ||
-    model.includes("C152") ||
-    model.includes("C172") ||
-    model.includes("PA34")
-  ) {
-    return true;
-  }
-
-  return false;
+  // Known commercial airlines, airframes, or standard civilian transponder flights
+  return true;
 };
 
 export class MutableTrackStore {

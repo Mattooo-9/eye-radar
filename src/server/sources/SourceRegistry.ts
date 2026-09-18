@@ -149,7 +149,8 @@ export class SourceRegistry {
       if (src.disabled) return false;
       if (src.capability.primaryCapability !== "TRACK_POSITION") return false;
       if (src.capability.capabilities.includes("TEST_SIMULATION")) return false;
-      return this.getSourceState(src.name) === "LIVE";
+      const state = this.getSourceState(src.name);
+      return state === "LIVE" || state === "DEGRADED";
     });
   }
 
