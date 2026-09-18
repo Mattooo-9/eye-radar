@@ -63,8 +63,27 @@ export class TrackManager {
   }
 
   runRegionalSanityCheck(): void {
-    for (const entry of this.tracks.values()) {
-      this.applySanityCheckToTrack(entry.state);
+    if (this.activeAlertOblasts.size === 0) return;
+    for (const [id, entry] of this.tracks.entries()) {
+      const track = entry.state;
+      const nearest = findNearestOblast(track.lat, track.lon);
+      const regionKey = nearest.oblast.toLowerCase().replace("область", "").replace("обл.", "").trim();
+      const regionUkKey = nearest.nameUk.toLowerCase();
+
+      const hasActiveAlert = Array.from(this.activeAlertOblasts).some(
+        (alertName) =>
+          alertName.includes(regionKey) ||
+          regionKey.includes(alertName) ||
+          alertName.includes(regionUkKey)
+      );
+
+      // Synthetic tracks in unalarmed regions MUST be purged immediately
+      if (track.isSynthetic && !hasActiveAlert) {
+        this.removeTrack(id);
+        continue;
+      }
+
+      this.applySanityCheckToTrack(track);
     }
   }
 
@@ -644,6 +663,20 @@ export class TrackManager {
       if (measurementAge > STALE_AFTER_MS) {
         this.removeTrack(id);
         continue;
+      }
+
+      // 2.1 Purge synthetic tracks in unalarmed regions immediately
+      if (entry.state.isSynthetic && this.activeAlertOblasts.size > 0) {
+        const nearest = findNearestOblast(entry.state.lat, entry.state.lon);
+        const regionKey = nearest.oblast.toLowerCase().replace("область", "").replace("обл.", "").trim();
+        const regionUkKey = nearest.nameUk.toLowerCase();
+        const hasAlert = Array.from(this.activeAlertOblasts).some(
+          (a) => a.includes(regionKey) || regionKey.includes(a) || a.includes(regionUkKey)
+        );
+        if (!hasAlert) {
+          this.removeTrack(id);
+          continue;
+        }
       }
 
       const type = entry.state.type;
