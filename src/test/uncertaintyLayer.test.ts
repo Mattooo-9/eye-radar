@@ -21,7 +21,7 @@ describe("3-Layer Architecture and Uncertainty Layer", () => {
       lat: 50.45,
       lon: 30.52,
       timestamp: now,
-      source: "ground_sensors",
+      source: "ground.sensor",
       confidence: 0.75,
       uncertaintyRadius: 12000,
       threatEvidence: ["acoustic_engine_sound"],
@@ -84,7 +84,7 @@ describe("3-Layer Architecture and Uncertainty Layer", () => {
       speed: 220,
       altitude: 10500,
       timestamp: now,
-      source: "adsb_lol",
+      source: "adsb.lol",
       confidence: 0.95,
       meta: {
         callsign: "RYR1234",

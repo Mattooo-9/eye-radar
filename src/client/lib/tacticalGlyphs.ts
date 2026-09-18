@@ -535,69 +535,74 @@ function drawCivilianAirlinerGlyph(
   // Forward Heading Velocity Vector (indicates flight trajectory)
   ctx.beginPath();
   ctx.moveTo(0, -size * 1.15);
-  ctx.lineTo(0, -size * 1.95);
+  ctx.lineTo(0, -size * 2.2);
   ctx.strokeStyle = strokeColor;
-  ctx.lineWidth = 1.6;
+  ctx.lineWidth = 2.0;
   ctx.stroke();
 
   // Directional arrowhead on vector tip
   ctx.beginPath();
-  ctx.moveTo(-size * 0.22, -size * 1.70);
-  ctx.lineTo(0, -size * 1.98);
-  ctx.lineTo(size * 0.22, -size * 1.70);
+  ctx.moveTo(-size * 0.32, -size * 1.85);
+  ctx.lineTo(0, -size * 2.25);
+  ctx.lineTo(size * 0.32, -size * 1.85);
   ctx.strokeStyle = strokeColor;
+  ctx.lineWidth = 2.0;
+  ctx.stroke();
+
+  // Fuselage (slender rounded passenger cabin with bright high-contrast fill)
+  ctx.fillStyle = "rgba(14, 165, 233, 0.65)";
+  ctx.beginPath();
+  ctx.ellipse(0, 0, size * 0.20, size * 1.15, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#ffffff";
   ctx.lineWidth = 1.6;
   ctx.stroke();
 
-  // Fuselage (slender rounded passenger cabin)
-  ctx.fillStyle = "rgba(15, 23, 42, 0.92)"; // Dark navy slate with high contrast against map
+  // Swept Main Wings
+  ctx.fillStyle = "rgba(14, 165, 233, 0.55)";
   ctx.beginPath();
-  ctx.ellipse(0, 0, size * 0.18, size * 1.15, 0, 0, Math.PI * 2);
+  ctx.moveTo(0, -size * 0.25);
+  ctx.lineTo(size * 1.35, size * 0.28); // Right wingtip
+  ctx.lineTo(size * 1.25, size * 0.44);
+  ctx.lineTo(size * 0.20, size * 0.18); // Inboard root
+  ctx.lineTo(-size * 0.20, size * 0.18); // Inboard left root
+  ctx.lineTo(-size * 1.25, size * 0.44);
+  ctx.lineTo(-size * 1.35, size * 0.28); // Left wingtip
+  ctx.closePath();
   ctx.fill();
   ctx.strokeStyle = strokeColor;
   ctx.lineWidth = 1.6;
   ctx.stroke();
 
-  // Swept Main Wings
-  ctx.fillStyle = "rgba(30, 41, 59, 0.95)";
+  // Under-wing turbofan engines
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(size * 0.42, -size * 0.05, size * 0.14, size * 0.28);
+  ctx.fillRect(-size * 0.56, -size * 0.05, size * 0.14, size * 0.28);
+
+  // Horizontal Tailplane
+  ctx.fillStyle = "rgba(14, 165, 233, 0.55)";
   ctx.beginPath();
-  ctx.moveTo(0, -size * 0.25);
-  ctx.lineTo(size * 1.25, size * 0.28); // Right wingtip
-  ctx.lineTo(size * 1.18, size * 0.44);
-  ctx.lineTo(size * 0.18, size * 0.18); // Inboard root
-  ctx.lineTo(-size * 0.18, size * 0.18); // Inboard left root
-  ctx.lineTo(-size * 1.18, size * 0.44);
-  ctx.lineTo(-size * 1.25, size * 0.28); // Left wingtip
+  ctx.moveTo(0, size * 0.82);
+  ctx.lineTo(size * 0.55, size * 1.08);
+  ctx.lineTo(size * 0.48, size * 1.18);
+  ctx.lineTo(0, size * 1.05);
+  ctx.lineTo(-size * 0.48, size * 1.18);
+  ctx.lineTo(-size * 0.55, size * 1.08);
   ctx.closePath();
   ctx.fill();
   ctx.strokeStyle = strokeColor;
   ctx.lineWidth = 1.4;
   ctx.stroke();
 
-  // Under-wing turbofan engines
-  ctx.fillStyle = strokeColor;
-  ctx.fillRect(size * 0.42, -size * 0.05, size * 0.12, size * 0.28);
-  ctx.fillRect(-size * 0.54, -size * 0.05, size * 0.12, size * 0.28);
-
-  // Horizontal Tailplane
-  ctx.fillStyle = "rgba(30, 41, 59, 0.95)";
-  ctx.beginPath();
-  ctx.moveTo(0, size * 0.82);
-  ctx.lineTo(size * 0.52, size * 1.08);
-  ctx.lineTo(size * 0.46, size * 1.18);
-  ctx.lineTo(0, size * 1.05);
-  ctx.lineTo(-size * 0.46, size * 1.18);
-  ctx.lineTo(-size * 0.52, size * 1.08);
-  ctx.closePath();
-  ctx.fill();
-  ctx.strokeStyle = strokeColor;
-  ctx.lineWidth = 1.3;
-  ctx.stroke();
-
   // Forward nose radome pip (bright tactical dot)
   ctx.fillStyle = "#ffffff";
   ctx.beginPath();
-  ctx.arc(0, -size * 1.12, 2.0, 0, Math.PI * 2);
+  ctx.arc(0, -size * 1.12, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Center transponder beacon pip
+  ctx.beginPath();
+  ctx.arc(0, 0, 2.0, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.restore();

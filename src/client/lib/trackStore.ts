@@ -30,6 +30,7 @@ export class MutableTrackStore {
   private trails = new Map<string, RingBufferTrail>();
   private spatialIndex = new SpatialIndex<TrackPacket>(16);
   private impacts: ImpactEvent[] = [];
+  private uncertaintyEvents: ClientUncertaintyEvent[] = [];
   private listeners = new Set<() => void>();
   private lastNotifyTime = 0;
   private notifyTimer: any = null;

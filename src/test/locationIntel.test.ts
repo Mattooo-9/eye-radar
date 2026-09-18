@@ -36,7 +36,7 @@ describe("locationIntel", () => {
       now,
       0.95,
       25,
-      "CRITICAL",
+      "critical",
       150
     ];
 

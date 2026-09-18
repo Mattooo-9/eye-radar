@@ -6,8 +6,8 @@ import {
   BINARY_MAGIC,
   PROTOCOL_VERSION
 } from "../../common/binaryCodec.js";
-import type { CompactTrackPacket } from "../../server/domain/types.js";
-import { trackStore } from "../lib/trackStore.js";
+import type { CompactTrackPacket, ThreatLevel } from "../../server/domain/types.js";
+import { trackStore, type ClientUncertaintyEvent } from "../lib/trackStore.js";
 
 export interface ImpactEvent {
   id: string;
@@ -188,7 +188,7 @@ export const useWsRadar = (
               t.timestamp,
               t.confidence,
               t.uncertaintyRadius,
-              t.threatLevel,
+              t.threatLevel as ThreatLevel | undefined,
               t.altitude,
               t.model,
               t.callsign

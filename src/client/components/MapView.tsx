@@ -2251,17 +2251,7 @@ export const MapView = ({
           : currentLoc && isLocInUkraine(currentLoc)
           ? { lat: currentLoc.lat, lon: currentLoc.lon }
           : { lat: 50.4501, lon: 30.5234 }; // Canonical Kyiv default
-        if (activeHome) {
-          drawUserHomeBeacon(
-            ctx,
-            map,
-            activeHome,
-            confirmedLocationRef.current?.name,
-            now,
-            width,
-            height
-          );
-        }
+        // 1. User confirmed home location is fixed in state/Neon without intrusive glowing overlays or duplicate city markers
 
         // 1.1 Draw Selected Location Tactical Beacon if user inspected a temporary place on the map
         if (selectedLocationRef.current) {
@@ -2438,7 +2428,7 @@ export const MapView = ({
             continue;
           }
 
-          const scale = Math.max(12, Math.min(22, 10 + zoom * 0.85));
+          const scale = Math.max(16, Math.min(28, 12 + zoom * 1.2));
           const rawTargetX = groundPoint.x;
           const rawTargetY = groundPoint.y;
           const rawScreenHeadingDeg = (heading - mapBearing + 360) % 360;
@@ -2448,10 +2438,11 @@ export const MapView = ({
           let renderY = rawTargetY;
           let renderHeading = rawScreenHeadingDeg;
 
+          const isMapActive = map.isMoving() || map.isZooming() || map.isRotating();
           const prevInterp = targetInterpRef.current[id];
-          if (prevInterp) {
+          if (prevInterp && !isMapActive) {
             const distSq = (rawTargetX - prevInterp.x) ** 2 + (rawTargetY - prevInterp.y) ** 2;
-            if (distSq > 25000 || now - prevInterp.lastTime > 2500) {
+            if (distSq > 9000 || now - prevInterp.lastTime > 2500) {
               renderX = rawTargetX;
               renderY = rawTargetY;
               renderHeading = rawScreenHeadingDeg;
@@ -2742,7 +2733,7 @@ export const MapView = ({
         // Otherwise (stationary map and stationary/no targets), pause the rAF loop completely! (0% CPU/GPU idle load)
         const isMapMoving = map.isMoving() || map.isZooming() || map.isRotating();
         const hasMovingVisibleTargets = renderItems.length > 0 && renderItems.some(i => i.speedKmh > 7);
-        const hasActiveSensorEvents = uncertaintyCount > 0;
+        const hasActiveSensorEvents = uncertaintyEvents.length > 0;
 
         if (isMapMoving || hasMovingVisibleTargets || hasActiveSensorEvents || settleFramesLeft > 0) {
           if (settleFramesLeft > 0) settleFramesLeft--;

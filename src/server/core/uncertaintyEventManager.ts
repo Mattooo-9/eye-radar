@@ -31,13 +31,13 @@ export class UncertaintyEventManager {
    */
   ingestObservation(obs: Observation | UnifiedObservation, now = Date.now()): UncertaintyEvent | null {
     const meta = (obs as any).meta || {};
-    const src = (obs as any).source_id || obs.source || "unknown";
-    const srcFamilyRaw = (obs as any).source_family || meta.source_family || "";
+    const src = (obs as any).sourceId || (obs as any).source_id || (obs as any).source || "unknown";
+    const srcFamilyRaw = (obs as any).sourceFamily || (obs as any).source_family || meta.source_family || "";
 
     let family: UncertaintySourceFamily = "osint";
     if (srcFamilyRaw === "acoustic" || src.includes("acoustic") || meta.reportType?.includes("sound")) {
       family = "acoustic";
-    } else if (srcFamilyRaw === "thermal" || src.includes("firms") || obs.type === "thermal") {
+    } else if (srcFamilyRaw === "thermal" || src.includes("firms") || (obs as any).type === "thermal" || (obs as any).objectType === "thermal") {
       family = "thermal";
     } else if (srcFamilyRaw === "satellite" || src.includes("satellite") || src.includes("copernicus")) {
       family = "satellite";
@@ -70,7 +70,7 @@ export class UncertaintyEventManager {
       source: src,
       sourceFamily: family,
       label,
-      timestamp: obs.timestamp || now,
+      timestamp: (obs as any).observedAt || (obs as any).timestamp || now,
       details: meta.comment || meta.details || meta.evidence?.toString() || (obs as any).threatEvidence?.toString()
     };
 
@@ -115,7 +115,7 @@ export class UncertaintyEventManager {
     this.pruneExpired(now);
     const results: UncertaintyEvent[] = [];
     for (const item of this.events.values()) {
-      const dist = haversineMeters({ lat, lon }, { lat: item.lat, lon: item.lon });
+      const dist = haversineMeters(lat, lon, item.lat, item.lon);
       // Event intersects if distance between centers <= radius + event.uncertaintyRadius
       if (dist <= radiusMeters + item.uncertaintyRadius) {
         const { expiresAt, ...event } = item;
