@@ -52,7 +52,7 @@ export const App = () => {
     resetToGps
   } = useTrustedLocation();
   const [isPickingLocation, setIsPickingLocation] = useState(false);
-  const [locationSetupOpen, setLocationSetupOpen] = useState(!isConfirmed);
+  const [locationSetupOpen, setLocationSetupOpen] = useState(false);
   const { packets, impacts, uncertaintyEvents, connectionState, mapStyleUrl } = useWsRadar(
     userId,
     location,
