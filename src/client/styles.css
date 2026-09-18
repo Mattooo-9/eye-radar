@@ -3142,18 +3142,23 @@ body {
   color: #38bdf8;
 }
 
-@media (max-width: 440px) {
+@media (max-width: 480px) {
   .tactical-top-bar {
     padding-left: 6px;
     padding-right: 6px;
     gap: 4px;
+    height: 42px;
   }
   .live-status-pill {
+    display: none;
+  }
+  .top-bar-sensor-pill {
     display: none;
   }
   .top-bar-alert-pill {
     padding: 3px 6px;
     font-size: 9.5px;
+    white-space: nowrap;
   }
   .top-bar-menu-btn .menu-chevron {
     display: none;
