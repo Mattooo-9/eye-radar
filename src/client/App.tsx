@@ -127,6 +127,10 @@ export const App = () => {
   });
 
   const [showFrontline, setShowFrontline] = useState(true);
+  const [showFirms, setShowFirms] = useState(false);
+  const [showAviation, setShowAviation] = useState(true);
+  const [showAlerts, setShowAlerts] = useState(true);
+  const [showUncertainty, setShowUncertainty] = useState(true);
   const [currentZoom, setCurrentZoom] = useState(5.5);
 
   useEffect(() => {
@@ -389,6 +393,10 @@ export const App = () => {
           showWeather={showWeather}
           showSatellites={showSatellites}
           showFrontline={showFrontline}
+          showFirms={showFirms}
+          showAviation={showAviation}
+          showAlerts={showAlerts}
+          showUncertainty={showUncertainty}
           followingTargetId={followedTargetId}
           timelineOffsetSec={timelineOffsetSec}
           performanceTier={performanceTier}
@@ -451,6 +459,14 @@ export const App = () => {
         onToggleSatellites={() => setShowSatellites((prev) => !prev)}
         showFrontline={showFrontline}
         onToggleFrontline={() => setShowFrontline((prev) => !prev)}
+        showFirms={showFirms}
+        onToggleFirms={() => setShowFirms((prev) => !prev)}
+        showAviation={showAviation}
+        onToggleAviation={() => setShowAviation((prev) => !prev)}
+        showAlerts={showAlerts}
+        onToggleAlerts={() => setShowAlerts((prev) => !prev)}
+        showUncertainty={showUncertainty}
+        onToggleUncertainty={() => setShowUncertainty((prev) => !prev)}
         soundEnabled={filters.sound !== false}
         onToggleSound={() => handleToggleFilter("sound")}
         filters={filters}

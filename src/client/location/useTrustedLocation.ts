@@ -144,19 +144,12 @@ export const useTrustedLocation = () => {
         setIsSpoofed(anomaly.isSpoofed);
 
         if (!isManual && !confirmedLocation) {
-          // If EW/spoofing is detected or coordinates degraded, freeze lastTrustedLocation or fall back to confirmed reserve
+          // If EW/spoofing is detected or coordinates degraded, freeze lastTrustedLocation or fall back to canonical default
           if (anomaly.isSpoofed || anomaly.isDegraded) {
             setTrustStatus(anomaly.isSpoofed ? "SPOOFED_FALLBACK" : "DEGRADED");
             setNeedsManualConfirm(true);
             if (lastTrustedLocationRef.current && isInsideUkraine) {
               setLocation(lastTrustedLocationRef.current);
-            } else if (confirmedLocation) {
-              setLocation({
-                lat: confirmedLocation.lat,
-                lon: confirmedLocation.lon,
-                accuracy: 100,
-                timestamp: Date.now()
-              });
             } else {
               setLocation(CANONICAL_DEFAULT_LOCATION);
             }
@@ -169,6 +162,13 @@ export const useTrustedLocation = () => {
           setTrustStatus("TRUSTED");
           setNeedsManualConfirm(false);
           setLocation(gpsLoc);
+        } else if (confirmedLocation) {
+          setLocation({
+            lat: confirmedLocation.lat,
+            lon: confirmedLocation.lon,
+            accuracy: 15,
+            timestamp: Date.now()
+          });
         }
       },
       () => {

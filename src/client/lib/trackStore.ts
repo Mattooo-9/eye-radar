@@ -27,24 +27,64 @@ export const isCivilAviation = (packet: TrackPacket): boolean => {
   const type = packet[1];
   const model = (packet[11] || "").toUpperCase();
   const callsign = (packet[12] || "").toUpperCase();
-  const id = (packet[0] || "").toLowerCase();
 
-  if (type === "aircraft" || type === "helicopter") {
-    if (
-      model.includes("BOEING") ||
-      model.includes("AIRBUS") ||
-      model.includes("CIVIL") ||
-      model.includes("EMBRAER") ||
-      model.includes("B73") ||
-      model.includes("A32") ||
-      /^(RYR|WZZ|WUK|LOT|DLH|KLM|AFR|BAW|THY|AUA|SXS|PGT|EZY|BTI|ENT|TOM|FDB|ETH|ROT|CAI|ISR|PIA|FDX|UPS|BOX|CGF|MNB|UTN|LBT|NMA|GJT|ASL|EXS|CCA|SIA|RYS|NSZ)/.test(callsign) ||
-      id.startsWith("adsb-") ||
-      id.startsWith("airplanes-") ||
-      id.startsWith("opensky-")
-    ) {
-      return true;
-    }
+  // Non-aircraft (drones, missiles, bombs, fpv, unknown contacts) are NEVER civil aviation
+  if (type !== "aircraft" && type !== "helicopter") {
+    return false;
   }
+
+  // Explicit military, government, reconnaissance or tanker indicators are NEVER civil aviation
+  if (
+    model.includes("MIL_") ||
+    model.includes("RECON") ||
+    model.includes("TANKER") ||
+    model.includes("AWACS") ||
+    model.includes("FIGHTER") ||
+    model.includes("BOMBER") ||
+    model.includes("STRATOTANKER") ||
+    model.includes("GLOBEMASTER") ||
+    model.includes("POSEIDON") ||
+    model.includes("HERCULES") ||
+    model.includes("K35R") ||
+    model.includes("KC-") ||
+    model.includes("E-3") ||
+    model.includes("P-8") ||
+    model.includes("C-17") ||
+    model.includes("RQ-") ||
+    model.includes("MQ-") ||
+    callsign.includes("FORTE") ||
+    callsign.includes("HOMER") ||
+    callsign.includes("JAKE") ||
+    callsign.includes("LAGR") ||
+    callsign.includes("RED") ||
+    callsign.includes("VIPER") ||
+    callsign.includes("NATO")
+  ) {
+    return false;
+  }
+
+  // Known commercial airlines and passenger airframes
+  if (
+    model.includes("CIVIL") ||
+    model.includes("PASSENGER") ||
+    /^(RYR|WZZ|WUK|LOT|DLH|KLM|AFR|BAW|THY|AUA|SXS|PGT|EZY|BTI|ENT|TOM|FDB|ETH|ROT|CAI|ISR|PIA|FDX|UPS|BOX|CGF|MNB|UTN|LBT|NMA|GJT|ASL|EXS|CCA|SIA|RYS|NSZ)/.test(callsign) ||
+    model.includes("AIRBUS") ||
+    model.includes("BOEING") ||
+    model.includes("EMBRAER") ||
+    model.includes("B73") ||
+    model.includes("A32") ||
+    model.includes("A33") ||
+    model.includes("A35") ||
+    model.includes("B77") ||
+    model.includes("B78") ||
+    model.includes("BCS3") ||
+    model.includes("C152") ||
+    model.includes("C172") ||
+    model.includes("PA34")
+  ) {
+    return true;
+  }
+
   return false;
 };
 

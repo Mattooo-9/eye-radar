@@ -32,6 +32,10 @@ interface MapViewProps {
   showWeather?: boolean;
   showSatellites?: boolean;
   showFrontline?: boolean;
+  showFirms?: boolean;
+  showAviation?: boolean;
+  showAlerts?: boolean;
+  showUncertainty?: boolean;
   followingTargetId?: string | null;
   onStopFollow?: () => void;
   onMapReady?: (map: Map) => void;
@@ -1788,6 +1792,10 @@ export const MapView = ({
   showWeather = true,
   showSatellites = true,
   showFrontline = true,
+  showFirms = false,
+  showAviation = true,
+  showAlerts = true,
+  showUncertainty = true,
   followingTargetId,
   onStopFollow,
   onMapReady,
@@ -1884,6 +1892,18 @@ export const MapView = ({
 
   const showFrontlineRef = useRef(showFrontline);
   showFrontlineRef.current = showFrontline;
+
+  const showFirmsRef = useRef(showFirms);
+  showFirmsRef.current = showFirms;
+
+  const showAviationRef = useRef(showAviation);
+  showAviationRef.current = showAviation;
+
+  const showAlertsRef = useRef(showAlerts);
+  showAlertsRef.current = showAlerts;
+
+  const showUncertaintyRef = useRef(showUncertainty);
+  showUncertaintyRef.current = showUncertainty;
 
   const onSelectTargetRef = useRef(onSelectTarget);
   onSelectTargetRef.current = onSelectTarget;
@@ -2240,7 +2260,7 @@ export const MapView = ({
     if (renderRef.current) {
       renderRef.current();
     }
-  }, [packets, filters, impacts]);
+  }, [packets, filters, impacts, showFirms, showAviation, showAlerts, showUncertainty]);
 
   // 6. Synchronized Canvas overlay render loop (locked 1:1 with MapLibre camera, event-driven with idle sleep)
   useEffect(() => {
@@ -2406,13 +2426,19 @@ export const MapView = ({
         }
 
         // 2.0 Draw Background Alerts Layer (sirens) under all tactical tracks
-        drawAlertsLayer(ctx, map, activeAlertsRef.current, now, width, height);
+        if (showAlertsRef.current !== false) {
+          drawAlertsLayer(ctx, map, activeAlertsRef.current, now, width, height);
+        }
 
         // 2.1 Draw Context Layer: NASA FIRMS / EO thermal hotspots
-        drawFirmsHotspots(ctx, map, trackStore.getFirmsEvents(), now, width, height, currentSelected?.[0]);
+        if (showFirmsRef.current) {
+          drawFirmsHotspots(ctx, map, trackStore.getFirmsEvents(), now, width, height, currentSelected?.[0]);
+        }
 
         // 2.2 Draw Uncertainty Layer: Real sensor spatial uncertainty contacts (acoustic array engine detections)
-        drawUncertaintyEvents(ctx, map, trackStore.getSensorUncertaintyEvents(), now, width, height, currentSelected?.[0]);
+        if (showUncertaintyRef.current !== false) {
+          drawUncertaintyEvents(ctx, map, trackStore.getSensorUncertaintyEvents(), now, width, height, currentSelected?.[0]);
+        }
 
         // 2.2 Draw Air Targets (Shahed, Missile, Recon, KAB, FPV, Jet, Helicopter) & Trajectory Vectors
         const placedPillBoxes: PillRect[] = [];
@@ -2476,21 +2502,26 @@ export const MapView = ({
         for (const packet of visiblePackets) {
           const [id, type, lat, lon, heading, speed, timestamp, confidence, uncertaintyRadius, , altitude, packetModel] = packet;
 
+          const isCivil = isCivilAviation(packet);
+          if (isCivil && showAviationRef.current === false) {
+            continue;
+          }
+
           if (currentFilters) {
             if (type === "uav" && !currentFilters.uav) continue;
             if (type === "munition" && !currentFilters.munition) continue;
             if (type === "bomb" && currentFilters.bomb === false) continue;
             if (type === "fpv" && currentFilters.fpv === false) continue;
-            if (type === "aircraft" && !currentFilters.aircraft && !isOverview) continue;
+            if (isCivil && !currentFilters.aircraft && !isOverview) continue;
             if (type === "helicopter" && (currentFilters.helicopter !== undefined ? !currentFilters.helicopter : !currentFilters.aircraft) && !isOverview) continue;
           }
 
           // Operational Viewport Gating for Transponder / Border Flights:
-          // Distant aircraft (> 120 km from map center in Poland/Romania)
+          // Distant civil airliners (> 120 km from map center in Poland/Romania)
           // do NOT clutter the local operational view. They are visible only when the user enables the aviation layer
           // OR zooms out to regional overview (zoom <= 6.5).
-          // Unconfirmed contacts / UNKNOWN objects are NEVER suppressed by this filter.
-          if (type === "aircraft" && !isOverview) {
+          // Unconfirmed contacts / UNKNOWN objects / MILITARY / RECON / DRONES are NEVER suppressed by this filter.
+          if (isCivil && !isOverview) {
             const mapCenter = map.getCenter();
             const distFromCenterKm = haversineMeters({ lat, lon }, { lat: mapCenter.lat, lon: mapCenter.lng }) / 1000;
             if (distFromCenterKm > 120 && !currentFilters?.aircraft) {
@@ -2592,7 +2623,6 @@ export const MapView = ({
           targetInterpRef.current[id] = { x: renderX, y: renderY, heading: renderHeading, lastTime: now };
 
           const isSelected = Boolean(currentSelected && currentSelected[0] === id);
-          const isCivil = isCivilAviation(packet);
           const color = isCivil ? "#94a3b8" : (TARGET_COLORS[type] ?? "#7dd3fc");
 
           const effectiveAltM =
@@ -2867,7 +2897,7 @@ export const MapView = ({
         // Otherwise (stationary map and stationary/no targets), pause the rAF loop completely! (0% CPU/GPU idle load)
         const isMapMoving = map.isMoving() || map.isZooming() || map.isRotating();
         const hasMovingVisibleTargets = renderItems.length > 0 && renderItems.some(i => i.speedKmh > 7);
-        const hasActiveSensorEvents = uncertaintyEvents.length > 0;
+        const hasActiveSensorEvents = trackStore.getSensorUncertaintyEvents().length > 0;
 
         if (isMapMoving || hasMovingVisibleTargets || hasActiveSensorEvents || settleFramesLeft > 0) {
           if (settleFramesLeft > 0) settleFramesLeft--;

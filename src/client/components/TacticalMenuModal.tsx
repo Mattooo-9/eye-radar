@@ -19,6 +19,14 @@ interface TacticalMenuModalProps {
   onToggleSatellites: () => void;
   showFrontline?: boolean;
   onToggleFrontline?: () => void;
+  showFirms?: boolean;
+  onToggleFirms?: () => void;
+  showAviation?: boolean;
+  onToggleAviation?: () => void;
+  showAlerts?: boolean;
+  onToggleAlerts?: () => void;
+  showUncertainty?: boolean;
+  onToggleUncertainty?: () => void;
   soundEnabled: boolean;
   onToggleSound: () => void;
   // Filters & Counts
@@ -65,6 +73,14 @@ export const TacticalMenuModal: React.FC<TacticalMenuModalProps> = ({
   onToggleSatellites,
   showFrontline = true,
   onToggleFrontline,
+  showFirms = false,
+  onToggleFirms,
+  showAviation = true,
+  onToggleAviation,
+  showAlerts = true,
+  onToggleAlerts,
+  showUncertainty = true,
+  onToggleUncertainty,
   soundEnabled,
   onToggleSound,
   filters,
@@ -330,6 +346,62 @@ export const TacticalMenuModal: React.FC<TacticalMenuModalProps> = ({
           {activeTab === "layers" && (
             <div className="tactical-tab-pane">
               <div className="tactical-section-title">ТАКТИЧНІ ОВЕРЛЕЇ ТА ДОДАТКОВІ ШАРИ</div>
+
+              <div className="tactical-toggle-row">
+                <div>
+                  <div className="toggle-label-main">✈️ Цивільна авіація (Транзитний ешелон)</div>
+                  <div className="toggle-label-sub">Фоновий шар комерційних бортів у прикордонній зоні</div>
+                </div>
+                <button
+                  type="button"
+                  className={`toggle-switch ${showAviation ? "on" : "off"}`}
+                  onClick={onToggleAviation}
+                >
+                  <span className="switch-knob" />
+                </button>
+              </div>
+
+              <div className="tactical-toggle-row">
+                <div>
+                  <div className="toggle-label-main">🚨 Зони повітряних тривог (Alerts)</div>
+                  <div className="toggle-label-sub">Фонове градієнтне затінення областей із загрозою</div>
+                </div>
+                <button
+                  type="button"
+                  className={`toggle-switch ${showAlerts ? "on" : "off"}`}
+                  onClick={onToggleAlerts}
+                >
+                  <span className="switch-knob" />
+                </button>
+              </div>
+
+              <div className="tactical-toggle-row">
+                <div>
+                  <div className="toggle-label-main">📡 Акустичні та радарні сектори (Uncertainty)</div>
+                  <div className="toggle-label-sub">Зони спостережень сенсорної мережі з неопределеною позицією</div>
+                </div>
+                <button
+                  type="button"
+                  className={`toggle-switch ${showUncertainty ? "on" : "off"}`}
+                  onClick={onToggleUncertainty}
+                >
+                  <span className="switch-knob" />
+                </button>
+              </div>
+
+              <div className="tactical-toggle-row">
+                <div>
+                  <div className="toggle-label-main">🔥 Теплові аномалії NASA FIRMS</div>
+                  <div className="toggle-label-sub">Супутникові термоточки та пожежі (деталі по кліку)</div>
+                </div>
+                <button
+                  type="button"
+                  className={`toggle-switch ${showFirms ? "on" : "off"}`}
+                  onClick={onToggleFirms}
+                >
+                  <span className="switch-knob" />
+                </button>
+              </div>
 
               <div className="tactical-toggle-row">
                 <div>
