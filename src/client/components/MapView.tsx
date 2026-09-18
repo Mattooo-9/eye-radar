@@ -3368,7 +3368,7 @@ export const MapView = ({
         // Otherwise (stationary map and stationary/no targets), pause the rAF loop completely! (0% CPU/GPU idle load)
         const isMapMoving = map.isMoving() || map.isZooming() || map.isRotating();
         const hasMovingVisibleTargets = renderItems.length > 0 && renderItems.some(i => i.speedKmh > 7);
-        const hasActiveSensorEvents = trackStore.getSensorUncertaintyEvents().length > 0;
+        const hasActiveSensorEvents = trackStore.getSensorUncertaintyCount() > 0;
 
         if (isMapMoving || hasMovingVisibleTargets || hasActiveSensorEvents || settleFramesLeft > 0) {
           if (settleFramesLeft > 0) settleFramesLeft--;

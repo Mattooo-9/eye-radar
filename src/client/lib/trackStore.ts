@@ -261,6 +261,13 @@ export class MutableTrackStore {
     );
   }
 
+  /** O(1) check: are there any sensor uncertainty events (non-thermal, non-FIRMS)? */
+  getSensorUncertaintyCount(): number {
+    return this.uncertaintyEvents.filter(
+      (e) => e.sourceFamily !== "thermal" && !e.source.includes("firms")
+    ).length;
+  }
+
   /**
    * Sweeps stale tracks that haven't received updates in >45 seconds
    */
