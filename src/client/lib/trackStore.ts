@@ -23,6 +23,31 @@ export interface ClientUncertaintyEvent {
   details?: string;
 }
 
+export const isCivilAviation = (packet: TrackPacket): boolean => {
+  const type = packet[1];
+  const model = (packet[11] || "").toUpperCase();
+  const callsign = (packet[12] || "").toUpperCase();
+  const id = (packet[0] || "").toLowerCase();
+
+  if (type === "aircraft" || type === "helicopter") {
+    if (
+      model.includes("BOEING") ||
+      model.includes("AIRBUS") ||
+      model.includes("CIVIL") ||
+      model.includes("EMBRAER") ||
+      model.includes("B73") ||
+      model.includes("A32") ||
+      /^(RYR|WZZ|WUK|LOT|DLH|KLM|AFR|BAW|THY|AUA|SXS|PGT|EZY|BTI|ENT|TOM|FDB|ETH|ROT|CAI|ISR|PIA|FDX|UPS|BOX|CGF|MNB|UTN|LBT|NMA|GJT|ASL|EXS|CCA|SIA|RYS|NSZ)/.test(callsign) ||
+      id.startsWith("adsb-") ||
+      id.startsWith("airplanes-") ||
+      id.startsWith("opensky-")
+    ) {
+      return true;
+    }
+  }
+  return false;
+};
+
 export class MutableTrackStore {
   private tracks = new Map<string, TrackPacket>();
   private activeList: TrackPacket[] = [];
@@ -195,6 +220,26 @@ export class MutableTrackStore {
 
   getUncertaintyCount(): number {
     return this.uncertaintyEvents.length;
+  }
+
+  getLiveTracks(): TrackPacket[] {
+    return this.getAllTracks().filter((p) => !isCivilAviation(p));
+  }
+
+  getAviationTracks(): TrackPacket[] {
+    return this.getAllTracks().filter((p) => isCivilAviation(p));
+  }
+
+  getFirmsEvents(): ClientUncertaintyEvent[] {
+    return this.uncertaintyEvents.filter(
+      (e) => e.sourceFamily === "thermal" || e.source.includes("firms")
+    );
+  }
+
+  getSensorUncertaintyEvents(): ClientUncertaintyEvent[] {
+    return this.uncertaintyEvents.filter(
+      (e) => e.sourceFamily !== "thermal" && !e.source.includes("firms")
+    );
   }
 
   /**

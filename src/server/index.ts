@@ -1251,36 +1251,6 @@ setInterval(async () => {
       const activeAlerts = await alertsSource.fetchAlerts();
       const latency = Date.now() - t0;
       trackManager.setActiveAlertOblasts(alertsSource.getActiveAlertOblastNames());
-      for (const alert of activeAlerts) {
-        if (!alert.active) continue;
-        const norm = alert.name.toLowerCase().replace("область", "").replace("обл.", "").replace("м.", "").trim();
-        let center: { lat: number; lon: number } | null = null;
-        for (const city of Object.values(UKRAINE_CITIES)) {
-          const cityNorm = city.nameUk.toLowerCase();
-          const oblNorm = (city.oblast || "").toLowerCase();
-          if (cityNorm.includes(norm) || norm.includes(cityNorm) || oblNorm.includes(norm) || norm.includes(oblNorm)) {
-            center = { lat: city.lat, lon: city.lon };
-            break;
-          }
-        }
-        if (!center && (norm.includes("севастополь") || norm.includes("крим"))) {
-          center = { lat: 44.6166, lon: 33.5254 };
-        }
-        if (center) {
-          uncertaintyEventManager.ingest({
-            id: `alert-${alert.id}`,
-            lat: center.lat,
-            lon: center.lon,
-            uncertaintyRadius: 35000,
-            confidence: 0.98,
-            source: "alerts.in.ua",
-            sourceFamily: "osint",
-            label: `🚨 ТРИВОГА: ${alert.name.toUpperCase()}`,
-            timestamp: now,
-            ttlMs: 45000
-          }, now);
-        }
-      }
       healthTracker.recordSuccess("alerts.in.ua", latency, activeAlerts.length);
     } catch (err) {
       healthTracker.recordError("alerts.in.ua", err instanceof Error ? err : String(err));

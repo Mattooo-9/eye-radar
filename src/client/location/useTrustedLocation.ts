@@ -143,7 +143,7 @@ export const useTrustedLocation = () => {
         setIsDegraded(anomaly.isDegraded);
         setIsSpoofed(anomaly.isSpoofed);
 
-        if (!isManual) {
+        if (!isManual && !confirmedLocation) {
           // If EW/spoofing is detected or coordinates degraded, freeze lastTrustedLocation or fall back to confirmed reserve
           if (anomaly.isSpoofed || anomaly.isDegraded) {
             setTrustStatus(anomaly.isSpoofed ? "SPOOFED_FALLBACK" : "DEGRADED");

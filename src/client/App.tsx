@@ -281,7 +281,6 @@ export const App = () => {
       handleFitAllTargets();
       return;
     }
-    setManualLocation({ lat, lon });
     if (mapInstance) {
       mapInstance.flyTo({
         center: [lon, lat],
@@ -362,27 +361,7 @@ export const App = () => {
         onOpenAlerts={() => setAlertsModalOpen(true)}
       />
 
-      {/* 1.1 Truthful Operational Sector Status Watermark / Badge */}
-      <div className="operational-sector-badge">
-        <span className="badge-sector-name">🎯 {confirmedLocation?.name?.toUpperCase() || "КИЇВ"}:</span>
-        <span className="badge-targets">
-          {filteredPackets.length > 0 ? (
-            <>Повітряних цілей: <strong>{filteredPackets.length}</strong></>
-          ) : (
-            <>Позиційні цілі: 0 <span className="badge-subtext">(ADS-B закрито)</span></>
-          )}
-        </span>
-        <span className="badge-divider">•</span>
-        <span className={`badge-alerts ${activeAlerts.length > 0 ? "has-alerts" : ""}`}>
-          {activeAlerts.length > 0 ? `🚨 ТРИВОГА: ${activeAlerts.length} ОБЛ.` : "🟢 НЕБО СПОКІЙНЕ"}
-        </span>
-        {uncertaintyEvents.length > 0 && (
-          <>
-            <span className="badge-divider">•</span>
-            <span className="badge-sensors">Сенсорних подій: {uncertaintyEvents.length}</span>
-          </>
-        )}
-      </div>
+
 
       {/* 2. Live Tactical Timeline & Performance Optimizer Bar */}
       <LiveTimelineBar

@@ -10,11 +10,11 @@ import { getLiveWeatherRadarTileUrl } from "../lib/weatherRadar";
 import { calculateSatellitePositions, type SatelliteTrack } from "../lib/satelliteRecon";
 import { getFrontlineGeoJSON } from "../lib/ukraineBorders";
 import type { FilterState } from "./StatusPanel";
-import FpsCounter from "./FpsCounter";
 import { SpatialIndex } from "../lib/spatialIndex.js";
 import { getTierConfig } from "../lib/hardwareBenchmark.js";
-import { trackStore, type ClientUncertaintyEvent } from "../lib/trackStore.js";
+import { trackStore, isCivilAviation, type ClientUncertaintyEvent } from "../lib/trackStore.js";
 import { renderTacticalGlyph } from "../lib/tacticalGlyphs.js";
+import { LOCATIONS } from "./CitySelector";
 
 export type VisionMode = "satellite" | "nvg" | "flir" | "tactical";
 
@@ -1581,13 +1581,137 @@ const drawTacticalPerimeterIndicator = (
   ctx.restore();
 };
 
+const drawAlertsLayer = (
+  ctx: CanvasRenderingContext2D,
+  map: maplibregl.Map,
+  activeAlerts: string[],
+  _now: number,
+  width: number,
+  height: number
+) => {
+  if (!activeAlerts || activeAlerts.length === 0) return;
+
+  ctx.save();
+  const zoom = map.getZoom();
+  const radiusPx = Math.max(30, Math.min(180, 45 * (2 ** (zoom - 6))));
+
+  for (const alertName of activeAlerts) {
+    const clean = alertName.toLowerCase().replace("область", "").replace("обл.", "").trim();
+    const match = LOCATIONS.find(
+      (l) => l.name.toLowerCase().includes(clean) || l.region.toLowerCase().includes(clean)
+    );
+    if (!match) continue;
+
+    const pt = map.project([match.lon, match.lat]);
+    if (pt.x < -radiusPx || pt.x > width + radiusPx || pt.y < -radiusPx || pt.y > height + radiusPx) {
+      continue;
+    }
+
+    const grad = ctx.createRadialGradient(pt.x, pt.y, 0, pt.x, pt.y, radiusPx);
+    grad.addColorStop(0, "rgba(239, 68, 68, 0.09)");
+    grad.addColorStop(0.7, "rgba(239, 68, 68, 0.03)");
+    grad.addColorStop(1, "rgba(239, 68, 68, 0)");
+
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, radiusPx, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+};
+
+const drawSingleFirmsDot = (
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  isSelected: boolean
+) => {
+  ctx.save();
+  ctx.fillStyle = isSelected ? "rgba(249, 115, 22, 0.35)" : "rgba(249, 115, 22, 0.12)";
+  ctx.beginPath();
+  ctx.arc(x, y, isSelected ? 9 : 5, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#f97316";
+  ctx.beginPath();
+  ctx.arc(x, y, isSelected ? 4 : 2.8, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = "#fed7aa";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.restore();
+};
+
+const drawFirmsHotspots = (
+  ctx: CanvasRenderingContext2D,
+  map: maplibregl.Map,
+  events: ClientUncertaintyEvent[],
+  _now: number,
+  width: number,
+  height: number,
+  selectedId?: string | null
+) => {
+  if (!events || events.length === 0) return;
+
+  const zoom = map.getZoom();
+  const shouldCluster = zoom < 6.8;
+
+  const visible: Array<{ ev: ClientUncertaintyEvent; pt: { x: number; y: number } }> = [];
+  for (const ev of events) {
+    const pt = map.project([ev.lon, ev.lat]);
+    if (pt.x >= -20 && pt.x <= width + 20 && pt.y >= -20 && pt.y <= height + 20) {
+      visible.push({ ev, pt });
+    }
+  }
+
+  if (visible.length === 0) return;
+
+  if (shouldCluster && visible.length > 20) {
+    const gridSize = 32;
+    const grid: Record<string, { x: number; y: number; count: number; first: ClientUncertaintyEvent }> = {};
+    for (const item of visible) {
+      const gx = Math.floor(item.pt.x / gridSize);
+      const gy = Math.floor(item.pt.y / gridSize);
+      const key = `${gx}:${gy}`;
+      if (!grid[key]) {
+        grid[key] = { x: item.pt.x, y: item.pt.y, count: 1, first: item.ev };
+      } else {
+        grid[key].x = (grid[key].x * grid[key].count + item.pt.x) / (grid[key].count + 1);
+        grid[key].y = (grid[key].y * grid[key].count + item.pt.y) / (grid[key].count + 1);
+        grid[key].count++;
+      }
+    }
+    for (const cell of Object.values(grid)) {
+      if (cell.count > 1) {
+        drawTacticalClusterNode(ctx, cell.x, cell.y, cell.count, "#f97316");
+      } else {
+        const isSel = cell.first.id === selectedId;
+        drawSingleFirmsDot(ctx, cell.x, cell.y, isSel);
+        if (isSel) {
+          drawTextWithOutline(ctx, "🔥 NASA FIRMS", cell.x + 8, cell.y + 4, "#fed7aa");
+        }
+      }
+    }
+  } else {
+    for (const item of visible) {
+      const isSel = item.ev.id === selectedId;
+      drawSingleFirmsDot(ctx, item.pt.x, item.pt.y, isSel);
+      if (isSel) {
+        drawTextWithOutline(ctx, `🔥 FIRMS (${(item.ev.confidence * 100).toFixed(0)}%)`, item.pt.x + 8, item.pt.y + 4, "#fed7aa");
+      }
+    }
+  }
+};
+
 const drawUncertaintyEvents = (
   ctx: CanvasRenderingContext2D,
   map: maplibregl.Map,
   events: ClientUncertaintyEvent[],
   now: number,
   width: number,
-  height: number
+  height: number,
+  selectedId?: string | null
 ) => {
   if (!events || events.length === 0) return;
 
@@ -1596,7 +1720,7 @@ const drawUncertaintyEvents = (
   for (const ev of events) {
     const pt = map.project([ev.lon, ev.lat]);
     const offsetPt = map.project([ev.lon, ev.lat + (ev.uncertaintyRadius / 111139)]);
-    const radiusPx = Math.max(18, Math.abs(offsetPt.y - pt.y));
+    const radiusPx = Math.max(16, Math.abs(offsetPt.y - pt.y));
 
     if (
       pt.x < -radiusPx ||
@@ -1608,23 +1732,8 @@ const drawUncertaintyEvents = (
     }
 
     ctx.save();
-    let strokeColor = "rgba(250, 204, 21, 0.75)";
-    let fillColor = "rgba(250, 204, 21, 0.08)";
-    let badgeText = "🎯 АКУСТИЧНИЙ СЕКТОР";
-
-    if (ev.sourceFamily === "thermal" || ev.source.includes("firms")) {
-      strokeColor = "rgba(239, 68, 68, 0.8)";
-      fillColor = "rgba(239, 68, 68, 0.09)";
-      badgeText = "🔥 ТЕПЛОВА АНОМАЛІЯ FIRMS";
-    } else if (ev.sourceFamily === "satellite" || ev.source.includes("satellite")) {
-      strokeColor = "rgba(56, 189, 248, 0.8)";
-      fillColor = "rgba(56, 189, 248, 0.09)";
-      badgeText = "🛰️ СУПУТНИКОВА ДЕТЕКЦІЯ";
-    } else if (ev.sourceFamily === "osint") {
-      strokeColor = "rgba(168, 85, 247, 0.8)";
-      fillColor = "rgba(168, 85, 247, 0.09)";
-      badgeText = "📡 МОНІТОРИНГОВИЙ РАПОРТ";
-    }
+    const strokeColor = ev.sourceFamily === "acoustic" ? "rgba(250, 204, 21, 0.75)" : "rgba(56, 189, 248, 0.75)";
+    const fillColor = ev.sourceFamily === "acoustic" ? "rgba(250, 204, 21, 0.06)" : "rgba(56, 189, 248, 0.06)";
 
     // Outer dashed ring
     ctx.beginPath();
@@ -1632,8 +1741,8 @@ const drawUncertaintyEvents = (
     ctx.fillStyle = fillColor;
     ctx.fill();
 
-    ctx.lineWidth = 1.4;
-    ctx.setLineDash([6, 4]);
+    ctx.lineWidth = 1.2;
+    ctx.setLineDash([5, 4]);
     ctx.strokeStyle = strokeColor;
     ctx.stroke();
 
@@ -1648,32 +1757,18 @@ const drawUncertaintyEvents = (
     // Center cross
     ctx.setLineDash([]);
     ctx.beginPath();
-    ctx.moveTo(pt.x - 5, pt.y); ctx.lineTo(pt.x + 5, pt.y);
-    ctx.moveTo(pt.x, pt.y - 5); ctx.lineTo(pt.x, pt.y + 5);
+    ctx.moveTo(pt.x - 4, pt.y); ctx.lineTo(pt.x + 4, pt.y);
+    ctx.moveTo(pt.x, pt.y - 4); ctx.lineTo(pt.x, pt.y + 4);
     ctx.strokeStyle = strokeColor;
-    ctx.lineWidth = 1.4;
+    ctx.lineWidth = 1.2;
     ctx.stroke();
 
-    // Label pill
-    const kmLabel = (ev.uncertaintyRadius / 1000).toFixed(ev.uncertaintyRadius >= 10000 ? 0 : 1);
-    const text = `${ev.label || badgeText} (±${kmLabel} км)`;
-    ctx.font = "bold 9px Inter, monospace";
-    const textW = ctx.measureText(text).width;
-    const badgeW = textW + 14;
-    const badgeH = 16;
-    const badgeX = pt.x - badgeW / 2;
-    const badgeY = pt.y - radiusPx - 11;
-
-    ctx.fillStyle = "rgba(11, 18, 32, 0.88)";
-    ctx.strokeStyle = strokeColor;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 4);
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.fillStyle = "#f8fafc";
-    ctx.fillText(text, badgeX + 7, badgeY + 11);
+    // Details strictly on selection: NO permanent label pills!
+    if (ev.id === selectedId) {
+      const kmLabel = (ev.uncertaintyRadius / 1000).toFixed(ev.uncertaintyRadius >= 10000 ? 0 : 1);
+      const text = `${ev.label || "🎯 АКУСТИЧНИЙ СЕКТОР"} (±${kmLabel} км)`;
+      drawTextWithOutline(ctx, text, pt.x - 20, pt.y - radiusPx - 6, "#facc15");
+    }
 
     ctx.restore();
   }
@@ -1924,6 +2019,39 @@ export const MapView = ({
       }
       if (closestTarget) {
         onSelectTargetRef.current?.(closestTarget);
+        window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.("light");
+        return;
+      }
+
+      // 3. Check if a FIRMS hotspot was clicked
+      const firms = trackStore.getFirmsEvents();
+      let closestFirms: ClientUncertaintyEvent | null = null;
+      let minFirmsDist = 24;
+      for (const f of firms) {
+        const pt = map.project([f.lon, f.lat]);
+        const dist = Math.hypot(pt.x - clickX, pt.y - clickY);
+        if (dist < minFirmsDist) {
+          minFirmsDist = dist;
+          closestFirms = f;
+        }
+      }
+      if (closestFirms) {
+        const firmsPacket: TrackPacket = [
+          closestFirms.id,
+          "thermal" as any,
+          closestFirms.lat,
+          closestFirms.lon,
+          0,
+          0,
+          closestFirms.timestamp,
+          closestFirms.confidence,
+          closestFirms.uncertaintyRadius,
+          "low" as any,
+          0,
+          "NASA FIRMS Thermal",
+          "HOTSPOT"
+        ];
+        onSelectTargetRef.current?.(firmsPacket);
         window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.("light");
         return;
       }
@@ -2242,7 +2370,7 @@ export const MapView = ({
           }
         }
 
-        // 1. Draw User Confirmed Home Location Beacon & Range Rings (Strictly anchored inside Ukraine)
+        // 1. Draw User Confirmed Home Location Beacon (Strictly anchored inside Ukraine from Neon)
         const isLocInUkraine = (l: { lat: number; lon: number }) =>
           l.lat >= 44.0 && l.lat <= 52.5 && l.lon >= 22.0 && l.lon <= 40.5;
 
@@ -2251,7 +2379,8 @@ export const MapView = ({
           : currentLoc && isLocInUkraine(currentLoc)
           ? { lat: currentLoc.lat, lon: currentLoc.lon }
           : { lat: 50.4501, lon: 30.5234 }; // Canonical Kyiv default
-        // 1. User confirmed home location is fixed in state/Neon without intrusive glowing overlays or duplicate city markers
+
+        drawUserHomeBeacon(ctx, map, activeHome, undefined, now, width, height);
 
         // 1.1 Draw Selected Location Tactical Beacon if user inspected a temporary place on the map
         if (selectedLocationRef.current) {
@@ -2276,11 +2405,14 @@ export const MapView = ({
           }
         }
 
+        // 2.0 Draw Background Alerts Layer (sirens) under all tactical tracks
+        drawAlertsLayer(ctx, map, activeAlertsRef.current, now, width, height);
 
+        // 2.1 Draw Context Layer: NASA FIRMS / EO thermal hotspots
+        drawFirmsHotspots(ctx, map, trackStore.getFirmsEvents(), now, width, height, currentSelected?.[0]);
 
-        // 2.1 Draw Layer 2: Uncertainty / Sensor Detections (acoustic, FIRMS thermal, SAR/satellite, OSINT)
-        const uncertaintyEvents = trackStore.getUncertaintyEvents();
-        drawUncertaintyEvents(ctx, map, uncertaintyEvents, now, width, height);
+        // 2.2 Draw Uncertainty Layer: Real sensor spatial uncertainty contacts (acoustic array engine detections)
+        drawUncertaintyEvents(ctx, map, trackStore.getSensorUncertaintyEvents(), now, width, height, currentSelected?.[0]);
 
         // 2.2 Draw Air Targets (Shahed, Missile, Recon, KAB, FPV, Jet, Helicopter) & Trajectory Vectors
         const placedPillBoxes: PillRect[] = [];
@@ -2460,7 +2592,8 @@ export const MapView = ({
           targetInterpRef.current[id] = { x: renderX, y: renderY, heading: renderHeading, lastTime: now };
 
           const isSelected = Boolean(currentSelected && currentSelected[0] === id);
-          const color = TARGET_COLORS[type] ?? "#7dd3fc";
+          const isCivil = isCivilAviation(packet);
+          const color = isCivil ? "#94a3b8" : (TARGET_COLORS[type] ?? "#7dd3fc");
 
           const effectiveAltM =
             altitude !== undefined && altitude !== null
@@ -2499,9 +2632,9 @@ export const MapView = ({
                 .trim()
             : "";
 
-          const isUnverified = type === "unknown" || (confidence !== undefined && confidence < 0.45);
+          const isUnverified = type === "unknown";
           const shortName = isUnverified
-            ? "UNVERIFIED"
+            ? "UNKNOWN"
             : cleanModel || (
               type === "uav"
               ? "БПЛА"
@@ -2514,7 +2647,7 @@ export const MapView = ({
               : type === "helicopter"
               ? "Гелікоптер"
               : type === "aircraft"
-              ? (id.startsWith("adsb-") ? id.slice(5).toUpperCase() : "Борт")
+              ? (id.startsWith("adsb-") ? id.slice(5).toUpperCase() : (isCivil ? "Борт" : "Літак"))
               : "UNKNOWN"
             );
 
@@ -2542,10 +2675,11 @@ export const MapView = ({
           perimeterItems.length > 0 ? "offscreen_viewport" : "none"
         );
 
-        // Pass 2: Subtle fading historical motion trail (only selected target or close zoom >= 9.5, disabled on LOW tier)
+        // Pass 2: Subtle fading historical motion trail (only selected target or when offsetSec > 0 and zoom >= 9.0)
+        const showHistory = offsetSec > 0;
         if (!isLowTier) {
           for (const item of renderItems) {
-            if (item.isSelected || zoom >= 9.5) {
+            if (item.isSelected || (showHistory && zoom >= 9.0)) {
               const trailPts = trackStore.getTrailPoints(item.id);
               if (trailPts.length >= 2) {
                 const recentPts = trailPts.slice(-8);
@@ -2624,7 +2758,7 @@ export const MapView = ({
             });
             ctx.restore();
 
-            const showPill = item.isSelected || renderItems.length <= 40;
+            const showPill = item.isSelected;
             if (showPill) {
               drawMilitaryCalloutPill(
                 ctx,
@@ -2659,7 +2793,7 @@ export const MapView = ({
             });
             ctx.restore();
 
-            const showPill = item.isSelected || renderItems.length <= 40;
+            const showPill = item.isSelected;
             if (showPill) {
               drawMilitaryCalloutPill(
                 ctx,
