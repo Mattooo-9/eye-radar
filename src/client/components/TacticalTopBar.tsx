@@ -40,7 +40,9 @@ export const TacticalTopBar: React.FC<TacticalTopBarProps> = ({
             onClick={onOpenAlerts}
             title="Натисніть для списку областей з повітряною тривогою"
           >
-            <span className="alert-pill-text">ТРИВОГА: {activeAlertsCount} ОБЛ. ▼</span>
+            <span className="alert-pill-text">
+              ТРИВОГА: {activeAlertsCount} ОБЛ. <span className="alert-pill-chevron">▼</span>
+            </span>
           </button>
         ) : (
           <div className="top-bar-calm-pill">

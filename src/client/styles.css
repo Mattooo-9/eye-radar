@@ -3157,8 +3157,21 @@ body {
   }
   .top-bar-alert-pill {
     padding: 3px 6px;
-    font-size: 9.5px;
+    font-size: 9px;
     white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .alert-pill-chevron {
+    display: none;
+  }
+  .top-bar-report-btn {
+    padding: 3px 6px;
+    font-size: 9.5px;
+  }
+  .top-bar-menu-btn {
+    padding: 3px 7px;
+    gap: 3px;
+    font-size: 9.5px;
   }
   .top-bar-menu-btn .menu-chevron {
     display: none;

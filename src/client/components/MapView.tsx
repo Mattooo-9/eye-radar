@@ -1618,39 +1618,64 @@ const drawTacticalImpactMarker = (
   y: number,
   isImpact: boolean,
   label: string,
-  _now: number,
-  opacity = 1.0
+  now: number,
+  opacity = 1.0,
+  showLabel = false,
+  isSelected = false
 ) => {
   ctx.save();
-  ctx.globalAlpha = Math.max(0.15, Math.min(1.0, opacity));
+  ctx.globalAlpha = Math.max(0.18, Math.min(1.0, opacity));
   const radius = isImpact ? 11 : 10;
 
-  // 1. Core tactical badge
+  // 1. Tactical selection reticle
+  if (isSelected) {
+    const pulse = 0.5 + 0.5 * Math.sin(now / 220);
+    ctx.strokeStyle = isImpact ? "rgba(239, 68, 68, 0.95)" : "rgba(56, 189, 248, 0.95)";
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.arc(x, y, radius + 4 + pulse * 2.5, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // 2. Core tactical badge
   ctx.beginPath();
   ctx.arc(x, y, radius, 0, Math.PI * 2);
   ctx.fillStyle = isImpact ? "rgba(220, 38, 38, 0.95)" : "rgba(14, 116, 144, 0.95)";
   ctx.fill();
   ctx.strokeStyle = isImpact ? "#fca5a5" : "#bae6fd";
-  ctx.lineWidth = 1.5;
+  ctx.lineWidth = isSelected ? 2.0 : 1.4;
   ctx.stroke();
 
-  // 2. Central text symbol (no emojis)
-  ctx.font = "bold 8px Inter, system-ui, sans-serif";
+  // 3. Central text symbol (no emojis)
+  ctx.font = "bold 8.5px Inter, system-ui, sans-serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillStyle = "#ffffff";
-  ctx.fillText(isImpact ? "!" : "ППО", x, y);
+  ctx.fillText(isImpact ? "!" : "ППО", x, y + 0.5);
 
-  // 3. Tactical label without emoji
-  const cleanLabel = label.replace(/[💥🛡️]/gu, "").trim();
-  ctx.font = "bold 9px Inter, -apple-system, system-ui, sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "top";
-  ctx.fillStyle = "#ffffff";
-  ctx.strokeStyle = "#020617";
-  ctx.lineWidth = 3;
-  ctx.strokeText(cleanLabel, x, y + radius + 4);
-  ctx.fillText(cleanLabel, x, y + radius + 4);
+  // 4. Tactical label pill (clean background, shown only when showLabel is true)
+  if (showLabel) {
+    const cleanLabel = label.replace(/[💥🛡️]/gu, "").trim();
+    ctx.font = "bold 9px Inter, -apple-system, system-ui, sans-serif";
+    const textW = ctx.measureText(cleanLabel).width;
+    const pillW = textW + 12;
+    const pillH = 16;
+    const pillX = x - pillW / 2;
+    const pillY = y + radius + 4;
+
+    ctx.fillStyle = "rgba(15, 23, 42, 0.88)";
+    ctx.strokeStyle = isImpact ? "rgba(239, 68, 68, 0.7)" : "rgba(56, 189, 248, 0.7)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(pillX, pillY, pillW, pillH, 3);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = isImpact ? "#fecaca" : "#e0f2fe";
+    ctx.fillText(cleanLabel, x, pillY + pillH / 2 + 0.5);
+  }
 
   ctx.restore();
 };
@@ -2072,6 +2097,9 @@ export const MapView = ({
   const onSelectImpactRef = useRef(onSelectImpact);
   onSelectImpactRef.current = onSelectImpact;
 
+  const selectedImpactRef = useRef(selectedImpact);
+  selectedImpactRef.current = selectedImpact;
+
   const filtersRef = useRef(filters);
   filtersRef.current = filters;
 
@@ -2476,12 +2504,12 @@ export const MapView = ({
     centeredRef.current = true;
   }, []);
 
-  // 5.5 Trigger immediate redraw of canvas overlay when packets, filters, or impacts change
+  // 5.5 Trigger immediate redraw of canvas overlay when packets, filters, impacts, or selection changes
   useEffect(() => {
     if (renderRef.current) {
       renderRef.current();
     }
-  }, [packets, filters, impacts, showFirms, showAviation, showAlerts, showUncertainty]);
+  }, [packets, filters, impacts, showFirms, showAviation, showAlerts, showUncertainty, selectedImpact, selectedTarget]);
 
   // 6. Synchronized Canvas overlay render loop (locked 1:1 with MapLibre camera, event-driven with idle sleep)
   useEffect(() => {
@@ -3199,8 +3227,18 @@ export const MapView = ({
           }
         }
 
-        // 2.4 Draw Recent Impacts (60 min TTL) & Interceptions (10 min TTL) with smooth fading
+        // 2.4 Draw Recent Impacts (60 min TTL) & Interceptions (10 min TTL) with clean clustering & collision-free labels
         if (impactsRef.current && impactsRef.current.length > 0) {
+          interface ActiveImpactItem {
+            evt: ImpactEvent;
+            pt: { x: number; y: number };
+            isImpact: boolean;
+            label: string;
+            fade: number;
+            isSel: boolean;
+          }
+          const activeImpacts: ActiveImpactItem[] = [];
+
           for (const evt of impactsRef.current) {
             const elapsedMs = Math.max(0, now - evt.timestamp);
             const isImpact = evt.type === "impact";
@@ -3210,12 +3248,84 @@ export const MapView = ({
             const pt = map.project([evt.lon, evt.lat]);
             if (pt.x < -80 || pt.x > width + 80 || pt.y < -80 || pt.y > height + 80) continue;
 
-            const fade = Math.max(0.15, 1 - elapsedMs / ttlMs);
+            const fade = Math.max(0.2, 1 - elapsedMs / ttlMs);
             const minAgo = Math.max(1, Math.round(elapsedMs / 60000));
             const timeText = elapsedMs < 60000 ? "< 1 хв тому" : minAgo < 60 ? `${minAgo} хв тому` : `${Math.floor(minAgo / 60)} год тому`;
             const label = isImpact ? `ПРИЛІТ (${timeText})` : `ЗБИТТЯ (${timeText})`;
+            const isSel = Boolean(selectedImpactRef.current && selectedImpactRef.current.id === evt.id);
 
-            drawTacticalImpactMarker(ctx, pt.x, pt.y, isImpact, label, now, fade);
+            activeImpacts.push({ evt, pt, isImpact, label, fade, isSel });
+          }
+
+          if (activeImpacts.length > 0) {
+            const isOverview = zoom < 7.0;
+
+            if (isOverview) {
+              // Spatial clustering at overview zoom (< 7.0) to eliminate text collisions & clutter
+              const cellSize = 42;
+              const grid: Record<string, ActiveImpactItem[]> = {};
+              const standalone: ActiveImpactItem[] = [];
+
+              for (const it of activeImpacts) {
+                if (it.isSel) {
+                  standalone.push(it);
+                  continue;
+                }
+                const gx = Math.floor(it.pt.x / cellSize);
+                const gy = Math.floor(it.pt.y / cellSize);
+                const k = `${gx}:${gy}`;
+                if (!grid[k]) grid[k] = [];
+                grid[k].push(it);
+              }
+
+              for (const cell of Object.values(grid)) {
+                if (cell.length === 1) {
+                  standalone.push(cell[0]);
+                } else {
+                  let avgX = 0;
+                  let avgY = 0;
+                  let hasImpact = false;
+                  for (const it of cell) {
+                    avgX += it.pt.x;
+                    avgY += it.pt.y;
+                    if (it.isImpact) hasImpact = true;
+                  }
+                  avgX /= cell.length;
+                  avgY /= cell.length;
+
+                  // Crisp tactical cluster node for multi-event locations
+                  const clusterColor = hasImpact ? "#ef4444" : "#38bdf8";
+                  drawTacticalClusterNode(ctx, avgX, avgY, cell.length, clusterColor);
+                }
+              }
+
+              for (const it of standalone) {
+                // At overview: compact icon, label strictly when selected!
+                drawTacticalImpactMarker(ctx, it.pt.x, it.pt.y, it.isImpact, it.label, now, it.fade, it.isSel, it.isSel);
+              }
+            } else {
+              // Detailed tactical zoom (>= 7.0): draw all pins, render labels with spatial collision avoidance
+              const placedImpactLabels: PillRect[] = [];
+              for (const it of activeImpacts) {
+                let showLabel = it.isSel;
+                if (!showLabel) {
+                  const labelW = 95;
+                  const labelH = 18;
+                  const rect: PillRect = {
+                    x: it.pt.x - labelW / 2,
+                    y: it.pt.y + 14,
+                    w: labelW,
+                    h: labelH
+                  };
+                  const overlaps = placedImpactLabels.some((p) => doesPillOverlap(p, rect));
+                  if (!overlaps) {
+                    placedImpactLabels.push(rect);
+                    showLabel = true;
+                  }
+                }
+                drawTacticalImpactMarker(ctx, it.pt.x, it.pt.y, it.isImpact, it.label, now, it.fade, showLabel, it.isSel);
+              }
+            }
           }
         }
 
