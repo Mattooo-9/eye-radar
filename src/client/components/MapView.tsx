@@ -2168,7 +2168,7 @@ export const MapView = ({
   const cachedSatellitesRef = useRef<SatelliteTrack[]>([]);
   const lastSatCalcRef = useRef<number>(0);
   const renderRef = useRef<(() => void) | null>(null);
-  const targetInterpRef = useRef<Record<string, { x: number; y: number; heading: number; lastTime: number }>>({});
+  const targetInterpRef = useRef<Record<string, { lat: number; lon: number; heading: number; speed: number; lastTime: number }>>({});
   const lastInterpPruneRef = useRef<number>(0);
 
   // Safe canvas resizer: ONLY updates dimensions if they have changed, never clears buffer on subpixel drift
@@ -2275,8 +2275,11 @@ export const MapView = ({
       let closestTarget: TrackPacket | null = null;
       let minTargetDist = 36; // comfortable touch target radius for mobile
       for (const p of packetsRef.current) {
-        const [, , lat, lon] = p;
-        const pt = map.project([lon, lat]);
+        const [id, , lat, lon] = p;
+        const interp = targetInterpRef.current[id];
+        const checkLat = interp ? interp.lat : lat;
+        const checkLon = interp ? interp.lon : lon;
+        const pt = map.project([checkLon, checkLat]);
         const dist = Math.hypot(pt.x - clickX, pt.y - clickY);
         if (dist < minTargetDist) {
           minTargetDist = dist;
@@ -2780,22 +2783,66 @@ export const MapView = ({
             }
           }
 
-          // Fast equirectangular dead-reckoning extrapolation
-          const elapsedSec = Math.max(0, Math.min(3.0, (now - (timestamp || now)) / 1000));
+          // Aerodynamic geographic propagation & smooth kinematic interpolation (60/120 FPS)
           let curLat = lat;
           let curLon = lon;
+          let curHeading = heading;
+
           if (offsetSec > 0 && speed > 2) {
             const backH = (heading + 180) % 360;
             const hRad = (backH * Math.PI) / 180;
             const dist = speed * offsetSec;
             curLat = lat + (dist * Math.cos(hRad)) / 111139;
             curLon = lon + (dist * Math.sin(hRad)) / (111139 * Math.cos((lat * Math.PI) / 180));
-          } else if (speed > 2 && elapsedSec > 0.03) {
-            const hRad = (heading * Math.PI) / 180;
-            const dist = speed * elapsedSec;
-            curLat = lat + (dist * Math.cos(hRad)) / 111139;
-            curLon = lon + (dist * Math.sin(hRad)) / (111139 * Math.cos((lat * Math.PI) / 180));
+            curHeading = heading;
+          } else {
+            // Live 60/120 FPS Aerodynamic Kinematic Propagation in Geographic Coordinates
+            const prev = targetInterpRef.current[id];
+            const latCos = Math.cos((lat * Math.PI) / 180) || 1;
+            const packetAgeSec = Math.max(0, Math.min(6.0, (now - (timestamp || now)) / 1000));
+
+            // Dead-reckoned true position calculated from latest packet timestamp
+            const pHeadingRad = (heading * Math.PI) / 180;
+            const pDistM = speed * packetAgeSec;
+            const targetLatNow = lat + (pDistM * Math.cos(pHeadingRad)) / 111139;
+            const targetLonNow = lon + (pDistM * Math.sin(pHeadingRad)) / (111139 * latCos);
+
+            if (!prev || (now - prev.lastTime > 4000) || Math.hypot(targetLatNow - prev.lat, (targetLonNow - prev.lon) * latCos) > 0.4) {
+              // Initial contact or major teleport (> 45 km): seed directly
+              curLat = targetLatNow;
+              curLon = targetLonNow;
+              curHeading = heading;
+            } else {
+              const dtSec = Math.min(0.08, Math.max(0.001, (now - prev.lastTime) / 1000));
+
+              // 1. Continuous aerodynamic forward glide along current smoothed heading
+              const moveHeadingRad = (prev.heading * Math.PI) / 180;
+              const moveDistM = speed * dtSec;
+              const forwardLat = prev.lat + (moveDistM * Math.cos(moveHeadingRad)) / 111139;
+              const forwardLon = prev.lon + (moveDistM * Math.sin(moveHeadingRad)) / (111139 * latCos);
+
+              // 2. Softly absorb position discrepancy relative to current measurement
+              const dLatErr = targetLatNow - forwardLat;
+              const dLonErr = targetLonNow - forwardLon;
+              const posAlpha = 1 - Math.exp(-3.5 * dtSec); // Smoothly converges in ~300-400ms without jitter
+              curLat = forwardLat + dLatErr * posAlpha;
+              curLon = forwardLon + dLonErr * posAlpha;
+
+              // 3. Smooth aerodynamic heading turn (shortest angular arc)
+              const dH = (heading - prev.heading + 540) % 360 - 180;
+              const turnAlpha = 1 - Math.exp(-7.0 * dtSec);
+              curHeading = (prev.heading + dH * turnAlpha + 360) % 360;
+            }
+
+            targetInterpRef.current[id] = {
+              lat: curLat,
+              lon: curLon,
+              heading: curHeading,
+              speed,
+              lastTime: now
+            };
           }
+
           const groundPoint = map.project([curLon, curLat]);
 
           const isOffScreen =
@@ -2844,35 +2891,9 @@ export const MapView = ({
           }
 
           const scale = Math.max(16, Math.min(28, 12 + zoom * 1.2));
-          const rawTargetX = groundPoint.x;
-          const rawTargetY = groundPoint.y;
-          const rawScreenHeadingDeg = (heading - mapBearing + 360) % 360;
-
-          // 60 fps smooth kinematic interpolation for position & shortest-arc heading
-          let renderX = rawTargetX;
-          let renderY = rawTargetY;
-          let renderHeading = rawScreenHeadingDeg;
-
-          const isMapActive = map.isMoving() || map.isZooming() || map.isRotating();
-          const prevInterp = targetInterpRef.current[id];
-          if (prevInterp && !isMapActive) {
-            const distSq = (rawTargetX - prevInterp.x) ** 2 + (rawTargetY - prevInterp.y) ** 2;
-            if (distSq > 9000 || now - prevInterp.lastTime > 2500) {
-              renderX = rawTargetX;
-              renderY = rawTargetY;
-              renderHeading = rawScreenHeadingDeg;
-            } else {
-              const dtSec = Math.min(0.1, Math.max(0.001, (now - prevInterp.lastTime) / 1000));
-              const posAlpha = 1 - Math.exp(-12 * dtSec);
-              renderX = prevInterp.x + (rawTargetX - prevInterp.x) * posAlpha;
-              renderY = prevInterp.y + (rawTargetY - prevInterp.y) * posAlpha;
-
-              const dH = (rawScreenHeadingDeg - prevInterp.heading + 540) % 360 - 180;
-              const rotAlpha = 1 - Math.exp(-14 * dtSec);
-              renderHeading = (prevInterp.heading + dH * rotAlpha + 360) % 360;
-            }
-          }
-          targetInterpRef.current[id] = { x: renderX, y: renderY, heading: renderHeading, lastTime: now };
+          const renderX = groundPoint.x;
+          const renderY = groundPoint.y;
+          const renderHeading = (curHeading - mapBearing + 360) % 360;
 
           const isSelected = Boolean(currentSelected && currentSelected[0] === id);
           const color = isCivil ? "#94a3b8" : (TARGET_COLORS[type] ?? "#7dd3fc");

@@ -55,7 +55,7 @@ export const TargetCard = ({
       ? 65
       : 190;
 
-  const spec = getTargetSpecification(type, id, speedKmh, effectiveAltM, packetModel, packetCallsign);
+  const spec = getTargetSpecification(type, id, speedKmh, effectiveAltM, packetModel, packetCallsign, lat, lon, heading);
   const altAnalysis = getAltitudeAnalysis(effectiveAltM);
   const headingDesc = getHeadingVectorDescription(lat, lon, heading);
   const nearestLandmark = findNearestLandmark(lat, lon);
@@ -148,20 +148,42 @@ export const TargetCard = ({
           </div>
         </div>
 
-        {/* Real Sensors & Launch Area */}
-        <div className="target-origin-section">
-          {spec.detectionSensors && (
-            <div className="origin-row">
-              <span className="origin-label">Комплекси виявлення:</span>
-              <span className="origin-val">{spec.detectionSensors}</span>
+        {/* Truthful Military Launch & Staging Intelligence (OSINT / ППО) */}
+        <div className="target-launch-intel-box">
+          <div className="launch-intel-header">
+            <span className="launch-intel-icon">🎯</span>
+            <span className="launch-intel-title">ПОХОДЖЕННЯ ТА РАЙОН СТАРТУ (ПРАВДА / OSINT)</span>
+          </div>
+          <div className="launch-intel-body">
+            <div className="launch-intel-origin-main">
+              <span className="intel-tag">РАЙОН СТАРТУ:</span>
+              <strong className="intel-val-highlight">{spec.launchOriginDetailed || spec.launchOrigin}</strong>
             </div>
-          )}
-          {spec.launchOrigin && (
-            <div className="origin-row">
-              <span className="origin-label">Ймовірний район старту:</span>
-              <span className="origin-val">{spec.launchOrigin}</span>
-            </div>
-          )}
+            {spec.launchAirbase && (
+              <div className="launch-intel-item">
+                <span className="intel-label">Базування носія / аеродром:</span>
+                <span className="intel-val">{spec.launchAirbase}</span>
+              </div>
+            )}
+            {spec.launchUnit && (
+              <div className="launch-intel-item">
+                <span className="intel-label">Військовий підрозділ оператора:</span>
+                <span className="intel-val">{spec.launchUnit}</span>
+              </div>
+            )}
+            {spec.launchTrajectoryVector && (
+              <div className="launch-intel-item">
+                <span className="intel-label">Траєкторія та рубіж входу:</span>
+                <span className="intel-val">{spec.launchTrajectoryVector}</span>
+              </div>
+            )}
+            {spec.detectionSensors && (
+              <div className="launch-intel-item">
+                <span className="intel-label">Засоби первинного виявлення:</span>
+                <span className="intel-val">{spec.detectionSensors}</span>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Live Flight Telemetry Grid */}
