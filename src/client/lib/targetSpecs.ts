@@ -266,7 +266,27 @@ export function getTargetSpecification(
 ): TargetSpecification {
   const altAnalysis = getAltitudeAnalysis(altitudeM);
   const launchIntel = computeLaunchIntelligence(type, packetModel, lat, lon, heading, id);
+  const rawSpec = getRawTargetSpecification(type, id, speedKmh, altitudeM, packetModel, packetCallsign, altAnalysis);
 
+  return {
+    ...rawSpec,
+    launchOrigin: launchIntel.launchOrigin || rawSpec.launchOrigin,
+    launchOriginDetailed: launchIntel.launchOriginDetailed,
+    launchAirbase: launchIntel.launchAirbase,
+    launchUnit: launchIntel.launchUnit,
+    launchTrajectoryVector: launchIntel.launchTrajectoryVector
+  };
+}
+
+function getRawTargetSpecification(
+  type: string,
+  id: string,
+  speedKmh: number,
+  altitudeM: number,
+  packetModel: string | undefined,
+  packetCallsign: string | undefined,
+  altAnalysis: ReturnType<typeof getAltitudeAnalysis>
+): TargetSpecification {
   if (type === "uav") {
     const isJetShahed =
       (packetModel && (packetModel.toLowerCase().includes("238") || packetModel.toLowerCase().includes("jet"))) ||
