@@ -75,17 +75,35 @@ export class OpenskyAdsbLolSource {
     );
   }
 
-  private isCivilAirliner(callsign?: string, desc?: string, model?: string): boolean {
+  private isMilitaryAircraft(callsign?: string, desc?: string, model?: string): boolean {
     const text = `${callsign ?? ""} ${desc ?? ""} ${model ?? ""}`.toUpperCase();
-    const civilPrefixes = [
-      "RYR", "WZZ", "WUK", "LOT", "DLH", "KLM", "AFR", "BAW", "THY", "AUA",
-      "SXS", "PGT", "EZY", "EZS", "SAS", "FIN", "BTI", "ENT", "TOM", "FDB",
-      "ETH", "ROT", "CAI", "ISR", "PIA", "FDX", "UPS", "BOX", "CGF", "MNB",
-      "UTN", "LBT", "NMA", "GJT", "ASL", "EXS", "CCA", "SIA", "RYS", "NSZ",
-      "BOEING", "AIRBUS", "EMBRAER", "CRJ", "ATR", "B73", "B74", "B75", "B76", "B77", "B78",
-      "A31", "A32", "A33", "A35", "A38", "A20N", "A21N", "B38M", "B39M", "CIVIL"
-    ];
-    return civilPrefixes.some((p) => text.includes(p));
+    return (
+      text.includes("FORTE") ||
+      text.includes("HOMER") ||
+      text.includes("JAKE") ||
+      text.includes("LAGR") ||
+      text.includes("RED") ||
+      text.includes("VIPER") ||
+      text.includes("NATO") ||
+      text.includes("AWACS") ||
+      text.includes("TANKER") ||
+      text.includes("FIGHTER") ||
+      text.includes("BOMBER") ||
+      text.includes("STRATOTANKER") ||
+      text.includes("GLOBEMASTER") ||
+      text.includes("POSEIDON") ||
+      text.includes("HERCULES") ||
+      text.includes("K35R") ||
+      text.includes("KC-") ||
+      text.includes("E-3") ||
+      text.includes("P-8") ||
+      text.includes("C-17") ||
+      text.includes("RQ-") ||
+      text.includes("MQ-") ||
+      text.includes("MIG-") ||
+      text.includes("SU-") ||
+      text.includes("TU-")
+    );
   }
 
   async fetchFlightObservations(): Promise<UnifiedObservation[]> {
@@ -131,7 +149,8 @@ export class OpenskyAdsbLolSource {
                 const hex = a.hex.toLowerCase();
                 const flight = (a.flight ?? "").trim().replace(/\s+/g, "");
                 const callsign = flight || a.t || a.hex.toUpperCase();
-                const isCivil = this.isCivilAirliner(callsign, a.desc, a.t);
+                const isMil = this.isMilitaryAircraft(callsign, a.desc, a.t);
+                const isCivil = !isMil;
 
                 // Operational Sector Gating:
                 // Distant foreign civil airliners (> 120 km from Ukraine's border, e.g. Serbia, Bulgaria, Central Poland)
@@ -174,7 +193,7 @@ export class OpenskyAdsbLolSource {
                   confidence: 0.96,
                   evidence,
                   provenance: isCivil ? "Civilian Air Corridor Transponder" : "Military / Government Transponder Feed",
-                  model: a.desc ?? a.t ?? (isCivil ? "Civilian Aircraft" : "MIL_AIRCRAFT"),
+                  model: a.desc ?? a.t ?? (isMil ? "MIL_AIRCRAFT" : "Civilian Aircraft"),
                   callsign
                 }));
               }
