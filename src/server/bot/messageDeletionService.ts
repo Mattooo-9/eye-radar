@@ -76,6 +76,9 @@ export class MessageDeletionService {
   }
 
   private async ensurePostgres(): Promise<boolean> {
+    if (process.env.NODE_ENV === "test" && !process.env.TEST_POSTGRES) {
+      return false;
+    }
     if (this.isPostgresAvailable && this.pool) return true;
     if (!this.initPromise) {
       this.initPromise = this.initPostgres();
@@ -316,9 +319,9 @@ export class MessageDeletionService {
             try {
               await this.pool.query(
                 `UPDATE bot_message_deletion_queue
-                 SET status = 'completed', last_error = NULL
+                 SET status = 'completed', deleted_at = $3, last_error = NULL
                  WHERE chat_id = $1 AND message_id = $2`,
-                [job.chatId, job.messageId]
+                [job.chatId, job.messageId, now]
               );
             } catch (err) {
               console.warn("Failed to mark completed job in Postgres:", err);
@@ -358,9 +361,9 @@ export class MessageDeletionService {
       try {
         await this.pool.query(
           `UPDATE bot_message_deletion_queue
-           SET status = 'completed', last_error = NULL
+           SET status = 'completed', deleted_at = $3, last_error = NULL
            WHERE chat_id = $1 AND message_id = $2`,
-          [chatId, messageId]
+          [chatId, messageId, Date.now()]
         );
       } catch {}
     }

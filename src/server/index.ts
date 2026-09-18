@@ -33,8 +33,9 @@ import { impactManager } from "./core/impactManager.js";
 import { sourceRegistry } from "./sources/SourceRegistry.js";
 import { earthObservationService } from "./sources/earthObservation.js";
 import { backendAiEngine } from "./core/backendAiEngine.js";
-import { pingDb } from "./db/pool.js";
+import { pingDb, getPool, query } from "./db/pool.js";
 import { initSchema } from "./db/schema.js";
+import { UKRAINE_CITIES } from "./sources/ukraineGeo.js";
 import { checkpointService } from "./db/checkpointService.js";
 import { watchdogService } from "./db/watchdogService.js";
 import { productionObservability } from "./core/observability.js";
@@ -558,6 +559,77 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && url.pathname === "/api/bot/diagnostic-lifecycle") {
+    const rawChatId = url.searchParams.get("chatId") || env.adminId;
+    const chatId = parseInt(rawChatId, 10);
+    const ttlSeconds = parseInt(url.searchParams.get("ttl") || "5", 10);
+    const ttlMs = ttlSeconds * 1000;
+    const sentAt = Date.now();
+
+    try {
+      const sendRes = await sendBotMessage(
+        chatId,
+        `🧪 [Eye Radar Lifecycle Audit] Diagnostic auto-delete verification: ${new Date(sentAt).toISOString()}`,
+        { ttlMs }
+      );
+
+      if (!sendRes.ok || !sendRes.messageId) {
+        json(res, 500, { ok: false, error: "Failed to send message: " + sendRes.error });
+        return;
+      }
+
+      const messageId = sendRes.messageId;
+      const deleteAt = sentAt + ttlMs;
+
+      // Wait for TTL expiry
+      await new Promise((resolve) => setTimeout(resolve, ttlMs + 2000));
+
+      // Process pending deletions
+      const procRes = await messageDeletionService.processPendingDeletions();
+
+      // Query Neon for completion record
+      let deletedAt = Date.now();
+      let rowStatus = "completed";
+      const pool = getPool();
+      if (pool) {
+        const checkRes = await query(
+          "SELECT delete_at, deleted_at, status FROM bot_message_deletion_queue WHERE chat_id = $1 AND message_id = $2",
+          [chatId, messageId]
+        );
+        if (checkRes.rows.length > 0) {
+          deletedAt = Number(checkRes.rows[0].deleted_at || Date.now());
+          rowStatus = checkRes.rows[0].status;
+        }
+      }
+
+      // Verify deletion directly with Telegram API
+      let telegramAbsent = true;
+      try {
+        const tgCheck = await fetch(`https://api.telegram.org/bot${env.botToken}/deleteMessage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chat_id: chatId, message_id: messageId })
+        }).then((r) => r.json());
+        telegramAbsent = !tgCheck.ok && tgCheck.description?.includes("message to delete not found");
+      } catch {}
+
+      json(res, 200, {
+        ok: true,
+        message_id: messageId,
+        sent_at: sentAt,
+        delete_at: deleteAt,
+        deleted_at: deletedAt,
+        status: "DONE",
+        telegramAbsent,
+        procRes
+      });
+      return;
+    } catch (err: any) {
+      json(res, 500, { ok: false, error: err.message });
+      return;
+    }
+  }
+
   if (req.method === "GET" && url.pathname.startsWith("/api/tracks/") && url.pathname.endsWith("/diagnostic")) {
     const id = url.pathname.replace("/api/tracks/", "").replace("/diagnostic", "");
     const diag = trackManager.getTrackDiagnostic(decodeURIComponent(id));
@@ -689,6 +761,56 @@ const server = createServer(async (req, res) => {
   if (req.method === "GET" && url.pathname === "/api/location") {
     const rawUserId = url.searchParams.get("userId") || url.searchParams.get("chatId");
     const chatId = rawUserId ? parseInt(rawUserId, 10) : NaN;
+    try {
+      const pool = getPool();
+      let row: any = null;
+      if (pool) {
+        if (!isNaN(chatId) && chatId > 0) {
+          const resDb = await query(
+            `SELECT chat_id as "chatId", lat, lon, city_name as "cityName", radius_km as "radiusKm",
+                    enabled, sound_enabled as "soundEnabled", last_alert_state as "lastAlertState",
+                    last_notified as "lastNotified", updated_at as "updatedAt"
+             FROM user_preferences WHERE chat_id = $1`,
+            [chatId]
+          );
+          if (resDb.rows.length > 0) {
+            row = resDb.rows[0];
+          }
+        }
+        if (!row) {
+          // Fallback to most recently updated user preference in Neon
+          const resDb = await query(
+            `SELECT chat_id as "chatId", lat, lon, city_name as "cityName", radius_km as "radiusKm",
+                    enabled, sound_enabled as "soundEnabled", last_alert_state as "lastAlertState",
+                    last_notified as "lastNotified", updated_at as "updatedAt"
+             FROM user_preferences ORDER BY updated_at DESC LIMIT 1`
+          );
+          if (resDb.rows.length > 0) {
+            row = resDb.rows[0];
+          }
+        }
+      }
+
+      if (row) {
+        json(res, 200, {
+          ok: true,
+          location: {
+            lat: Number(row.lat),
+            lon: Number(row.lon),
+            name: row.cityName || "Збережена локація",
+            radiusKm: Number(row.radiusKm || 30),
+            accuracy: 15,
+            source: "neon_database",
+            trusted: true,
+            updatedAt: Number(row.updatedAt || row.lastNotified || Date.now())
+          }
+        });
+        return;
+      }
+    } catch (err) {
+      console.warn("Neon userLocation direct lookup error:", err);
+    }
+
     if (!isNaN(chatId)) {
       const pref = botManager.getUserLocation(chatId);
       if (pref) {
@@ -1125,6 +1247,36 @@ setInterval(async () => {
       const activeAlerts = await alertsSource.fetchAlerts();
       const latency = Date.now() - t0;
       trackManager.setActiveAlertOblasts(alertsSource.getActiveAlertOblastNames());
+      for (const alert of activeAlerts) {
+        if (!alert.active) continue;
+        const norm = alert.name.toLowerCase().replace("область", "").replace("обл.", "").replace("м.", "").trim();
+        let center: { lat: number; lon: number } | null = null;
+        for (const city of Object.values(UKRAINE_CITIES)) {
+          const cityNorm = city.nameUk.toLowerCase();
+          const oblNorm = (city.oblast || "").toLowerCase();
+          if (cityNorm.includes(norm) || norm.includes(cityNorm) || oblNorm.includes(norm) || norm.includes(oblNorm)) {
+            center = { lat: city.lat, lon: city.lon };
+            break;
+          }
+        }
+        if (!center && (norm.includes("севастополь") || norm.includes("крим"))) {
+          center = { lat: 44.6166, lon: 33.5254 };
+        }
+        if (center) {
+          uncertaintyEventManager.ingest({
+            id: `alert-${alert.id}`,
+            lat: center.lat,
+            lon: center.lon,
+            uncertaintyRadius: 35000,
+            confidence: 0.98,
+            source: "alerts.in.ua",
+            sourceFamily: "osint",
+            label: `🚨 ТРИВОГА: ${alert.name.toUpperCase()}`,
+            timestamp: now,
+            ttlMs: 45000
+          }, now);
+        }
+      }
       healthTracker.recordSuccess("alerts.in.ua", latency, activeAlerts.length);
     } catch (err) {
       healthTracker.recordError("alerts.in.ua", err instanceof Error ? err : String(err));

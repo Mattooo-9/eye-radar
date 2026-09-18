@@ -63,14 +63,13 @@ export const useTrustedLocation = () => {
   const [isManual, setIsManual] = useState(Boolean(confirmedLocation));
   const lastGpsRef = useRef<TrustedLocation | null>(null);
 
-  // Sync saved location from Neon PostgreSQL if not yet confirmed in local storage
+  // Sync saved location from Neon PostgreSQL
   useEffect(() => {
-    if (confirmedLocation) return;
     const tgUserId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
     const userId = tgUserId || localStorage.getItem("eye-radar-user-id");
-    if (!userId) return;
+    const locUrl = userId ? `/api/location?userId=${userId}` : "/api/location";
 
-    fetch(`/api/location?userId=${userId}`)
+    fetch(locUrl)
       .then((res) => res.json())
       .then((data) => {
         if (data?.ok && data?.location?.lat && data?.location?.lon) {
@@ -94,7 +93,7 @@ export const useTrustedLocation = () => {
         }
       })
       .catch(() => {});
-  }, [confirmedLocation]);
+  }, []);
 
   useEffect(() => {
     if (!("geolocation" in navigator)) {

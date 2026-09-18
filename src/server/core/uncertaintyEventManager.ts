@@ -8,8 +8,8 @@ export class UncertaintyEventManager {
   private events = new Map<string, UncertaintyEvent & { expiresAt: number }>();
   private readonly defaultTtls: Record<UncertaintySourceFamily, number> = {
     acoustic: 300_000,    // 5 minutes
-    thermal: 1_800_000,   // 30 minutes (FIRMS satellite passes)
-    satellite: 1_800_000, // 30 minutes (EO / SAR)
+    thermal: 86_400_000,  // 24 hours (FIRMS satellite passes)
+    satellite: 86_400_000, // 24 hours (EO / SAR)
     osint: 600_000,       // 10 minutes
     optical: 600_000,     // 10 minutes
     radar: 300_000        // 5 minutes
