@@ -697,6 +697,10 @@ const server = createServer(async (req, res) => {
 
   if (req.method === "GET" && url.pathname === "/api/thermal") {
     const thermals = await firmsSource.fetchThermalObservations();
+    const now = Date.now();
+    for (const t of thermals) {
+      uncertaintyEventManager.ingestObservation(t, now);
+    }
     json(res, 200, { thermals, count: thermals.length });
     return;
   }
@@ -1125,12 +1129,12 @@ let cycleCounter = 0;
 
 // Periodic main loop: 1 Hz tick for smooth predictive tracking & sensor ingestion
 setInterval(async () => {
+  const currentCycle = ++cycleCounter;
   const cycleStart = performance.now();
   const now = Date.now();
-  cycleCounter += 1;
 
   // Poll ADS-B open feeds immediately on cycle 1, then every 12 seconds
-  if (cycleCounter === 1 || cycleCounter % 12 === 0) {
+  if (currentCycle === 1 || currentCycle % 12 === 0) {
     await Promise.allSettled([
       (async () => {
         const tAdsb = Date.now();
@@ -1184,7 +1188,7 @@ setInterval(async () => {
   }
 
   // Poll Local / Network SDR Receiver (readsb/dump1090) every 5 seconds
-  if (cycleCounter === 1 || cycleCounter % 5 === 0) {
+  if (currentCycle === 1 || currentCycle % 5 === 0) {
     if (sdrReceiverSource.isConfigured()) {
       const tSdr = Date.now();
       try {
@@ -1223,7 +1227,7 @@ setInterval(async () => {
   }
 
   // Poll Satellite EO Direct Coordinate Feed every 30 seconds
-  if (cycleCounter === 1 || cycleCounter % 30 === 0) {
+  if (currentCycle === 1 || currentCycle % 30 === 0) {
     if (satelliteCoordSource.isConfigured()) {
       const tSat = Date.now();
       try {
@@ -1241,7 +1245,7 @@ setInterval(async () => {
   }
 
   // Poll Alerts immediately on cycle 1, then every 15 seconds
-  if (cycleCounter === 1 || cycleCounter % 15 === 0) {
+  if (currentCycle === 1 || currentCycle % 15 === 0) {
     const t0 = Date.now();
     try {
       const activeAlerts = await alertsSource.fetchAlerts();
@@ -1284,7 +1288,7 @@ setInterval(async () => {
   }
 
   // Poll Atmospheric Wind Field every 45 seconds
-  if (cycleCounter === 1 || cycleCounter % 45 === 0) {
+  if (currentCycle === 1 || currentCycle % 45 === 0) {
     const t0 = Date.now();
     try {
       await windSource.fetchWind();
@@ -1296,8 +1300,8 @@ setInterval(async () => {
 
   // Public OSINT reposts completely excluded per primary API mandate
 
-  // Poll NASA FIRMS Thermal Satellite Observations every 60 seconds
-  if (cycleCounter === 1 || cycleCounter % 60 === 0) {
+  // Poll NASA FIRMS Thermal Satellite Observations on cycle 1 and every 15 seconds
+  if (currentCycle === 1 || currentCycle % 15 === 0) {
     const t0 = Date.now();
     try {
       const thermals = await firmsSource.fetchThermalObservations();
@@ -1329,7 +1333,7 @@ setInterval(async () => {
   uncertaintyEventManager.pruneExpired(now);
 
   // Stage 5: Backend AI Engine - Auxiliary aerodynamic & kinematic envelope validation
-  if (cycleCounter % 3 === 0) {
+  if (currentCycle % 3 === 0) {
     for (const track of trackManager.snapshot(simulationEnabled)) {
       const anomaly = backendAiEngine.scoreKinematicsAnomaly(track);
       if (anomaly.isKinematicAnomaly) {
@@ -1338,7 +1342,7 @@ setInterval(async () => {
     }
   }
 
-  const delta = trackManager.getDeltaPacket(simulationEnabled, cycleCounter);
+  const delta = trackManager.getDeltaPacket(simulationEnabled, currentCycle);
   const livePositional = sourceRegistry.hasLivePositionalSource();
   const availablePositional = sourceRegistry.hasAvailablePositionalSource();
   const tracksToBroadcast = (delta.tracks.length > 0 || livePositional || availablePositional || simulationEnabled) ? delta.tracks : [];
@@ -1346,7 +1350,7 @@ setInterval(async () => {
   productionObservability.recordTracksSerialized(delta.tracks.length);
   productionObservability.recordTracksSent(tracksToBroadcast.length);
 
-  if (cycleCounter % 3 === 0) {
+  if (currentCycle % 3 === 0) {
     hub.broadcastImpacts(impactManager.getRecentEvents());
     hub.broadcastUncertaintyEvents(uncertaintyEventManager.getActiveEvents(now));
   }
