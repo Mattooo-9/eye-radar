@@ -74,7 +74,8 @@ export class TrackManager {
         (alertName) =>
           alertName.includes(regionKey) ||
           regionKey.includes(alertName) ||
-          alertName.includes(regionUkKey)
+          alertName.includes(regionUkKey) ||
+          regionUkKey.includes(alertName)
       );
 
       // Synthetic tracks in unalarmed regions MUST be purged immediately
@@ -121,7 +122,8 @@ export class TrackManager {
       (alertName) =>
         alertName.includes(regionKey) ||
         regionKey.includes(alertName) ||
-        alertName.includes(regionUkKey)
+        alertName.includes(regionUkKey) ||
+        regionUkKey.includes(alertName)
     );
 
     // If NO active alert in the region AND NO independent threat evidence:
@@ -671,7 +673,7 @@ export class TrackManager {
         const regionKey = nearest.oblast.toLowerCase().replace("область", "").replace("обл.", "").trim();
         const regionUkKey = nearest.nameUk.toLowerCase();
         const hasAlert = Array.from(this.activeAlertOblasts).some(
-          (a) => a.includes(regionKey) || regionKey.includes(a) || a.includes(regionUkKey)
+          (a) => a.includes(regionKey) || regionKey.includes(a) || a.includes(regionUkKey) || regionUkKey.includes(a)
         );
         if (!hasAlert) {
           this.removeTrack(id);

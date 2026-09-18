@@ -1446,9 +1446,9 @@ export const syncUkraineAlerts = (
           type: "line",
           source: "ukraine-oblasts",
           paint: {
-            "line-color": "rgba(255, 255, 255, 0.12)",
-            "line-width": ["interpolate", ["linear"], ["zoom"], 4, 0.6, 7, 1.0, 10, 1.4],
-            "line-opacity": 0.45
+            "line-color": "rgba(255, 255, 255, 0.18)",
+            "line-width": ["interpolate", ["linear"], ["zoom"], 4, 0.5, 7, 0.8, 10, 1.2],
+            "line-opacity": 0.08
           }
         },
         beforeLayerId
