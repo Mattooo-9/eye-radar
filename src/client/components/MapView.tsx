@@ -2565,18 +2565,18 @@ export const MapView = ({
         }
 
         ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-        ctx.clearRect(0, 0, width, height);
 
         const now = Date.now();
-        // FPS throttling for LOW performance tier (~30 fps)
+        // FPS throttling for ALL tiers — LOW 20fps, NORMAL 30fps, HIGH 60fps
         const delta = now - lastFrameTimeRef.current;
-        if (performanceTierRef.current === "LOW" && delta < tierCfg.frameBudgetMs) {
+        if (delta < tierCfg.frameBudgetMs) {
           if (isLoopRunning) {
             animId = requestAnimationFrame((t) => render(t));
           }
           return;
         }
         lastFrameTimeRef.current = now;
+        ctx.clearRect(0, 0, width, height);
         const zoom = map.getZoom();
         const currentLoc = locationRef.current;
         const currentPackets = packetsRef.current;
@@ -3385,16 +3385,32 @@ export const MapView = ({
     // Kick off initial frame
     requestRender();
 
-    // 1 Hz idle heartbeat: smoothly updates solar elevation & clock without waking heavy GPU loop
+    // 5 Hz idle heartbeat: smoothly updates solar elevation & clock without waking heavy GPU loop
     idleHeartbeatTimer = setInterval(() => {
       if (!isLoopRunning) {
         requestRender();
       }
-    }, 1000);
+    }, 5000);
+
+    // Background pause: stop RAF loop when tab/app is hidden; restart on visible
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        if (animId !== null) {
+          cancelAnimationFrame(animId);
+          animId = null;
+        }
+        isLoopRunning = false;
+      } else {
+        // Resume: force a fresh redraw immediately
+        requestRender();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
 
     return () => {
       if (animId !== null) cancelAnimationFrame(animId);
       if (idleHeartbeatTimer) clearInterval(idleHeartbeatTimer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       isLoopRunning = false;
       renderRef.current = null;
     };

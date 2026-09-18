@@ -18,8 +18,8 @@ export const TIER_CONFIGS: Record<PerformanceTier, TierConfig> = {
   LOW: {
     tier: "LOW",
     maxDpr: 1.0,
-    targetFps: 30,
-    frameBudgetMs: 33.3,
+    targetFps: 20,
+    frameBudgetMs: 50.0, // 20 FPS cap
     trailPoints: 6,
     enableLodClustering: true,
     lodThresholdCount: 80,
@@ -29,11 +29,11 @@ export const TIER_CONFIGS: Record<PerformanceTier, TierConfig> = {
   NORMAL: {
     tier: "NORMAL",
     maxDpr: 1.5,
-    targetFps: 60,
-    frameBudgetMs: 16.6,
-    trailPoints: 12,
+    targetFps: 30,
+    frameBudgetMs: 33.3, // 30 FPS cap
+    trailPoints: 10,
     enableLodClustering: true,
-    lodThresholdCount: 250,
+    lodThresholdCount: 200,
     lazyLoadShaders: false,
     minLabelZoom: 6.0
   },
@@ -41,10 +41,10 @@ export const TIER_CONFIGS: Record<PerformanceTier, TierConfig> = {
     tier: "HIGH",
     maxDpr: 2.0,
     targetFps: 60,
-    frameBudgetMs: 16.6,
-    trailPoints: 24,
+    frameBudgetMs: 16.6, // 60 FPS cap
+    trailPoints: 20,
     enableLodClustering: false,
-    lodThresholdCount: 600,
+    lodThresholdCount: 500,
     lazyLoadShaders: false,
     minLabelZoom: 5.0
   }

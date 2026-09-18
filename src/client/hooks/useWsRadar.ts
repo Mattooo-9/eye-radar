@@ -66,6 +66,34 @@ export const useWsRadar = (
   const pollTimerRef = useRef<number | null>(null);
   const workerRef = useRef<Worker | null>(null);
   const fallbackTracksMap = useRef<Map<string, CompactTrackPacket>>(new Map());
+  // Throttle setPackets to avoid React re-rendering on every single WS delta (max once per 800ms)
+  const lastSetPacketsTime = useRef<number>(0);
+  const pendingPackets = useRef<TrackPacket[] | null>(null);
+  const setPacketsThrottleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const throttledSetPackets = (tracks: TrackPacket[], immediate = false) => {
+    const now = Date.now();
+    if (immediate || now - lastSetPacketsTime.current > 800) {
+      lastSetPacketsTime.current = now;
+      if (setPacketsThrottleTimer.current) {
+        clearTimeout(setPacketsThrottleTimer.current);
+        setPacketsThrottleTimer.current = null;
+      }
+      setPackets(tracks);
+    } else {
+      pendingPackets.current = tracks;
+      if (!setPacketsThrottleTimer.current) {
+        setPacketsThrottleTimer.current = setTimeout(() => {
+          setPacketsThrottleTimer.current = null;
+          if (pendingPackets.current) {
+            lastSetPacketsTime.current = Date.now();
+            setPackets(pendingPackets.current);
+            pendingPackets.current = null;
+          }
+        }, 800 - (now - lastSetPacketsTime.current));
+      }
+    }
+  };
 
   useEffect(() => {
     let unmounted = false;
@@ -86,7 +114,7 @@ export const useWsRadar = (
           if (type === "TRACKS_UPDATED" && Array.isArray(tracks)) {
             trackStore.recordDecoded((tracks as TrackPacket[]).length);
             trackStore.ingestDelta(tracks as TrackPacket[], removedIds || []);
-            setPackets(tracks as TrackPacket[]);
+            throttledSetPackets(tracks as TrackPacket[]);
           } else if (type === "IMPACTS_UPDATED" && Array.isArray(events)) {
             trackStore.setImpacts(events as ImpactEvent[]);
             setImpacts(events as ImpactEvent[]);
@@ -128,7 +156,7 @@ export const useWsRadar = (
         const activeTracks = Array.from(fallbackTracksMap.current.values());
         trackStore.recordDecoded(decoded.tracks.length);
         trackStore.ingestDelta(decoded.tracks, decoded.removedIds);
-        setPackets(activeTracks);
+        throttledSetPackets(activeTracks);
       } catch (err) {
         console.error("Binary decode error (fallback)", err);
         if (socketRef.current?.readyState === WebSocket.OPEN) {
@@ -194,7 +222,7 @@ export const useWsRadar = (
               t.callsign
             ]);
             trackStore.replaceSnapshot(converted);
-            setPackets(converted);
+            throttledSetPackets(converted, true); // Immediate: poll is a snapshot replacement
           }
         }
 
@@ -298,7 +326,8 @@ export const useWsRadar = (
               const activeTracks = Array.from(fallbackTracksMap.current.values());
               trackStore.recordDecoded(decoded.tracks.length);
               trackStore.ingestDelta(decoded.tracks, decoded.removedIds);
-              setPackets(activeTracks);
+              // Snapshots → immediate update; deltas → throttled
+              throttledSetPackets(activeTracks, decoded.kind === 0x00);
             } else if (kind === 0x02) {
               const decoded = decodeBinaryImpacts(buffer);
               trackStore.setImpacts(decoded.events);
@@ -332,7 +361,7 @@ export const useWsRadar = (
               const payload = parsed[2];
 
               if (kind === 0 && Array.isArray(payload)) {
-                setPackets(payload);
+                throttledSetPackets(payload, true); // JSON kind=0 is snapshot
               } else if (kind === 2 && Array.isArray(payload)) {
                 setImpacts(payload);
               } else if (kind === 3 && Array.isArray(payload)) {
