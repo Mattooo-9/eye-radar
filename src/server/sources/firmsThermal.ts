@@ -3,6 +3,7 @@ import type { Observation } from "../domain/types.js";
 export class FirmsThermalSource {
   private lastFetch = 0;
   private readonly mapKey?: string;
+  private cachedObservations: Observation[] = [];
 
   constructor(mapKey?: string) {
     this.mapKey = mapKey;
@@ -10,9 +11,9 @@ export class FirmsThermalSource {
 
   async fetchThermalObservations(): Promise<Observation[]> {
     const now = Date.now();
-    // Cache for 60 seconds to respect rate limits
-    if (now - this.lastFetch < 60_000) {
-      return [];
+    // Return cached observations within 60 seconds
+    if (now - this.lastFetch < 60_000 && this.cachedObservations.length > 0) {
+      return this.cachedObservations;
     }
 
     try {
@@ -100,10 +101,11 @@ export class FirmsThermalSource {
         }
       }
 
+      this.cachedObservations = observations;
       this.lastFetch = now;
       return observations;
     } catch {
-      return [];
+      return this.cachedObservations;
     }
   }
 }

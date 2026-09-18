@@ -1303,10 +1303,12 @@ setInterval(async () => {
       const thermals = await firmsSource.fetchThermalObservations();
       const latency = Date.now() - t0;
       for (const t of thermals) {
-        trackManager.ingest(t);
         uncertaintyEventManager.ingestObservation(t, now);
       }
       healthTracker.recordSuccess("nasa-firms", latency, thermals.length);
+      if (thermals.length > 0) {
+        sourceRegistry.validateAndActivate("nasa-firms", thermals, latency);
+      }
     } catch (err) {
       healthTracker.recordError("nasa-firms", err instanceof Error ? err : String(err));
     }
