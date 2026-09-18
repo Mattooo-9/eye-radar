@@ -1633,15 +1633,24 @@ export class AirspaceSimulator {
         }
       }
 
-      // B. Baseline Tactical Corridors (continuous nationwide situational awareness across all 25 regions)
-      for (const [index, corridor] of BASELINE_TACTICAL_CORRIDORS.entries()) {
-        const corridorId = `baseline-${index}`;
-        const activeInCorridor = [...this.tracks.values()].filter(
-          (t) => t.isBaseline && t.corridorId === corridorId
-        ).length;
+      // B. Baseline Tactical Corridors (only when no real alarms exist, e.g. tests or zero-alarm baseline)
+      if (activeOblasts.length === 0) {
+        for (const [index, corridor] of BASELINE_TACTICAL_CORRIDORS.entries()) {
+          const corridorId = `baseline-${index}`;
+          const activeInCorridor = [...this.tracks.values()].filter(
+            (t) => t.isBaseline && t.corridorId === corridorId
+          ).length;
 
-        if (activeInCorridor < 1) {
-          this.spawnTrackFromCorridor(corridor, now, true, corridorId);
+          if (activeInCorridor < 1) {
+            this.spawnTrackFromCorridor(corridor, now, true, corridorId);
+          }
+        }
+      } else {
+        // When real alarms are active, purge any baseline tracks from peaceful regions so threats strictly match alarmed oblasts
+        for (const [id, track] of this.tracks.entries()) {
+          if (track.isBaseline) {
+            this.tracks.delete(id);
+          }
         }
       }
     }

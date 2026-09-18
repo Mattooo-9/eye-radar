@@ -71,7 +71,7 @@ simulator.setAlertsSource(alertsSource);
 const healthTracker = new SourceHealthTracker();
 sourceRegistry.setHealthTracker(healthTracker);
 // Live Airspace Situational Awareness (Alerts-driven + Tactical baseline)
-let simulationEnabled = process.env.SIMULATION_ENABLED === "true";
+let simulationEnabled = process.env.SIMULATION_ENABLED !== "false";
 
 sourceRegistry.register(
   "airplanes.live",

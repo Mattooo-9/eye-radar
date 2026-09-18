@@ -1381,6 +1381,158 @@ const syncWeatherLayer = async (map: maplibregl.Map, visible: boolean) => {
   }
 };
 
+const UKR_TO_ISO: Record<string, string> = {
+  "дніпро": "UA-12",
+  "донец": "UA-14",
+  "запорі": "UA-23",
+  "луган": "UA-09",
+  "микола": "UA-48",
+  "одес": "UA-51",
+  "харків": "UA-63",
+  "чернігів": "UA-74",
+  "сум": "UA-59",
+  "полтав": "UA-53",
+  "черкас": "UA-71",
+  "кіровоград": "UA-35",
+  "кропивниц": "UA-35",
+  "херсон": "UA-65",
+  "вінниц": "UA-05",
+  "житомир": "UA-18",
+  "хмельниц": "UA-68",
+  "рівн": "UA-56",
+  "волин": "UA-07",
+  "терноп": "UA-61",
+  "івано-франків": "UA-26",
+  "чернів": "UA-77",
+  "львів": "UA-46",
+  "закарпат": "UA-21",
+  "крим": "UA-43",
+  "севастопол": "UA-40"
+};
+
+export function mapAlertToIso(alertName: string): string | null {
+  if (!alertName) return null;
+  const clean = alertName.toLowerCase().replace("область", "").replace("обл.", "").trim();
+  if (clean.includes("київськ")) return "UA-32";
+  if (clean.includes("київ")) return "UA-30";
+  for (const [k, iso] of Object.entries(UKR_TO_ISO)) {
+    if (clean.includes(k)) return iso;
+  }
+  return null;
+}
+
+export const syncUkraineAlerts = (
+  map: maplibregl.Map,
+  activeAlerts: string[] = [],
+  showAlerts = true
+) => {
+  if (!map || !map.isStyleLoaded()) return;
+
+  try {
+    if (!map.getSource("ukraine-oblasts")) {
+      map.addSource("ukraine-oblasts", {
+        type: "geojson",
+        data: "/ukraine-oblasts.geojson"
+      });
+    }
+
+    const beforeLayerId = map.getLayer("frontline-glow") ? "frontline-glow" : undefined;
+
+    // 1. Neutral administrative borders across Ukraine
+    if (!map.getLayer("ukraine-oblasts-neutral-outline")) {
+      map.addLayer(
+        {
+          id: "ukraine-oblasts-neutral-outline",
+          type: "line",
+          source: "ukraine-oblasts",
+          paint: {
+            "line-color": "rgba(255, 255, 255, 0.12)",
+            "line-width": ["interpolate", ["linear"], ["zoom"], 4, 0.6, 7, 1.0, 10, 1.4],
+            "line-opacity": 0.45
+          }
+        },
+        beforeLayerId
+      );
+    }
+
+    // 2. Resolve active alert oblast ISO codes
+    const activeIsos =
+      showAlerts && activeAlerts && activeAlerts.length > 0
+        ? Array.from(
+            new Set(activeAlerts.map(mapAlertToIso).filter((iso): iso is string => Boolean(iso)))
+          )
+        : [];
+
+    const alertFilter: any =
+      activeIsos.length > 0
+        ? ["in", ["get", "shapeISO"], ["literal", activeIsos]]
+        : ["==", ["get", "shapeISO"], "___NONE___"];
+
+    // 3. Tactical red ambient polygon fill for alarmed oblasts
+    if (!map.getLayer("ukraine-alerts-fill")) {
+      map.addLayer(
+        {
+          id: "ukraine-alerts-fill",
+          type: "fill",
+          source: "ukraine-oblasts",
+          paint: {
+            "fill-color": "#ef4444",
+            "fill-opacity": 0.18
+          },
+          filter: alertFilter
+        },
+        beforeLayerId
+      );
+    } else {
+      map.setFilter("ukraine-alerts-fill", alertFilter);
+      map.setLayoutProperty("ukraine-alerts-fill", "visibility", showAlerts ? "visible" : "none");
+    }
+
+    // 4. Glowing red perimeter outline for alarmed oblasts
+    if (!map.getLayer("ukraine-alerts-glow")) {
+      map.addLayer(
+        {
+          id: "ukraine-alerts-glow",
+          type: "line",
+          source: "ukraine-oblasts",
+          paint: {
+            "line-color": "#ef4444",
+            "line-width": ["interpolate", ["linear"], ["zoom"], 4, 4.0, 7, 6.0, 10, 8.0],
+            "line-blur": ["interpolate", ["linear"], ["zoom"], 4, 2.5, 7, 4.0, 10, 6.0],
+            "line-opacity": 0.55
+          },
+          filter: alertFilter
+        },
+        beforeLayerId
+      );
+    } else {
+      map.setFilter("ukraine-alerts-glow", alertFilter);
+      map.setLayoutProperty("ukraine-alerts-glow", "visibility", showAlerts ? "visible" : "none");
+    }
+
+    // 5. Crisp tactical red border for alarmed oblasts
+    if (!map.getLayer("ukraine-alerts-border")) {
+      map.addLayer(
+        {
+          id: "ukraine-alerts-border",
+          type: "line",
+          source: "ukraine-oblasts",
+          paint: {
+            "line-color": "#ef4444",
+            "line-width": ["interpolate", ["linear"], ["zoom"], 4, 1.4, 7, 2.0, 10, 2.6],
+            "line-opacity": 0.85
+          },
+          filter: alertFilter
+        },
+        beforeLayerId
+      );
+    } else {
+      map.setFilter("ukraine-alerts-border", alertFilter);
+      map.setLayoutProperty("ukraine-alerts-border", "visibility", showAlerts ? "visible" : "none");
+    }
+  } catch {}
+};
+
 const syncUkraineBorders = (map: maplibregl.Map, showFrontline = true) => {
   if (!map || !map.isStyleLoaded()) return;
   try {
@@ -1389,19 +1541,15 @@ const syncUkraineBorders = (map: maplibregl.Map, showFrontline = true) => {
       "world-borders-glow",
       "world-borders-line",
       "ukraine-real-glow",
-      "ukraine-real-border",
-      "ukraine-oblasts-glow",
-      "ukraine-oblasts-line"
+      "ukraine-real-border"
     ];
     for (const id of customBorderLayers) {
       if (map.getLayer(id)) {
         try { map.removeLayer(id); } catch {}
       }
     }
-    for (const src of ["world-borders", "ukraine-oblasts"]) {
-      if (map.getSource(src)) {
-        try { map.removeSource(src); } catch {}
-      }
+    if (map.getSource("world-borders")) {
+      try { map.removeSource("world-borders"); } catch {}
     }
 
     // Tactical Line of Contact / Frontline (ЛБЗ)
@@ -1640,11 +1788,11 @@ const drawAlertsLayer = (
   height: number
 ) => {
   if (!activeAlerts || activeAlerts.length === 0) return;
+  const zoom = map.getZoom();
+  // MapLibre renders full GPU-accelerated polygon fills; on canvas only draw tactical badges at zoom >= 5.5
+  if (zoom < 5.5) return;
 
   ctx.save();
-  const zoom = map.getZoom();
-  const radiusPx = Math.max(30, Math.min(180, 45 * (2 ** (zoom - 6))));
-
   for (const alertName of activeAlerts) {
     const clean = alertName.toLowerCase().replace("область", "").replace("обл.", "").trim();
     const match = LOCATIONS.find(
@@ -1653,19 +1801,31 @@ const drawAlertsLayer = (
     if (!match) continue;
 
     const pt = map.project([match.lon, match.lat]);
-    if (pt.x < -radiusPx || pt.x > width + radiusPx || pt.y < -radiusPx || pt.y > height + radiusPx) {
+    if (pt.x < 30 || pt.x > width - 30 || pt.y < 30 || pt.y > height - 30) {
       continue;
     }
 
-    const grad = ctx.createRadialGradient(pt.x, pt.y, 0, pt.x, pt.y, radiusPx);
-    grad.addColorStop(0, "rgba(239, 68, 68, 0.09)");
-    grad.addColorStop(0.7, "rgba(239, 68, 68, 0.03)");
-    grad.addColorStop(1, "rgba(239, 68, 68, 0)");
+    ctx.font = "bold 9px 'JetBrains Mono', monospace";
+    const text = "ТРИВОГА";
+    const textWidth = ctx.measureText(text).width;
+    const badgeW = textWidth + 14;
+    const badgeH = 16;
+    const rx = pt.x - badgeW / 2;
+    const ry = pt.y - badgeH / 2;
 
-    ctx.fillStyle = grad;
+    ctx.fillStyle = "rgba(220, 38, 38, 0.85)";
     ctx.beginPath();
-    ctx.arc(pt.x, pt.y, radiusPx, 0, Math.PI * 2);
+    ctx.roundRect(rx, ry, badgeW, badgeH, 4);
     ctx.fill();
+
+    ctx.strokeStyle = "rgba(254, 202, 202, 0.6)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.fillStyle = "#ffffff";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, pt.x, pt.y);
   }
   ctx.restore();
 };
@@ -1883,8 +2043,20 @@ export const MapView = ({
   }, [packets]);
 
   useEffect(() => {
+    const map = mapRef.current;
+    if (map && map.isStyleLoaded()) {
+      syncUkraineAlerts(map, activeAlerts, showAlerts !== false);
+    }
     renderRef.current?.();
-  }, [activeAlerts]);
+  }, [activeAlerts, showAlerts]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (map && map.isStyleLoaded()) {
+      syncUkraineBorders(map, showFrontline !== false);
+    }
+    renderRef.current?.();
+  }, [showFrontline]);
 
   const timelineOffsetRef = useRef(timelineOffsetSec);
   timelineOffsetRef.current = timelineOffsetSec;
@@ -2194,6 +2366,7 @@ export const MapView = ({
       applyImmediateSolarLighting(map);
       if (performanceTierRef.current !== "LOW") { syncWeatherLayer(map, showWeatherRef.current !== false); }
       syncUkraineBorders(map, showFrontlineRef.current !== false);
+      syncUkraineAlerts(map, activeAlertsRef.current, showAlertsRef.current !== false);
       const scaleControl = new maplibregl.ScaleControl({ maxWidth: 110, unit: "metric" });
       map.addControl(scaleControl, "bottom-right");
       triggerInstantRedraw();
@@ -2201,6 +2374,7 @@ export const MapView = ({
     map.on("styledata", () => {
       applyImmediateSolarLighting(map);
       syncUkraineBorders(map, showFrontlineRef.current !== false);
+      syncUkraineAlerts(map, activeAlertsRef.current, showAlertsRef.current !== false);
       triggerInstantRedraw();
     });
     map.on("resize", () => {
@@ -2252,6 +2426,7 @@ export const MapView = ({
       map.setStyle(targetStyle);
       map.once("styledata", () => {
         syncUkraineBorders(map, showFrontlineRef.current !== false);
+        syncUkraineAlerts(map, activeAlertsRef.current, showAlertsRef.current !== false);
         if (performanceTierRef.current !== "LOW") {
           syncWeatherLayer(map, showWeatherRef.current !== false);
         }
