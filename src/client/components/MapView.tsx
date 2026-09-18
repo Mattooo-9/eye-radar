@@ -2524,7 +2524,7 @@ export const MapView = ({
     let settleFramesLeft = 0;
 
     const requestRender = () => {
-      settleFramesLeft = 3; // Ensure smooth 3-frame settle on updates
+      settleFramesLeft = 2; // Ensure smooth 2-frame settle on updates
       if (!isLoopRunning) {
         isLoopRunning = true;
         animId = requestAnimationFrame((t) => render(t));
