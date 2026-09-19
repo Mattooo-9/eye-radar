@@ -3167,9 +3167,11 @@ export const MapView = ({
           }
 
           for (const item of standalone) {
-            ctx.save();
-            ctx.translate(item.targetX, item.targetY);
-            ctx.rotate((item.screenHeadingDeg * Math.PI) / 180);
+            const angleRad = (item.screenHeadingDeg * Math.PI) / 180;
+            const sinA = Math.sin(angleRad);
+            const cosA = Math.cos(angleRad);
+            // setTransform(a,b,c,d,e,f): rotation matrix * dpr, translation to target
+            ctx.setTransform(cosA * ratio, sinA * ratio, -sinA * ratio, cosA * ratio, item.targetX * ratio, item.targetY * ratio);
             renderTacticalGlyph(ctx, {
               size: item.scale,
               rotationDeg: 0,
@@ -3182,7 +3184,7 @@ export const MapView = ({
               confidence: item.confidence,
               timeMs: now
             });
-            ctx.restore();
+            ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
 
             const showPill = item.isSelected;
             if (showPill) {
@@ -3202,9 +3204,10 @@ export const MapView = ({
           }
         } else {
           for (const item of tacticalItems) {
-            ctx.save();
-            ctx.translate(item.targetX, item.targetY);
-            ctx.rotate((item.screenHeadingDeg * Math.PI) / 180);
+            const angleRad2 = (item.screenHeadingDeg * Math.PI) / 180;
+            const sinB = Math.sin(angleRad2);
+            const cosB = Math.cos(angleRad2);
+            ctx.setTransform(cosB * ratio, sinB * ratio, -sinB * ratio, cosB * ratio, item.targetX * ratio, item.targetY * ratio);
             renderTacticalGlyph(ctx, {
               size: item.scale,
               rotationDeg: 0,
@@ -3217,10 +3220,10 @@ export const MapView = ({
               confidence: item.confidence,
               timeMs: now
             });
-            ctx.restore();
+            ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
 
-            const showPill = item.isSelected;
-            if (showPill) {
+            const showPill2 = item.isSelected;
+            if (showPill2) {
               drawMilitaryCalloutPill(
                 ctx,
                 item.targetX,
@@ -3392,12 +3395,12 @@ export const MapView = ({
     // Kick off initial frame
     requestRender();
 
-    // 5 Hz idle heartbeat: smoothly updates solar elevation & clock without waking heavy GPU loop
+    // 2s idle heartbeat: smoothly updates solar elevation & clock without waking heavy GPU loop
     idleHeartbeatTimer = setInterval(() => {
       if (!isLoopRunning) {
         requestRender();
       }
-    }, 5000);
+    }, 2000);
 
     // Background pause: stop RAF loop when tab/app is hidden; restart on visible
     const onVisibilityChange = () => {

@@ -139,6 +139,10 @@ export const App = () => {
       window.Telegram?.WebApp?.expand();
       window.Telegram?.WebApp?.setHeaderColor?.("#0b1220");
       window.Telegram?.WebApp?.setBackgroundColor?.("#070b14");
+      // Fullscreen on supported versions (Bot API 7.7+)
+      (window.Telegram?.WebApp as any)?.requestFullscreen?.();
+      // Prevent accidental swipe-down close on map drag
+      (window.Telegram?.WebApp as any)?.disableVerticalSwipes?.();
     } catch {}
   }, []);
 
