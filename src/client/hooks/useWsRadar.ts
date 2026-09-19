@@ -66,14 +66,15 @@ export const useWsRadar = (
   const pollTimerRef = useRef<number | null>(null);
   const workerRef = useRef<Worker | null>(null);
   const fallbackTracksMap = useRef<Map<string, CompactTrackPacket>>(new Map());
-  // Throttle setPackets to avoid React re-rendering on every single WS delta (max once per 800ms)
+  // Throttle setPackets to avoid React re-rendering on every single WS delta (max ~5x/s)
   const lastSetPacketsTime = useRef<number>(0);
   const pendingPackets = useRef<TrackPacket[] | null>(null);
   const setPacketsThrottleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const THROTTLE_MS = 200; // 5 Hz — fast enough for smooth canvas render, slow enough to cut re-renders
 
   const throttledSetPackets = (tracks: TrackPacket[], immediate = false) => {
     const now = Date.now();
-    if (immediate || now - lastSetPacketsTime.current > 800) {
+    if (immediate || now - lastSetPacketsTime.current > THROTTLE_MS) {
       lastSetPacketsTime.current = now;
       if (setPacketsThrottleTimer.current) {
         clearTimeout(setPacketsThrottleTimer.current);
@@ -90,7 +91,7 @@ export const useWsRadar = (
             setPackets(pendingPackets.current);
             pendingPackets.current = null;
           }
-        }, 800 - (now - lastSetPacketsTime.current));
+        }, THROTTLE_MS - (now - lastSetPacketsTime.current));
       }
     }
   };

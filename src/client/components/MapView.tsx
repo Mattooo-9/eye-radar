@@ -2516,7 +2516,8 @@ export const MapView = ({
 
   // 6. Synchronized Canvas overlay render loop (locked 1:1 with MapLibre camera, event-driven with idle sleep)
   useEffect(() => {
-    let animId: number | null = null;
+    let rafId: number | null = null;
+    let throttleTimerId: ReturnType<typeof setTimeout> | null = null;
     let idleHeartbeatTimer: any = null;
     let lastAudioCheck = 0;
     let cachedCtx: CanvasRenderingContext2D | null = null;
@@ -2527,14 +2528,15 @@ export const MapView = ({
       settleFramesLeft = 2; // Ensure smooth 2-frame settle on updates
       if (!isLoopRunning) {
         isLoopRunning = true;
-        animId = requestAnimationFrame((t) => render(t));
+        rafId = requestAnimationFrame((t) => render(t));
       }
     };
 
     renderRef.current = requestRender;
 
     const render = (_time = performance.now()) => {
-      animId = null;
+      rafId = null;
+      throttleTimerId = null;
 
       if (typeof document !== "undefined" && document.hidden) {
         isLoopRunning = false;
@@ -2568,10 +2570,15 @@ export const MapView = ({
 
         const now = Date.now();
         // FPS throttling for ALL tiers — LOW 20fps, NORMAL 30fps, HIGH 60fps
+        // Use setTimeout remainder instead of spinning RAF every 16ms wasting CPU
         const delta = now - lastFrameTimeRef.current;
         if (delta < tierCfg.frameBudgetMs) {
           if (isLoopRunning) {
-            animId = requestAnimationFrame((t) => render(t));
+            const remainMs = Math.max(1, tierCfg.frameBudgetMs - delta);
+            throttleTimerId = window.setTimeout(() => {
+              throttleTimerId = null;
+              rafId = requestAnimationFrame((t) => render(t));
+            }, remainMs);
           }
           return;
         }
@@ -3373,7 +3380,7 @@ export const MapView = ({
         if (isMapMoving || hasMovingVisibleTargets || hasActiveSensorEvents || settleFramesLeft > 0) {
           if (settleFramesLeft > 0) settleFramesLeft--;
           isLoopRunning = true;
-          animId = requestAnimationFrame((t) => render(t));
+          rafId = requestAnimationFrame((t) => render(t));
         } else {
           isLoopRunning = false;
         }
@@ -3395,10 +3402,8 @@ export const MapView = ({
     // Background pause: stop RAF loop when tab/app is hidden; restart on visible
     const onVisibilityChange = () => {
       if (document.hidden) {
-        if (animId !== null) {
-          cancelAnimationFrame(animId);
-          animId = null;
-        }
+        if (throttleTimerId !== null) { clearTimeout(throttleTimerId); throttleTimerId = null; }
+        if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
         isLoopRunning = false;
       } else {
         // Resume: force a fresh redraw immediately
@@ -3408,7 +3413,8 @@ export const MapView = ({
     document.addEventListener("visibilitychange", onVisibilityChange);
 
     return () => {
-      if (animId !== null) cancelAnimationFrame(animId);
+      if (throttleTimerId !== null) clearTimeout(throttleTimerId);
+      if (rafId !== null) cancelAnimationFrame(rafId);
       if (idleHeartbeatTimer) clearInterval(idleHeartbeatTimer);
       document.removeEventListener("visibilitychange", onVisibilityChange);
       isLoopRunning = false;
