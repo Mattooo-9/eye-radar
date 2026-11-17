@@ -167,7 +167,7 @@ export class TrackManager {
     let restoredCount = 0;
 
     for (const t of checkpoint.tracks) {
-      if (!t.id || typeof t.lat !== "number" || typeof t.lon !== "number") continue;
+      if (!t.id || typeof t.lat !== "number" || typeof t.lon !== "number" || t.isSynthetic) continue;
       const filter = new ImmFilter2D();
       filter.update(t.timestamp || baseTime, t.lat, t.lon);
 
@@ -204,6 +204,11 @@ export class TrackManager {
 
   ingest(observation: Observation, now = Date.now()): TrackState | null {
     productionObservability.recordObservationReceived(1);
+
+    if (observation.isSynthetic || observation.source === "simulation" || Boolean(observation.meta?.isSynthetic)) {
+      productionObservability.recordObservationRejected("synthetic_observation", 1);
+      return null;
+    }
 
     // Evidence Gating: ensure observation evidence types are allowed by source capabilities
     const srcReg = this.sourceRegistry.get(observation.source) ||
@@ -733,7 +738,7 @@ export class TrackManager {
     }
   }
 
-  snapshot(includeSynthetic = true): TrackState[] {
+  snapshot(includeSynthetic = false): TrackState[] {
     const list: TrackState[] = [];
     for (const entry of this.tracks.values()) {
       if (!includeSynthetic && entry.state.isSynthetic) {
@@ -744,7 +749,7 @@ export class TrackManager {
     return list;
   }
 
-  toPackets(includeSynthetic = true): CompactTrackPacket[] {
+  toPackets(includeSynthetic = false): CompactTrackPacket[] {
     return this.snapshot(includeSynthetic)
       .filter((track) => track.lifecycle !== "TENTATIVE" || track.confidence >= 0.20)
       .map((track) => [
@@ -824,7 +829,7 @@ export class TrackManager {
   /**
    * Generates complete binary snapshot for initial connection / reconnect
    */
-  getBinarySnapshot(includeSynthetic = true): Uint8Array {
+  getBinarySnapshot(includeSynthetic = false): Uint8Array {
     const tracks = this.toPackets(includeSynthetic);
     return encodeBinarySnapshot(tracks, this.seqNumber, Date.now());
   }

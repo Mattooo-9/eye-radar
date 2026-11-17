@@ -21,7 +21,6 @@ import { toObservation } from "./domain/unifiedObservation.js";
 import { AlertsInUaSource } from "./sources/alertsInUa.js";
 import { FirmsThermalSource } from "./sources/firmsThermal.js";
 import { OpenMeteoWindSource } from "./sources/openMeteoWind.js";
-import { AirspaceSimulator } from "./sources/simulator.js";
 import { SourceHealthTracker } from "./sources/sourceHealth.js";
 import { AdsbUnifiedSource } from "./sources/adsbUnifiedSource.js";
 import { OpenSkyLiveSource } from "./sources/openskyLive.js";
@@ -66,14 +65,8 @@ const groundSensorSource = new GroundSensorSource();
 const satelliteCoordSource = new SatelliteCoordinateSource();
 const localReceiverSource = new LocalReceiverSource();
 const publicOsintSource = new PublicOsintFeedSource();
-const simulator = new AirspaceSimulator();
-simulator.setAlertsSource(alertsSource);
 const healthTracker = new SourceHealthTracker();
 sourceRegistry.setHealthTracker(healthTracker);
-// Simulation is an opt-in local-test facility. It is never permitted in production.
-const simulationAllowed = env.nodeEnv !== "production" && process.env.SIMULATION_ENABLED === "true";
-let simulationEnabled = simulationAllowed;
-
 sourceRegistry.register(
   "airplanes.live",
   "adsb_mlat",
@@ -241,23 +234,6 @@ sourceRegistry.register(
     canProvideSpeed: false,
     evidenceFamily: "earth_observation",
     evidenceTypes: ["sar", "optical", "multispectral"],
-  }
-);
-
-sourceRegistry.register(
-  "simulator",
-  "test_simulation",
-  simulator,
-  {
-    primaryCapability: "TEST_SIMULATION",
-    capabilities: ["TEST_SIMULATION"],
-    canCreateTrack: true,
-    canClassify: true,
-    canProvidePosition: true,
-    canProvideAltitude: true,
-    canProvideSpeed: true,
-    evidenceFamily: "test_simulation",
-    evidenceTypes: ["synthetic_aerodynamics"],
   }
 );
 
@@ -437,7 +413,7 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", env.publicBaseUrl);
 
   if (req.method === "GET" && url.pathname === "/health") {
-    const audit = healthTracker.getAuditReport(trackManager.snapshot(simulationEnabled));
+    const audit = healthTracker.getAuditReport(trackManager.snapshot(false));
     const livePositional = sourceRegistry.getLivePositionalSources().map(s => s.name);
     const liveContextual = sourceRegistry.getLiveContextualSources().map(s => s.name);
     const testSources = sourceRegistry.getTestSources().map(s => s.name);
@@ -451,8 +427,8 @@ const server = createServer(async (req, res) => {
       watchdog: watchdogHealth,
       sequenceId: trackManager.getSequence(),
       uptime: process.uptime(),
-      tracks: trackManager.snapshot(simulationEnabled).length,
-      simulator: simulationEnabled,
+      tracks: trackManager.snapshot(false).length,
+      realDataOnly: true,
       wsClients: hub.getClientCount(),
       summary: {
         ...audit.summary,
@@ -468,7 +444,7 @@ const server = createServer(async (req, res) => {
   }
 
   if (req.method === "GET" && url.pathname === "/api/audit") {
-    const audit = healthTracker.getAuditReport(trackManager.snapshot(simulationEnabled));
+    const audit = healthTracker.getAuditReport(trackManager.snapshot(false));
     json(res, 200, {
       ...audit,
       timeCalibration: timeCalibrationService.getAllMetrics()
@@ -478,10 +454,10 @@ const server = createServer(async (req, res) => {
 
   if (req.method === "GET" && url.pathname === "/api/diagnostics/pipeline") {
     const pipeline = productionObservability.getPipelineDiagnostics(
-      trackManager.snapshot(simulationEnabled).length,
+      trackManager.snapshot(false).length,
       uncertaintyEventManager.getCount()
     );
-    const audit = healthTracker.getAuditReport(trackManager.snapshot(simulationEnabled));
+    const audit = healthTracker.getAuditReport(trackManager.snapshot(false));
     json(res, 200, {
       ...pipeline,
       sourcesSummary: audit.summary,
@@ -643,7 +619,7 @@ const server = createServer(async (req, res) => {
   }
 
   if (req.method === "GET" && url.pathname === "/api/status") {
-    const audit = healthTracker.getAuditReport(trackManager.snapshot(simulationEnabled));
+    const audit = healthTracker.getAuditReport(trackManager.snapshot(false));
     const livePositional = sourceRegistry.getLivePositionalSources().map(s => s.name);
     const liveContextual = sourceRegistry.getLiveContextualSources().map(s => s.name);
     const testSources = sourceRegistry.getTestSources().map(s => s.name);
@@ -651,7 +627,7 @@ const server = createServer(async (req, res) => {
     json(res, 200, {
       uptime: process.uptime(),
       memory: process.memoryUsage(),
-      tracksCount: trackManager.snapshot(simulationEnabled).length,
+      tracksCount: trackManager.snapshot(false).length,
       wsClients: hub.getClientCount(),
       sources: audit.sources,
       summary: {
@@ -661,13 +637,13 @@ const server = createServer(async (req, res) => {
         testSources,
         offlineSources
       },
-      simulationEnabled
+      realDataOnly: true
     });
     return;
   }
 
   if (req.method === "GET" && (url.pathname === "/api/tracks" || url.pathname === "/api/targets")) {
-    const list = trackManager.snapshot(simulationEnabled);
+    const list = trackManager.snapshot(false);
     if (url.pathname === "/api/targets") {
       json(res, 200, { count: list.length, tracks: list });
     } else {
@@ -719,13 +695,13 @@ const server = createServer(async (req, res) => {
   }
 
   if (req.method === "GET" && url.pathname === "/api/telemetry") {
-    const report = productionObservability.getProductionMetrics(trackManager.snapshot(simulationEnabled).length);
+    const report = productionObservability.getProductionMetrics(trackManager.snapshot(false).length);
     json(res, 200, report);
     return;
   }
 
   if (req.method === "GET" && url.pathname === "/api/ai/anomalies") {
-    const list = trackManager.snapshot(simulationEnabled);
+    const list = trackManager.snapshot(false);
     const anomalies = list.map(t => backendAiEngine.scoreKinematicsAnomaly(t)).filter(a => a.isKinematicAnomaly);
     json(res, 200, { count: anomalies.length, anomalies });
     return;
@@ -1038,55 +1014,6 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  if (req.method === "POST" && url.pathname === "/api/simulator/toggle") {
-    if (!simulationAllowed) {
-      notFound(res);
-      return;
-    }
-    simulationEnabled = !simulationEnabled;
-    json(res, 200, { simulationEnabled });
-    return;
-  }
-
-  if (req.method === "POST" && url.pathname === "/api/drill/inject") {
-    if (!simulationAllowed) {
-      notFound(res);
-      return;
-    }
-    try {
-      const raw = await readBody(req);
-      const payload = JSON.parse(raw) as {
-        type: "uav" | "munition" | "aircraft";
-        lat: number;
-        lon: number;
-        heading: number;
-        speed: number;
-        label?: string;
-      };
-
-      const obs: Observation = {
-        id: `drill-${Date.now().toString(36)}`,
-        type: payload.type || "uav",
-        lat: payload.lat,
-        lon: payload.lon,
-        heading: payload.heading,
-        speed: (payload.speed || 180) / 3.6, // km/h to m/s
-        timestamp: Date.now(),
-        source: "simulation",
-        confidence: 0.99,
-        isSynthetic: true,
-        meta: { drill: true, isSynthetic: true, label: payload.label || "Навчальна ціль" }
-      };
-
-      trackManager.ingest(obs);
-      hub.broadcastTracks(trackManager.toPackets(simulationEnabled));
-      json(res, 200, { ok: true, injected: obs.id });
-    } catch {
-      json(res, 400, { error: "Invalid drill payload" });
-    }
-    return;
-  }
-
   if (req.method === "GET" && url.pathname === "/api/targets") {
     json(res, 200, {
       count: trackManager.snapshot().length,
@@ -1108,8 +1035,8 @@ const server = createServer(async (req, res) => {
 
 const wss = new WebSocketServer({ noServer: true });
 const hub = new RadarHub(wss);
-hub.setInitialSnapshotProvider(() => trackManager.toPackets(simulationEnabled));
-hub.setBinarySnapshotProvider(() => trackManager.getBinarySnapshot(simulationEnabled));
+hub.setInitialSnapshotProvider(() => trackManager.toPackets(false));
+hub.setBinarySnapshotProvider(() => trackManager.getBinarySnapshot(false));
 hub.setInitialUncertaintyProvider(() => uncertaintyEventManager.getActiveEvents());
 const botManager = createTelegramBot();
 botManager.setHealthTracker(
@@ -1291,23 +1218,13 @@ setInterval(async () => {
     }
   }
 
-  // Synthetic simulator runs strictly in test mode / simulationEnabled
-  if (simulationEnabled) {
-    const simObservations = simulator.generateStep(now);
-    for (const obs of simObservations) {
-      obs.meta = { ...obs.meta, isSynthetic: true };
-      trackManager.ingest(obs);
-    }
-    healthTracker.recordSuccess("simulator", 1, simObservations.length);
-  }
-
   trackManager.tick(now);
   trackManager.prune(now);
   uncertaintyEventManager.pruneExpired(now);
 
   // Stage 5: Backend AI Engine - Auxiliary aerodynamic & kinematic envelope validation
   if (currentCycle % 3 === 0) {
-    for (const track of trackManager.snapshot(simulationEnabled)) {
+    for (const track of trackManager.snapshot(false)) {
       const anomaly = backendAiEngine.scoreKinematicsAnomaly(track);
       if (anomaly.isKinematicAnomaly) {
         track.confidence = Math.min(track.confidence, anomaly.confidence);
@@ -1315,10 +1232,10 @@ setInterval(async () => {
     }
   }
 
-  const delta = trackManager.getDeltaPacket(simulationEnabled, currentCycle);
+  const delta = trackManager.getDeltaPacket(false, currentCycle);
   const livePositional = sourceRegistry.hasLivePositionalSource();
   const availablePositional = sourceRegistry.hasAvailablePositionalSource();
-  const tracksToBroadcast = (delta.tracks.length > 0 || livePositional || availablePositional || simulationEnabled) ? delta.tracks : [];
+  const tracksToBroadcast = (delta.tracks.length > 0 || livePositional || availablePositional) ? delta.tracks : [];
   hub.broadcastTracks(tracksToBroadcast, delta.seq, delta.binaryBuffer, delta.removedIds);
   productionObservability.recordTracksSerialized(delta.tracks.length);
   productionObservability.recordTracksSent(tracksToBroadcast.length);
@@ -1329,7 +1246,7 @@ setInterval(async () => {
   }
 
   // Broadcast personal threat alerts to bot subscribers
-  void botManager.broadcastThreatAlerts(trackManager.snapshot(simulationEnabled));
+  void botManager.broadcastThreatAlerts(trackManager.snapshot(false));
 
   const cycleDuration = performance.now() - cycleStart;
   productionObservability.recordFusionCycle(cycleDuration, true);
@@ -1351,7 +1268,7 @@ const main = async (): Promise<void> => {
 
   // 3. Start distributed watchdog service
   watchdogService.start(() => ({
-    activeTracks: trackManager.snapshot(simulationEnabled).length,
+    activeTracks: trackManager.snapshot(false).length,
     sequenceId: trackManager.getSequence()
   }));
 
@@ -1359,7 +1276,7 @@ const main = async (): Promise<void> => {
   setInterval(() => {
     void checkpointService.saveCheckpoint(
       trackManager.getSequence(),
-      trackManager.snapshot(simulationEnabled)
+      trackManager.snapshot(false)
     );
   }, 5_000).unref();
 
@@ -1384,7 +1301,7 @@ const handleGracefulShutdown = async (signal: string) => {
   try {
     await checkpointService.saveCheckpoint(
       trackManager.getSequence(),
-      trackManager.snapshot(simulationEnabled)
+      trackManager.snapshot(false)
     );
     console.log("💾 Final checkpoint successfully saved to Neon Postgres.");
   } catch (err) {
