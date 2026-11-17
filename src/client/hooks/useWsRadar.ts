@@ -400,6 +400,8 @@ export const useWsRadar = (
     }
 
     void connect();
+    void pollFallback();
+    pollTimerRef.current = window.setInterval(pollFallback, 10_000);
 
     // Periodic telemetry reporting to server
     const telemetryInterval = setInterval(() => {
