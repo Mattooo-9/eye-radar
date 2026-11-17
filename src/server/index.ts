@@ -70,8 +70,9 @@ const simulator = new AirspaceSimulator();
 simulator.setAlertsSource(alertsSource);
 const healthTracker = new SourceHealthTracker();
 sourceRegistry.setHealthTracker(healthTracker);
-// Live Airspace Situational Awareness (Alerts-driven + Tactical baseline)
-let simulationEnabled = process.env.SIMULATION_ENABLED !== "false";
+// Simulation is an opt-in local-test facility. It is never permitted in production.
+const simulationAllowed = env.nodeEnv !== "production" && process.env.SIMULATION_ENABLED === "true";
+let simulationEnabled = simulationAllowed;
 
 sourceRegistry.register(
   "airplanes.live",
@@ -1038,12 +1039,20 @@ const server = createServer(async (req, res) => {
   }
 
   if (req.method === "POST" && url.pathname === "/api/simulator/toggle") {
+    if (!simulationAllowed) {
+      notFound(res);
+      return;
+    }
     simulationEnabled = !simulationEnabled;
     json(res, 200, { simulationEnabled });
     return;
   }
 
   if (req.method === "POST" && url.pathname === "/api/drill/inject") {
+    if (!simulationAllowed) {
+      notFound(res);
+      return;
+    }
     try {
       const raw = await readBody(req);
       const payload = JSON.parse(raw) as {
@@ -1063,13 +1072,14 @@ const server = createServer(async (req, res) => {
         heading: payload.heading,
         speed: (payload.speed || 180) / 3.6, // km/h to m/s
         timestamp: Date.now(),
-        source: "manual",
+        source: "simulation",
         confidence: 0.99,
-        meta: { drill: true, label: payload.label || "Навчальна ціль" }
+        isSynthetic: true,
+        meta: { drill: true, isSynthetic: true, label: payload.label || "Навчальна ціль" }
       };
 
       trackManager.ingest(obs);
-      hub.broadcastTracks(trackManager.toPackets());
+      hub.broadcastTracks(trackManager.toPackets(simulationEnabled));
       json(res, 200, { ok: true, injected: obs.id });
     } catch {
       json(res, 400, { error: "Invalid drill payload" });
