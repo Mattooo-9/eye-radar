@@ -36,6 +36,7 @@ export const isCivilAviation = (packet: TrackPacket): boolean => {
   // Explicit military, government, reconnaissance or tanker indicators are NEVER civil aviation
   if (
     model.includes("MIL_") ||
+    model.includes("MILITARY") ||
     model.includes("RECON") ||
     model.includes("TANKER") ||
     model.includes("AWACS") ||
@@ -45,6 +46,13 @@ export const isCivilAviation = (packet: TrackPacket): boolean => {
     model.includes("GLOBEMASTER") ||
     model.includes("POSEIDON") ||
     model.includes("HERCULES") ||
+    model.includes("SPARTAN") ||
+    model.includes("C-27") ||
+    model.includes("C27") ||
+    model.includes("C-130") ||
+    model.includes("C130") ||
+    model.includes("A400") ||
+    model.includes("ATLAS") ||
     model.includes("K35R") ||
     model.includes("KC-") ||
     model.includes("E-3") ||
@@ -52,13 +60,35 @@ export const isCivilAviation = (packet: TrackPacket): boolean => {
     model.includes("C-17") ||
     model.includes("RQ-") ||
     model.includes("MQ-") ||
+    model.includes("F-16") ||
+    model.includes("F-15") ||
+    model.includes("F-35") ||
+    model.includes("TYPHOON") ||
+    model.includes("RAFALE") ||
+    model.includes("GRIPEN") ||
+    model.includes("MIRAGE") ||
+    model.includes("SU-") ||
+    model.includes("MIG-") ||
+    model.includes("TU-") ||
+    model.includes("AN-") ||
+    model.includes("IL-") ||
     callsign.includes("FORTE") ||
     callsign.includes("HOMER") ||
     callsign.includes("JAKE") ||
     callsign.includes("LAGR") ||
     callsign.includes("RED") ||
     callsign.includes("VIPER") ||
-    callsign.includes("NATO")
+    callsign.includes("NATO") ||
+    callsign.includes("RCH") ||
+    callsign.includes("REACH") ||
+    callsign.includes("ROF") ||
+    callsign.includes("BAF") ||
+    callsign.includes("GAF") ||
+    callsign.includes("IAM") ||
+    callsign.includes("RFR") ||
+    callsign.includes("ASCOT") ||
+    callsign.includes("PLF") ||
+    callsign.includes("USAF")
   ) {
     return false;
   }

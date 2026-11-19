@@ -72,14 +72,39 @@ export class AirplanesLiveSource {
     );
   }
 
+  private isMilitaryAircraft(callsign?: string, desc?: string, model?: string): boolean {
+    const text = `${callsign ?? ""} ${desc ?? ""} ${model ?? ""}`.toUpperCase();
+    return (
+      text.includes("C-17") || text.includes("GLOBEMASTER") ||
+      text.includes("C-27") || text.includes("SPARTAN") ||
+      text.includes("C-130") || text.includes("HERCULES") ||
+      text.includes("A400") || text.includes("ATLAS") ||
+      text.includes("KC-") || text.includes("K35R") || text.includes("STRATOTANKER") ||
+      text.includes("P-8") || text.includes("POSEIDON") ||
+      text.includes("E-3") || text.includes("AWACS") || text.includes("SENTRY") ||
+      text.includes("RQ-") || text.includes("MQ-") || text.includes("GLOBAL HAWK") || text.includes("REAPER") ||
+      text.includes("F-16") || text.includes("F-15") || text.includes("F-35") || text.includes("FIGHTER") ||
+      text.includes("TYPHOON") || text.includes("RAFALE") || text.includes("GRIPEN") || text.includes("MIRAGE") ||
+      text.includes("SU-") || text.includes("MIG-") || text.includes("TU-") ||
+      text.includes("AN-") || text.includes("IL-") ||
+      text.includes("FORTE") || text.includes("LAGR") || text.includes("HOMER") || text.includes("JAKE") ||
+      text.includes("VIPER") || text.includes("RED") || text.includes("NATO") ||
+      text.includes("RCH") || text.includes("REACH") || text.includes("ROF") || text.includes("BAF") ||
+      text.includes("GAF") || text.includes("IAM") || text.includes("RFR") || text.includes("ASCOT") ||
+      text.includes("PLF") || text.includes("HAF") || text.includes("TUAF") || text.includes("USAF") ||
+      text.includes("MIL_") || text.includes("MILITARY") || text.includes("NAVY") || text.includes("ARMY")
+    );
+  }
+
   private isCivilAirliner(callsign?: string, desc?: string, model?: string): boolean {
+    if (this.isMilitaryAircraft(callsign, desc, model)) return false;
     const text = `${callsign ?? ""} ${desc ?? ""} ${model ?? ""}`.toUpperCase();
     const civilPrefixes = [
       "RYR", "WZZ", "WUK", "LOT", "DLH", "KLM", "AFR", "BAW", "THY", "AUA",
       "SXS", "PGT", "EZY", "EZS", "SAS", "FIN", "BTI", "ENT", "TOM", "FDB",
       "ETH", "ROT", "CAI", "ISR", "PIA", "FDX", "UPS", "BOX", "CGF", "MNB",
       "UTN", "LBT", "NMA", "GJT", "ASL", "EXS", "CCA", "SIA", "RYS", "NSZ",
-      "BOEING", "AIRBUS", "EMBRAER", "CRJ", "ATR", "B73", "B74", "B75", "B76", "B77", "B78",
+      "B73", "B74", "B75", "B76", "B77", "B78",
       "A31", "A32", "A33", "A35", "A38", "A20N", "A21N", "B38M", "B39M", "CIVIL"
     ];
     return civilPrefixes.some((p) => text.includes(p));
@@ -120,17 +145,19 @@ export class AirplanesLiveSource {
                 a.gs !== undefined &&
                 a.gs > 25
               ) {
-                // Bound to Eastern European / Ukrainian defense theater
-                if (a.lat < 43 || a.lat > 54 || a.lon < 22 || a.lon > 42) {
+                // Bound to Eastern European / Ukrainian defense theater & allied border airlift corridors
+                if (a.lat < 42.5 || a.lat > 55.5 || a.lon < 20.0 || a.lon > 43.0) {
                   continue;
                 }
 
                 const flightCode = (a.flight ?? "").trim().replace(/\s+/g, "");
                 const callsign = flightCode || a.t || a.hex;
-                const isCivil = this.isCivilAirliner(callsign, a.desc, a.t);
+                const isMil = this.isMilitaryAircraft(callsign, a.desc, a.t);
+                const isCivil = !isMil && this.isCivilAirliner(callsign, a.desc, a.t);
 
                 // Operational Sector Gating: civil airliners beyond 120 km from border are excluded
-                if (isCivil) {
+                // Military, transport, recon, helicopter, or defense flights are NEVER excluded
+                if (isCivil && !isMil) {
                   const distKm = getDistanceToUkraineBorderKm(a.lat, a.lon);
                   if (distKm > 120) {
                     continue;
@@ -138,7 +165,8 @@ export class AirplanesLiveSource {
                 }
 
                 const id = flightCode ? `adsb-${flightCode}` : `adsb-${a.hex}`;
-                const model = a.desc ?? a.t ?? (isCivil ? "Civilian Aircraft" : "MIL_AIRCRAFT");
+                const rawModel = a.desc ?? a.t;
+                const model = rawModel ?? (isMil ? "MIL_AIRCRAFT" : "Civilian Aircraft");
                 const speedMs = a.gs * 0.514444; // knots to m/s
                 const altM = a.alt_baro ? Math.round(a.alt_baro * 0.3048) : undefined;
                 const type: TrackType = this.isHelicopter(a.desc, a.t) ? "helicopter" : "aircraft";

@@ -78,31 +78,25 @@ export class OpenskyAdsbLolSource {
   private isMilitaryAircraft(callsign?: string, desc?: string, model?: string): boolean {
     const text = `${callsign ?? ""} ${desc ?? ""} ${model ?? ""}`.toUpperCase();
     return (
-      text.includes("FORTE") ||
-      text.includes("HOMER") ||
-      text.includes("JAKE") ||
-      text.includes("LAGR") ||
-      text.includes("RED") ||
-      text.includes("VIPER") ||
-      text.includes("NATO") ||
-      text.includes("AWACS") ||
-      text.includes("TANKER") ||
-      text.includes("FIGHTER") ||
-      text.includes("BOMBER") ||
-      text.includes("STRATOTANKER") ||
-      text.includes("GLOBEMASTER") ||
-      text.includes("POSEIDON") ||
-      text.includes("HERCULES") ||
-      text.includes("K35R") ||
-      text.includes("KC-") ||
-      text.includes("E-3") ||
-      text.includes("P-8") ||
-      text.includes("C-17") ||
-      text.includes("RQ-") ||
-      text.includes("MQ-") ||
-      text.includes("MIG-") ||
-      text.includes("SU-") ||
-      text.includes("TU-")
+      text.includes("C-17") || text.includes("GLOBEMASTER") ||
+      text.includes("C-27") || text.includes("SPARTAN") ||
+      text.includes("C-130") || text.includes("HERCULES") ||
+      text.includes("A400") || text.includes("ATLAS") ||
+      text.includes("KC-") || text.includes("K35R") || text.includes("STRATOTANKER") ||
+      text.includes("P-8") || text.includes("POSEIDON") ||
+      text.includes("E-3") || text.includes("AWACS") || text.includes("SENTRY") ||
+      text.includes("RQ-") || text.includes("MQ-") || text.includes("GLOBAL HAWK") || text.includes("REAPER") ||
+      text.includes("F-16") || text.includes("F-15") || text.includes("F-35") || text.includes("FIGHTER") ||
+      text.includes("TYPHOON") || text.includes("RAFALE") || text.includes("GRIPEN") || text.includes("MIRAGE") ||
+      text.includes("SU-") || text.includes("MIG-") || text.includes("TU-") ||
+      text.includes("AN-") || text.includes("IL-") ||
+      text.includes("FORTE") || text.includes("LAGR") || text.includes("HOMER") || text.includes("JAKE") ||
+      text.includes("VIPER") || text.includes("RED") || text.includes("NATO") ||
+      text.includes("RCH") || text.includes("REACH") || text.includes("ROF") || text.includes("BAF") ||
+      text.includes("GAF") || text.includes("IAM") || text.includes("RFR") || text.includes("ASCOT") ||
+      text.includes("PLF") || text.includes("HAF") || text.includes("TUAF") || text.includes("USAF") ||
+      text.includes("MIL_") || text.includes("MILITARY") || text.includes("NAVY") || text.includes("ARMY") ||
+      text.includes("TANKER") || text.includes("BOMBER")
     );
   }
 
@@ -115,9 +109,10 @@ export class OpenskyAdsbLolSource {
 
     const obsMap = new Map<string, UnifiedObservation>();
 
-    // 1. Fetch from adsb.lol theater coverage (500nmi around Ukraine) & regional military transponders
+    // 1. Fetch from adsb.lol theater coverage (regional points around Ukraine) & military transponders
     const adsbEndpoints = [
-      "https://api.adsb.lol/v2/point/49.0/31.0/500",
+      "https://api.adsb.lol/v2/point/49.0/31.0/250",
+      "https://api.adsb.lol/v2/point/48.5/24.5/250",
       "https://opendata.adsb.fi/api/v2/mil"
     ];
 
@@ -141,8 +136,8 @@ export class OpenskyAdsbLolSource {
                 typeof a.gs === "number" &&
                 a.gs > 20
               ) {
-                // Geo-boundary filter: Eastern European / Black Sea theater
-                if (a.lat < 43 || a.lat > 54 || a.lon < 22 || a.lon > 42) {
+                // Geo-boundary filter: Eastern European / Black Sea theater & allied border airlift corridors
+                if (a.lat < 42.5 || a.lat > 55.5 || a.lon < 20.0 || a.lon > 43.0) {
                   continue;
                 }
 
@@ -153,11 +148,9 @@ export class OpenskyAdsbLolSource {
                 const isCivil = !isMil;
 
                 // Operational Sector Gating:
-                // Distant foreign civil airliners (> 120 km from Ukraine's border, e.g. Serbia, Bulgaria, Central Poland)
-                // must not clutter the tactical view. The 120 km border buffer (Rzeszow, Lublin, Suceava, Danube, Black Sea)
-                // and everything inside Ukraine is strictly preserved.
-                // Military, recon, helicopter, or unknown contacts are NEVER dropped.
-                if (isCivil) {
+                // Distant foreign civil airliners (> 120 km from Ukraine's border) are excluded from cluttering tactical map.
+                // Military, recon, transport, helicopter, or unknown contacts are NEVER dropped.
+                if (isCivil && !isMil) {
                   const distKm = getDistanceToUkraineBorderKm(a.lat, a.lon);
                   if (distKm > 120) {
                     continue;

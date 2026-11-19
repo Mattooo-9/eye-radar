@@ -223,24 +223,121 @@ export function computeLaunchIntelligence(
   }
 
   if (type === "aircraft") {
-    const isCivil = (id && id.startsWith("adsb-")) || (!lowerModel.includes("су-") && !lowerModel.includes("міг-"));
-    if (isCivil) {
-      const isPoland = currentLat > 49.8;
+    const isRussianCombat =
+      lowerModel.includes("су-") ||
+      lowerModel.includes("міг-") ||
+      lowerModel.includes("su-") ||
+      lowerModel.includes("mig-") ||
+      lowerModel.includes("tu-") ||
+      lowerModel.includes("ту-");
+
+    if (isRussianCombat) {
       return {
-        launchOrigin: isPoland ? "Аеропорти Польщі (Варшава WAW, Краків KRK, Жешув RZE)" : "Аеропорти Румунії (Бухарест OTP, Клуж CLJ) або Молдови (Кишинів RMO)",
-        launchOriginDetailed: "Міжнародний регулярний цивільний комерційний рейс у європейському безпечному авіаційному просторі.",
-        launchAirbase: isPoland ? "Міжнародний аеропорт імені Фридерика Шопена (Варшава) або Краків-Баліце" : "Міжнародний аеропорт імені Анрі Коанди (Бухарест) / Кишинів",
-        launchUnit: "Цивільні авіаперевізники під постійним радіолокаційним контролем диспетчерів Eurocontrol",
-        launchTrajectoryVector: `Курс ${Math.round(normHeading)}°: транзитний міжнародний ешелон FL 300 - FL 390 уздовж узгоджених авіаційних трас ICAO.`
+        launchOrigin: "Авіабази базування тактичної авіації ПКС РФ («Балтимор», «Халіно», «Міллерово», «Саки»)",
+        launchOriginDetailed: "Військовий аеродром постійного базування тактичної авіації ЗС РФ.",
+        launchAirbase: "Аеродром «Балтимор» (Воронеж, 47-й гвардійський бомбардувальний авіаполк) / «Кримськ» / «Саки»",
+        launchUnit: "4-та та 6-та армії ВПС і ППО Повітряно-космічних сил РФ",
+        launchTrajectoryVector: `Курс ${Math.round(normHeading)}°: висотний транзит до рубежу виконання бойового завдання або патрулювання повітряного простору.`
       };
     }
 
+    const lowerId = (id || "").toLowerCase();
+    const isSpartan = lowerModel.includes("spartan") || lowerModel.includes("c-27") || lowerModel.includes("c27") || lowerId.includes("rof");
+    if (isSpartan) {
+      return {
+        launchOrigin: "Авіабаза Отопень (Baza 90 Transport Aerian, Румунія)",
+        launchOriginDetailed: "90-та база військово-транспортної авіації ВПС Румунії (Бухарест/Отопень), оснащена літаками C-27J Spartan для тактичних перевезень.",
+        launchAirbase: "90-та авіабаза ВПС Румунії (Аеродром Отопень, Бухарест)",
+        launchUnit: "Ескадрилья 902 військово-транспортної авіації ВПС Румунії",
+        launchTrajectoryVector: `Курс ${Math.round(normHeading)}°: тактичний транспортний політ у східноєвропейському операційному районі вздовж кордону НАТО.`
+      };
+    }
+
+    const isGlobemaster = lowerModel.includes("globemaster") || lowerModel.includes("c-17") || lowerId.includes("rch");
+    if (isGlobemaster) {
+      return {
+        launchOrigin: "Авіабаза Папа (Pápa Air Base, Угорщина) / Рамштайн (Ramstein AB, Німеччина)",
+        launchOriginDetailed: "Стратегічне важке перевезення за програмою NATO Strategic Airlift Capability (SAC) або Air Mobility Command ПС США.",
+        launchAirbase: "Авіабаза Папа (Угорщина, Heavy Airlift Wing) або Авіабаза Рамштайн (Німеччина)",
+        launchUnit: "Heavy Airlift Wing (HAW) НАТО / Air Mobility Command ВПС США",
+        launchTrajectoryVector: `Курс ${Math.round(normHeading)}°: стратегічний ешелон логістичного забезпечення східного флангу Альянсу.`
+      };
+    }
+
+    const isPoseidon = lowerModel.includes("poseidon") || lowerModel.includes("p-8");
+    if (isPoseidon) {
+      return {
+        launchOrigin: "Військово-морська авіабаза Сігонелла (NAS Sigonella, Сицилія, Італія)",
+        launchOriginDetailed: "Морський патрульний протичовновий та розвідувальний літак ВМС США / НАТО над Чорним морем.",
+        launchAirbase: "NAS Sigonella (Сицилія) / авіабаза Міхаїл Когелнічану (Румунія)",
+        launchUnit: "Патрульна ескадрилья (VP) флоту США / 5-й флот НАТО",
+        launchTrajectoryVector: `Курс ${Math.round(normHeading)}°: бойове патрулювання та моніторинг надводної/підводної обстановки в акваторії Чорного моря.`
+      };
+    }
+
+    const isGlobalHawk = lowerModel.includes("global hawk") || lowerModel.includes("rq-4") || lowerId.includes("forte");
+    if (isGlobalHawk) {
+      return {
+        launchOrigin: "Військово-морська авіабаза Сігонелла (NAS Sigonella, Італія)",
+        launchOriginDetailed: "Стратегічний розвідувальний висотний безпілотник RQ-4B Global Hawk ВПС США.",
+        launchAirbase: "NAS Sigonella (Сицилія, Італія)",
+        launchUnit: "9-те розвідувальне крило (9th Reconnaissance Wing) ВПС США",
+        launchTrajectoryVector: `Курс ${Math.round(normHeading)}°: висотне стратегічне патрулювання FL 500 – FL 550 над Чорним морем та східним флангом НАТО.`
+      };
+    }
+
+    const isHercules = lowerModel.includes("hercules") || lowerModel.includes("c-130");
+    if (isHercules) {
+      return {
+        launchOrigin: "Авіабаза Повідз (Powidz, 33-тя база ПС Польщі) / Констанца (Mihail Kogălniceanu)",
+        launchOriginDetailed: "Тактичний військово-транспортний літак сил підтримки НАТО.",
+        launchAirbase: "33-тя база транспортної авіації (Повідз, Польща) або 57-ма авіабаза (Констанца, Румунія)",
+        launchUnit: "Військово-транспортні сили союзників НАТО",
+        launchTrajectoryVector: `Курс ${Math.round(normHeading)}°: рух за військово-транспортним маршрутом оперативного забезпечення.`
+      };
+    }
+
+    const isTanker = lowerModel.includes("stratotanker") || lowerModel.includes("kc-") || lowerModel.includes("tanker") || lowerId.includes("lagr") || lowerId.includes("homer");
+    if (isTanker) {
+      return {
+        launchOrigin: "Авіабаза Мілденхолл (RAF Mildenhall, Велика Британія) / Шпангдалем (Spangdahlem AB, Німеччина)",
+        launchOriginDetailed: "Літак-паливозаправник сил НАТО для забезпечення тривалого чергування тактичної авіації.",
+        launchAirbase: "RAF Mildenhall (100th Air Refueling Wing) або Авіабаза Повідз (Польща)",
+        launchUnit: "100-те крило повітряного дозаправлення ВПС США / флот MRTT НАТО",
+        launchTrajectoryVector: `Курс ${Math.round(normHeading)}°: виконання завдань дозаправлення у повітрі в призначеній зоні очікування.`
+      };
+    }
+
+    const isAwacs = lowerModel.includes("awacs") || lowerModel.includes("e-3") || lowerModel.includes("sentry") || lowerId.includes("nato");
+    if (isAwacs) {
+      return {
+        launchOrigin: "Авіабаза Гайленкірхен (NATO Air Base Geilenkirchen, Німеччина)",
+        launchOriginDetailed: "Літак далекого радіолокаційного виявлення та наведення (AWACS) НАТО.",
+        launchAirbase: "NATO Air Base Geilenkirchen (Німеччина) / Отепені (Румунія)",
+        launchUnit: "Компонент E-3A командування ДРЛВ НАТО (NAEW&CF)",
+        launchTrajectoryVector: `Курс ${Math.round(normHeading)}°: кругове радіолокаційне сканування повітряного простору на глибину до 450 км.`
+      };
+    }
+
+    const isFighter = lowerModel.includes("f-16") || lowerModel.includes("f-15") || lowerModel.includes("f-35") || lowerModel.includes("typhoon") || lowerModel.includes("rafale") || lowerModel.includes("gripen") || lowerModel.includes("fighter");
+    if (isFighter) {
+      const isRomania = currentLat < 48.0;
+      return {
+        launchOrigin: isRomania ? "86-та авіабаза «Фетешті» (Baza 86 Aeriană, Румунія)" : "31-ша база тактичної авіації «Кшесіни» / 32-га «Ласк» (Польща)",
+        launchOriginDetailed: "Багатоцільовий тактичний винищувач бойового чергування (Air Policing NATO).",
+        launchAirbase: isRomania ? "Авіабаза Фетешті (Borcea, Румунія)" : "Авіабаза Ласк (Польща)",
+        launchUnit: "Сили швидкого реагування НАТО з патрулювання повітряного простору (Air Policing)",
+        launchTrajectoryVector: `Курс ${Math.round(normHeading)}°: патрулювання рубежів повітряного простору у стані підвищеної бойової готовності.`
+      };
+    }
+
+    const isPoland = currentLat > 49.8;
     return {
-      launchOrigin: "Авіабази базування винищувачів ПКС РФ («Балтимор», «Халіно», «Міллерово», «Саки»)",
-      launchOriginDetailed: "Військовий аеродром постійного базування тактичної авіації ЗС РФ.",
-      launchAirbase: "Аеродром «Балтимор» (Воронеж, 47-й гвардійський бомбардувальний авіаполк) / «Кримськ» / «Саки»",
-      launchUnit: "4-та та 6-та армії ВПС і ППО Повітряно-космічних сил РФ",
-      launchTrajectoryVector: `Курс ${Math.round(normHeading)}°: висотний транзит до рубежу виконання бойового завдання або патрулювання повітряного простору.`
+      launchOrigin: isPoland ? "Аеропорти Польщі (Варшава WAW, Краків KRK, Жешув RZE)" : "Аеропорти Румунії (Бухарест OTP, Клуж CLJ) або Молдови (Кишинів RMO)",
+      launchOriginDetailed: "Міжнародний регулярний цивільний комерційний рейс у європейському безпечному авіаційному просторі.",
+      launchAirbase: isPoland ? "Міжнародний аеропорт імені Фридерика Шопена (Варшава) або Краків-Баліце" : "Міжнародний аеропорт імені Анрі Коанди (Бухарест) / Кишинів",
+      launchUnit: "Цивільні авіаперевізники під постійним радіолокаційним контролем диспетчерів Eurocontrol",
+      launchTrajectoryVector: `Курс ${Math.round(normHeading)}°: транзитний міжнародний ешелон FL 300 - FL 390 уздовж узгоджених авіаційних трас ICAO.`
     };
   }
 

@@ -78,6 +78,20 @@ describe("Military Launch Intelligence & Origin Facts (Uncensored / OSINT / PPO)
     expect(intel.launchUnit).toContain("Eurocontrol");
   });
 
+  it("provides authentic airbase intelligence for real military transport Spartan (C-27J)", () => {
+    const intel = computeLaunchIntelligence("aircraft", "ALENIA C-27J Spartan", 44.8, 25.8, 340, "adsb-ROF2705");
+    expect(intel.launchOrigin).toContain("Отопень");
+    expect(intel.launchAirbase).toContain("90-та авіабаза");
+    expect(intel.launchUnit).toContain("Ескадрилья 902");
+  });
+
+  it("provides authentic airbase intelligence for real strategic airlift Globemaster (C-17)", () => {
+    const intel = computeLaunchIntelligence("aircraft", "Boeing C-17A Globemaster III", 47.1, 20.8, 85, "adsb-RCH2002");
+    expect(intel.launchOrigin).toContain("Папа");
+    expect(intel.launchAirbase).toContain("Heavy Airlift Wing");
+    expect(intel.launchUnit).toContain("Heavy Airlift Wing");
+  });
+
   it("integrates launch intelligence seamlessly into getTargetSpecification", () => {
     const spec = getTargetSpecification(
       "uav",

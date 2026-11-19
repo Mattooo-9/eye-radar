@@ -1199,14 +1199,32 @@ const drawCivilAviationMuted = (
   ctx.translate(x, y);
   ctx.rotate((screenHeadingDeg * Math.PI) / 180);
   ctx.fillStyle = "#94a3b8";
-  ctx.globalAlpha = 0.32;
+  ctx.strokeStyle = "#cbd5e1";
+  ctx.lineWidth = 1.0;
+  ctx.globalAlpha = 0.85;
+  // Crisp vector aircraft silhouette (swept wing, fuselage, stabilizers)
   ctx.beginPath();
-  ctx.moveTo(0, -5);
-  ctx.lineTo(3.5, 4);
-  ctx.lineTo(0, 2);
-  ctx.lineTo(-3.5, 4);
+  ctx.moveTo(0, -9);
+  ctx.lineTo(2, -6);
+  ctx.lineTo(2, -2);
+  ctx.lineTo(10, 2);
+  ctx.lineTo(10, 4);
+  ctx.lineTo(2, 2);
+  ctx.lineTo(2, 7);
+  ctx.lineTo(5, 9);
+  ctx.lineTo(5, 10);
+  ctx.lineTo(0, 9);
+  ctx.lineTo(-5, 10);
+  ctx.lineTo(-5, 9);
+  ctx.lineTo(-2, 7);
+  ctx.lineTo(-2, 2);
+  ctx.lineTo(-10, 4);
+  ctx.lineTo(-10, 2);
+  ctx.lineTo(-2, -2);
+  ctx.lineTo(-2, -6);
   ctx.closePath();
   ctx.fill();
+  ctx.stroke();
   ctx.restore();
 };
 
@@ -3020,9 +3038,10 @@ export const MapView = ({
         }
 
         // Pass 2.5: Background Civil Aviation (Layer 2)
-        // Muted #94a3b8, opacity 0.28-0.35, clustered into compact badges at overview zoom < 7.5
+        // High-contrast vector silhouettes with speed & altitude tags, cluster only at extreme zoom-out
         if (showAviationRef.current !== false && civilItems.length > 0) {
-          if (zoom < 7.5) {
+          const shouldClusterCivil = zoom < 4.5 && civilItems.length > 60;
+          if (shouldClusterCivil) {
             const gridSize = 50;
             const civilGrid: Record<string, RenderItem[]> = {};
             const civilStandalone: RenderItem[] = [];
@@ -3081,7 +3100,7 @@ export const MapView = ({
                   cItem.speedKmh,
                   cItem.altMsl,
                   "#94a3b8",
-                  false,
+                  true,
                   false,
                   placedPillBoxes
                 );
@@ -3090,10 +3109,10 @@ export const MapView = ({
               }
             }
           } else {
-            // High zoom (>= 7.5): muted 12px civil silhouettes
+            // Standard Overview & High zoom: sharp vector aircraft with callout pills
             for (const cItem of civilItems) {
               ctx.save();
-              ctx.globalAlpha = cItem.isSelected ? 1.0 : 0.32;
+              ctx.globalAlpha = cItem.isSelected ? 1.0 : 0.85;
               ctx.translate(cItem.targetX, cItem.targetY);
               ctx.rotate((cItem.screenHeadingDeg * Math.PI) / 180);
               renderTacticalGlyph(ctx, {
@@ -3110,7 +3129,8 @@ export const MapView = ({
               });
               ctx.restore();
 
-              if (cItem.isSelected) {
+              // Display callout pill for selected or when zoom >= 5.5
+              if (cItem.isSelected || zoom >= 5.5) {
                 drawMilitaryCalloutPill(
                   ctx,
                   cItem.targetX,
@@ -3119,7 +3139,7 @@ export const MapView = ({
                   cItem.speedKmh,
                   cItem.altMsl,
                   "#94a3b8",
-                  false,
+                  cItem.isSelected,
                   false,
                   placedPillBoxes
                 );
