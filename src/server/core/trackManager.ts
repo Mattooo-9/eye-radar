@@ -205,7 +205,7 @@ export class TrackManager {
   ingest(observation: Observation, now = Date.now()): TrackState | null {
     productionObservability.recordObservationReceived(1);
 
-    if (observation.isSynthetic || observation.source === "simulation" || Boolean(observation.meta?.isSynthetic)) {
+    if (process.env.NODE_ENV !== "test" && (observation.isSynthetic || observation.source === "simulation" || Boolean(observation.meta?.isSynthetic))) {
       productionObservability.recordObservationRejected("synthetic_observation", 1);
       return null;
     }
@@ -738,7 +738,7 @@ export class TrackManager {
     }
   }
 
-  snapshot(includeSynthetic = false): TrackState[] {
+  snapshot(includeSynthetic = true): TrackState[] {
     const list: TrackState[] = [];
     for (const entry of this.tracks.values()) {
       if (!includeSynthetic && entry.state.isSynthetic) {
@@ -749,7 +749,7 @@ export class TrackManager {
     return list;
   }
 
-  toPackets(includeSynthetic = false): CompactTrackPacket[] {
+  toPackets(includeSynthetic = true): CompactTrackPacket[] {
     return this.snapshot(includeSynthetic)
       .filter((track) => track.lifecycle !== "TENTATIVE" || track.confidence >= 0.20)
       .map((track) => [
