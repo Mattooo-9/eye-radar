@@ -254,8 +254,8 @@ export const TacticalMenuModal: React.FC<TacticalMenuModalProps> = ({
 
               <div className="tactical-toggle-row">
                 <div>
-                  <div className="toggle-label-main">⚠️ Фільтр: Тільки загрози Україні</div>
-                  <div className="toggle-label-sub">Приховувати транзитні цивільні рейси над країнами ЄС</div>
+                  <div className="toggle-label-main">⚠️ Фільтр: Тільки загрози та військові цілі</div>
+                  <div className="toggle-label-sub">Приховувати транзитні цивільні рейси (показувати виключно БПЛА, ракети, КАБ та військові борти)</div>
                 </div>
                 <button
                   type="button"

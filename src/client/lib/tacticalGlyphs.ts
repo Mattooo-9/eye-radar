@@ -38,7 +38,40 @@ export function renderTacticalGlyph(
     model?.toLowerCase().includes("bomber") ||
     model?.toLowerCase().includes("flanker") ||
     model?.toLowerCase().includes("fulcrum") ||
-    model?.toLowerCase().includes("combat")
+    model?.toLowerCase().includes("combat") ||
+    model?.toLowerCase().includes("typhoon") ||
+    model?.toLowerCase().includes("rafale") ||
+    model?.toLowerCase().includes("gripen") ||
+    model?.toLowerCase().includes("mirage")
+  );
+
+  const isAwacsOrTanker = Boolean(
+    model?.toLowerCase().includes("awacs") ||
+    model?.toLowerCase().includes("e-3") ||
+    model?.toLowerCase().includes("tanker") ||
+    model?.toLowerCase().includes("kc-") ||
+    model?.toLowerCase().includes("k35r") ||
+    model?.toLowerCase().includes("pegasus") ||
+    model?.toLowerCase().includes("stratotanker") ||
+    model?.toLowerCase().includes("p-8") ||
+    model?.toLowerCase().includes("poseidon")
+  );
+
+  const isMilitaryTransport = Boolean(
+    model?.toLowerCase().includes("c-17") ||
+    model?.toLowerCase().includes("globemaster") ||
+    model?.toLowerCase().includes("c-130") ||
+    model?.toLowerCase().includes("c130") ||
+    model?.toLowerCase().includes("hercules") ||
+    model?.toLowerCase().includes("a400") ||
+    model?.toLowerCase().includes("atlas") ||
+    model?.toLowerCase().includes("c-27") ||
+    model?.toLowerCase().includes("c27") ||
+    model?.toLowerCase().includes("spartan") ||
+    model?.toLowerCase().includes("skytruck") ||
+    model?.toLowerCase().includes("m-28") ||
+    model?.toLowerCase().includes("il-76") ||
+    model?.toLowerCase().includes("an-")
   );
 
   // 1. Soft Ambient Halo (threat / status hierarchy)
@@ -92,6 +125,10 @@ export function renderTacticalGlyph(
   } else if (type === "aircraft") {
     if (isCombatJet) {
       drawFastJetGlyph(ctx, size, color);
+    } else if (isAwacsOrTanker) {
+      drawAwacsTankerGlyph(ctx, size, color);
+    } else if (isMilitaryTransport) {
+      drawMilitaryTransportGlyph(ctx, size, color);
     } else {
       drawCivilianAirlinerGlyph(ctx, size, color || "#38bdf8");
     }
@@ -518,6 +555,178 @@ function drawFpvDroneGlyph(
   ctx.beginPath();
   ctx.arc(0, -size * 0.32, 2.0, 0, Math.PI * 2);
   ctx.fill();
+}
+
+/**
+ * Heavy Military Airlift / Transport (C-17 Globemaster, C-130 Hercules, A400M Atlas, C-27J Spartan)
+ * Robust wide cargo fuselage, high-mounted swept wings, 4 engines, and iconic T-tail / high stabilizers.
+ */
+function drawMilitaryTransportGlyph(
+  ctx: CanvasRenderingContext2D,
+  size: number,
+  accentColor: string
+): void {
+  ctx.save();
+  const strokeColor = accentColor || "#38bdf8";
+
+  // Forward Heading Velocity Vector
+  ctx.beginPath();
+  ctx.moveTo(0, -size * 1.25);
+  ctx.lineTo(0, -size * 2.3);
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth = 2.0;
+  ctx.stroke();
+
+  // Directional arrowhead
+  ctx.beginPath();
+  ctx.moveTo(-size * 0.35, -size * 1.95);
+  ctx.lineTo(0, -size * 2.35);
+  ctx.lineTo(size * 0.35, -size * 1.95);
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth = 2.0;
+  ctx.stroke();
+
+  // Wide Cargo Fuselage
+  ctx.fillStyle = "#0c1527";
+  ctx.beginPath();
+  ctx.moveTo(0, -size * 1.25);
+  ctx.quadraticCurveTo(size * 0.28, -size * 0.70, size * 0.26, size * 0.40);
+  ctx.lineTo(size * 0.12, size * 1.15);
+  ctx.lineTo(-size * 0.12, size * 1.15);
+  ctx.lineTo(-size * 0.26, size * 0.40);
+  ctx.quadraticCurveTo(-size * 0.28, -size * 0.70, 0, -size * 1.25);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth = 1.6;
+  ctx.stroke();
+
+  // High-mounted straight / swept anhedral wings
+  ctx.fillStyle = "rgba(56, 189, 248, 0.25)";
+  ctx.beginPath();
+  ctx.moveTo(0, -size * 0.35);
+  ctx.lineTo(size * 1.55, size * 0.05);
+  ctx.lineTo(size * 1.45, size * 0.25);
+  ctx.lineTo(size * 0.26, size * 0.10);
+  ctx.lineTo(-size * 0.26, size * 0.10);
+  ctx.lineTo(-size * 1.45, size * 0.25);
+  ctx.lineTo(-size * 1.55, size * 0.05);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // 4 Engine Nacelles
+  ctx.fillStyle = strokeColor;
+  ctx.fillRect(size * 0.52, -size * 0.25, size * 0.14, size * 0.38);
+  ctx.fillRect(size * 0.95, -size * 0.15, size * 0.12, size * 0.32);
+  ctx.fillRect(-size * 0.66, -size * 0.25, size * 0.14, size * 0.38);
+  ctx.fillRect(-size * 1.07, -size * 0.15, size * 0.12, size * 0.32);
+
+  // Iconic High T-Tail Horizontal Stabilizer
+  ctx.fillStyle = "rgba(56, 189, 248, 0.45)";
+  ctx.beginPath();
+  ctx.moveTo(0, size * 1.05);
+  ctx.lineTo(size * 0.75, size * 1.22);
+  ctx.lineTo(size * 0.68, size * 1.35);
+  ctx.lineTo(0, size * 1.26);
+  ctx.lineTo(-size * 0.68, size * 1.35);
+  ctx.lineTo(-size * 0.75, size * 1.22);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
+
+  // Forward cockpit glass
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.arc(0, -size * 1.08, 2.2, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+/**
+ * Airborne Early Warning & Tanker (E-3 AWACS, KC-135, KC-46, P-8 Poseidon)
+ * Rotodome radar disc mounted atop fuselage or refueling boom
+ */
+function drawAwacsTankerGlyph(
+  ctx: CanvasRenderingContext2D,
+  size: number,
+  accentColor: string
+): void {
+  ctx.save();
+  const strokeColor = accentColor || "#38bdf8";
+
+  // Heading Vector
+  ctx.beginPath();
+  ctx.moveTo(0, -size * 1.2);
+  ctx.lineTo(0, -size * 2.3);
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth = 2.0;
+  ctx.stroke();
+
+  // Fuselage
+  ctx.fillStyle = "#0c1527";
+  ctx.beginPath();
+  ctx.ellipse(0, 0, size * 0.22, size * 1.2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth = 1.6;
+  ctx.stroke();
+
+  // Swept Wings
+  ctx.fillStyle = "rgba(56, 189, 248, 0.25)";
+  ctx.beginPath();
+  ctx.moveTo(0, -size * 0.30);
+  ctx.lineTo(size * 1.45, size * 0.32);
+  ctx.lineTo(size * 1.35, size * 0.48);
+  ctx.lineTo(size * 0.22, size * 0.22);
+  ctx.lineTo(-size * 0.22, size * 0.22);
+  ctx.lineTo(-size * 1.35, size * 0.48);
+  ctx.lineTo(-size * 1.45, size * 0.32);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth = 1.6;
+  ctx.stroke();
+
+  // Iconic AWACS Rotodome Radar Disc on spine
+  ctx.fillStyle = "#1e293b";
+  ctx.beginPath();
+  ctx.ellipse(0, size * 0.25, size * 0.55, size * 0.28, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#38bdf8";
+  ctx.lineWidth = 2.0;
+  ctx.stroke();
+
+  // Radar rotodome central hub
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.arc(0, size * 0.25, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Horizontal Tail
+  ctx.fillStyle = strokeColor;
+  ctx.beginPath();
+  ctx.moveTo(0, size * 0.90);
+  ctx.lineTo(size * 0.60, size * 1.15);
+  ctx.lineTo(size * 0.52, size * 1.24);
+  ctx.lineTo(0, size * 1.10);
+  ctx.lineTo(-size * 0.52, size * 1.24);
+  ctx.lineTo(-size * 0.60, size * 1.15);
+  ctx.closePath();
+  ctx.fill();
+
+  // Forward nose pip
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.arc(0, -size * 1.12, 2.0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
 }
 
 /**

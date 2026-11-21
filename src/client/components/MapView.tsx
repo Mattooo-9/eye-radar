@@ -3129,8 +3129,8 @@ export const MapView = ({
               });
               ctx.restore();
 
-              // Display callout pill for selected or when zoom >= 5.5
-              if (cItem.isSelected || zoom >= 5.5) {
+              // Display callout pill for selected or when zoom >= 4.7 (visible on initial mobile & desktop view)
+              if (cItem.isSelected || zoom >= 4.7) {
                 drawMilitaryCalloutPill(
                   ctx,
                   cItem.targetX,
@@ -3140,7 +3140,7 @@ export const MapView = ({
                   cItem.altMsl,
                   "#94a3b8",
                   cItem.isSelected,
-                  false,
+                  true,
                   placedPillBoxes
                 );
               }
@@ -3206,7 +3206,7 @@ export const MapView = ({
             });
             ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
 
-            const showPill = item.isSelected;
+            const showPill = item.isSelected || (zoom >= 4.4 && standalone.length <= 35);
             if (showPill) {
               drawMilitaryCalloutPill(
                 ctx,
@@ -3242,7 +3242,7 @@ export const MapView = ({
             });
             ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
 
-            const showPill2 = item.isSelected;
+            const showPill2 = item.isSelected || (zoom >= 4.4 && tacticalItems.length <= 35);
             if (showPill2) {
               drawMilitaryCalloutPill(
                 ctx,

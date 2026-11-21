@@ -1,4 +1,4 @@
-import { createUnifiedObservation, type UnifiedObservation } from "../domain/unifiedObservation.js";
+﻿import { createUnifiedObservation, type UnifiedObservation } from "../domain/unifiedObservation.js";
 import type { TrackType } from "../domain/types.js";
 import { getDistanceToUkraineBorderKm } from "../domain/geo.js";
 
@@ -110,9 +110,13 @@ export class OpenskyAdsbLolSource {
     const obsMap = new Map<string, UnifiedObservation>();
 
     // 1. Fetch from adsb.lol theater coverage (regional points around Ukraine) & military transponders
+    // Extended coverage: Ukraine center + western border + Black Sea + Romania + Poland
     const adsbEndpoints = [
-      "https://api.adsb.lol/v2/point/49.0/31.0/250",
-      "https://api.adsb.lol/v2/point/48.5/24.5/250",
+      "https://api.adsb.lol/v2/point/49.0/31.0/400",  // Ukraine center, 400nm
+      "https://api.adsb.lol/v2/point/48.5/24.5/400",  // Western Ukraine / Poland
+      "https://api.adsb.lol/v2/point/46.5/32.0/400",  // Southern Ukraine / Black Sea / Romania
+      "https://api.adsb.lol/v2/point/50.5/26.5/350",  // Northern Ukraine / Belarus border
+      "https://api.adsb.lol/v2/mil",                   // Global military feed
       "https://opendata.adsb.fi/api/v2/mil"
     ];
 
@@ -136,8 +140,8 @@ export class OpenskyAdsbLolSource {
                 typeof a.gs === "number" &&
                 a.gs > 20
               ) {
-                // Geo-boundary filter: Eastern European / Black Sea theater & allied border airlift corridors
-                if (a.lat < 42.5 || a.lat > 55.5 || a.lon < 20.0 || a.lon > 43.0) {
+                // Geo-boundary filter: European defense theater & allied border airlift corridors
+                if (a.lat < 36.0 || a.lat > 60.0 || a.lon < 14.0 || a.lon > 45.0) {
                   continue;
                 }
 
@@ -264,3 +268,4 @@ export class OpenskyAdsbLolSource {
     return this.cache;
   }
 }
+

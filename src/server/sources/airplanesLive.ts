@@ -1,4 +1,4 @@
-import type { Observation, TrackType } from "../domain/types.js";
+﻿import type { Observation, TrackType } from "../domain/types.js";
 import { getDistanceToUkraineBorderKm } from "../domain/geo.js";
 
 interface AdsbFiAircraft {
@@ -145,8 +145,8 @@ export class AirplanesLiveSource {
                 a.gs !== undefined &&
                 a.gs > 25
               ) {
-                // Bound to Eastern European / Ukrainian defense theater & allied border airlift corridors
-                if (a.lat < 42.5 || a.lat > 55.5 || a.lon < 20.0 || a.lon > 43.0) {
+                // Bound to European theater & allied border airlift corridors
+                if (a.lat < 36.0 || a.lat > 60.0 || a.lon < 14.0 || a.lon > 45.0) {
                   continue;
                 }
 
@@ -267,3 +267,4 @@ export class AirplanesLiveSource {
     return [];
   }
 }
+

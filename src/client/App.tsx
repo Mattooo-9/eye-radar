@@ -19,7 +19,7 @@ import { soundEngine } from "./lib/sound";
 import { useTrustedLocation } from "./location/useTrustedLocation";
 import { LocationSetupModal, type ConfirmedLocation } from "./components/LocationSetupModal";
 import { detectHardwareTier } from "./lib/hardwareBenchmark.js";
-import { trackStore } from "./lib/trackStore.js";
+import { trackStore, isCivilAviation } from "./lib/trackStore.js";
 
 const getUserId = (): string => {
   const tgUserId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
@@ -192,14 +192,10 @@ export const App = () => {
         return false;
       }
 
-      if (
-        (tacticalFilters.threatOnly || threatOnly) &&
-        type !== "uav" &&
-        type !== "munition" &&
-        type !== "bomb" &&
-        type !== "fpv" &&
-        type !== "unknown"
-      ) {
+      const isCivil = isCivilAviation(p);
+
+      // "Threat only" filter hides civilian commercial flights, but strictly keeps all military targets (combat aircraft, UAVs, missiles, bombs, FPV)
+      if ((tacticalFilters.threatOnly || threatOnly) && isCivil) {
         return false;
       }
 
@@ -208,11 +204,11 @@ export const App = () => {
       if (type === "bomb" && filters.bomb === false) return false;
       if (type === "fpv" && filters.fpv === false) return false;
       if (type === "aircraft") {
-        if (!filters.aircraft) {
+        if (!filters.aircraft && isCivil) {
           if (currentZoom >= 6.5) return false;
         }
       }
-      if (type === "helicopter" && filters.helicopter === false) return false;
+      if (type === "helicopter" && filters.helicopter === false && isCivil) return false;
 
       return true;
     });
@@ -232,23 +228,28 @@ export const App = () => {
     let bomb = 0;
     let fpv = 0;
     let aircraft = 0;
+    let militaryAircraft = 0;
     let helo = 0;
     for (const p of packets) {
       const type = p[1];
+      const isCivil = isCivilAviation(p);
       if (type === "uav") uav++;
       else if (type === "munition") munition++;
       else if (type === "bomb") bomb++;
       else if (type === "fpv") fpv++;
-      else if (type === "aircraft") aircraft++;
-      else if (type === "helicopter") helo++;
+      else if (type === "aircraft") {
+        aircraft++;
+        if (!isCivil) militaryAircraft++;
+      } else if (type === "helicopter") helo++;
     }
-    return { uav, munition, bomb, fpv, aircraft, helo };
+    return { uav, munition, bomb, fpv, aircraft, militaryAircraft, helo };
   }, [packets]);
 
   const threatCount = useMemo(() => {
     return filteredPackets.filter((p) => {
       const type = p[1];
-      return type === "uav" || type === "munition" || type === "bomb" || type === "fpv";
+      const isCivil = isCivilAviation(p);
+      return type === "uav" || type === "munition" || type === "bomb" || type === "fpv" || !isCivil;
     }).length;
   }, [filteredPackets]);
 
