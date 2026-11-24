@@ -43,6 +43,7 @@ export const isCivilAviation = (packet: TrackPacket): boolean => {
     model.includes("FIGHTER") ||
     model.includes("BOMBER") ||
     model.includes("STRATOTANKER") ||
+    model.includes("PEGASUS") ||
     model.includes("GLOBEMASTER") ||
     model.includes("POSEIDON") ||
     model.includes("HERCULES") ||
@@ -53,6 +54,19 @@ export const isCivilAviation = (packet: TrackPacket): boolean => {
     model.includes("C130") ||
     model.includes("A400") ||
     model.includes("ATLAS") ||
+    model.includes("C295") ||
+    model.includes("C-295") ||
+    model.includes("PERSUADER") ||
+    model.includes("SKYTRUCK") ||
+    model.includes("M-28") ||
+    model.includes("M28") ||
+    model.includes("C-37") ||
+    model.includes("C37") ||
+    model.includes("C-21") ||
+    model.includes("C21") ||
+    model.includes("C-26") ||
+    model.includes("C26") ||
+    model.includes("METRO") ||
     model.includes("K35R") ||
     model.includes("KC-") ||
     model.includes("E-3") ||
@@ -88,6 +102,16 @@ export const isCivilAviation = (packet: TrackPacket): boolean => {
     callsign.includes("RFR") ||
     callsign.includes("ASCOT") ||
     callsign.includes("PLF") ||
+    callsign.includes("HAF") ||
+    callsign.includes("TUAF") ||
+    callsign.includes("CNV") ||
+    callsign.includes("DAF") ||
+    callsign.includes("SQF") ||
+    callsign.includes("CEF") ||
+    callsign.includes("HRZ") ||
+    callsign.includes("FAF") ||
+    callsign.includes("RAFR") ||
+    callsign.includes("PAROL") ||
     callsign.includes("USAF")
   ) {
     return false;

@@ -82,10 +82,14 @@ export class OpenskyAdsbLolSource {
       text.includes("C-27") || text.includes("SPARTAN") ||
       text.includes("C-130") || text.includes("HERCULES") ||
       text.includes("A400") || text.includes("ATLAS") ||
-      text.includes("KC-") || text.includes("K35R") || text.includes("STRATOTANKER") ||
+      text.includes("KC-") || text.includes("K35R") || text.includes("STRATOTANKER") || text.includes("PEGASUS") ||
       text.includes("P-8") || text.includes("POSEIDON") ||
       text.includes("E-3") || text.includes("AWACS") || text.includes("SENTRY") ||
       text.includes("RQ-") || text.includes("MQ-") || text.includes("GLOBAL HAWK") || text.includes("REAPER") ||
+      text.includes("C295") || text.includes("C-295") || text.includes("PERSUADER") ||
+      text.includes("SKYTRUCK") || text.includes("M-28") || text.includes("M28") ||
+      text.includes("C-37") || text.includes("C37") || text.includes("C-21") || text.includes("C21") ||
+      text.includes("C-26") || text.includes("C26") || text.includes("METRO") ||
       text.includes("F-16") || text.includes("F-15") || text.includes("F-35") || text.includes("FIGHTER") ||
       text.includes("TYPHOON") || text.includes("RAFALE") || text.includes("GRIPEN") || text.includes("MIRAGE") ||
       text.includes("SU-") || text.includes("MIG-") || text.includes("TU-") ||
@@ -95,6 +99,8 @@ export class OpenskyAdsbLolSource {
       text.includes("RCH") || text.includes("REACH") || text.includes("ROF") || text.includes("BAF") ||
       text.includes("GAF") || text.includes("IAM") || text.includes("RFR") || text.includes("ASCOT") ||
       text.includes("PLF") || text.includes("HAF") || text.includes("TUAF") || text.includes("USAF") ||
+      text.includes("CNV") || text.includes("DAF") || text.includes("SQF") || text.includes("CEF") ||
+      text.includes("HRZ") || text.includes("FAF") || text.includes("RAFR") || text.includes("PAROL") ||
       text.includes("MIL_") || text.includes("MILITARY") || text.includes("NAVY") || text.includes("ARMY") ||
       text.includes("TANKER") || text.includes("BOMBER")
     );
@@ -109,15 +115,15 @@ export class OpenskyAdsbLolSource {
 
     const obsMap = new Map<string, UnifiedObservation>();
 
-    // 1. Fetch from adsb.lol theater coverage (regional points around Ukraine) & military transponders
-    // Extended coverage: Ukraine center + western border + Black Sea + Romania + Poland
+    // 1. Fetch from adsb.lol theater coverage (regional 250nm points around Ukraine border) & military transponders
     const adsbEndpoints = [
-      "https://api.adsb.lol/v2/point/49.0/31.0/400",  // Ukraine center, 400nm
-      "https://api.adsb.lol/v2/point/48.5/24.5/400",  // Western Ukraine / Poland
-      "https://api.adsb.lol/v2/point/46.5/32.0/400",  // Southern Ukraine / Black Sea / Romania
-      "https://api.adsb.lol/v2/point/50.5/26.5/350",  // Northern Ukraine / Belarus border
-      "https://api.adsb.lol/v2/mil",                   // Global military feed
-      "https://opendata.adsb.fi/api/v2/mil"
+      "https://api.adsb.lol/v2/point/50.0/22.0/250",  // Western Ukraine / Poland / Rzeszow corridor
+      "https://api.adsb.lol/v2/point/48.5/24.5/250",  // Carpathian / Slovakia / Hungary / Romania border
+      "https://api.adsb.lol/v2/point/44.5/26.0/250",  // Romania / Black Sea maritime corridor
+      "https://api.adsb.lol/v2/point/52.0/21.0/250",  // Northern approach / Eastern Poland
+      "https://api.adsb.lol/v2/point/46.5/29.0/250",  // Moldova / Southern Ukraine corridor
+      "https://api.adsb.lol/v2/mil",                   // Military feed (USAF, NATO, RAF, Allied)
+      "https://opendata.adsb.fi/api/v2/mil"            // Global military transponder feed
     ];
 
     await Promise.allSettled(

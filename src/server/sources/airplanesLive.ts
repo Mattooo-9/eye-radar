@@ -79,10 +79,14 @@ export class AirplanesLiveSource {
       text.includes("C-27") || text.includes("SPARTAN") ||
       text.includes("C-130") || text.includes("HERCULES") ||
       text.includes("A400") || text.includes("ATLAS") ||
-      text.includes("KC-") || text.includes("K35R") || text.includes("STRATOTANKER") ||
+      text.includes("KC-") || text.includes("K35R") || text.includes("STRATOTANKER") || text.includes("PEGASUS") ||
       text.includes("P-8") || text.includes("POSEIDON") ||
       text.includes("E-3") || text.includes("AWACS") || text.includes("SENTRY") ||
       text.includes("RQ-") || text.includes("MQ-") || text.includes("GLOBAL HAWK") || text.includes("REAPER") ||
+      text.includes("C295") || text.includes("C-295") || text.includes("PERSUADER") ||
+      text.includes("SKYTRUCK") || text.includes("M-28") || text.includes("M28") ||
+      text.includes("C-37") || text.includes("C37") || text.includes("C-21") || text.includes("C21") ||
+      text.includes("C-26") || text.includes("C26") || text.includes("METRO") ||
       text.includes("F-16") || text.includes("F-15") || text.includes("F-35") || text.includes("FIGHTER") ||
       text.includes("TYPHOON") || text.includes("RAFALE") || text.includes("GRIPEN") || text.includes("MIRAGE") ||
       text.includes("SU-") || text.includes("MIG-") || text.includes("TU-") ||
@@ -92,7 +96,10 @@ export class AirplanesLiveSource {
       text.includes("RCH") || text.includes("REACH") || text.includes("ROF") || text.includes("BAF") ||
       text.includes("GAF") || text.includes("IAM") || text.includes("RFR") || text.includes("ASCOT") ||
       text.includes("PLF") || text.includes("HAF") || text.includes("TUAF") || text.includes("USAF") ||
-      text.includes("MIL_") || text.includes("MILITARY") || text.includes("NAVY") || text.includes("ARMY")
+      text.includes("CNV") || text.includes("DAF") || text.includes("SQF") || text.includes("CEF") ||
+      text.includes("HRZ") || text.includes("FAF") || text.includes("RAFR") || text.includes("PAROL") ||
+      text.includes("MIL_") || text.includes("MILITARY") || text.includes("NAVY") || text.includes("ARMY") ||
+      text.includes("TANKER") || text.includes("BOMBER")
     );
   }
 

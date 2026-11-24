@@ -17,7 +17,6 @@ import { AirplanesLiveSource } from "./sources/airplanesLive.js";
 import { OpenskyAdsbLolSource } from "./sources/openskyAdsbLol.js";
 import { LocalReceiverSource } from "./sources/localReceiver.js";
 import { PublicOsintFeedSource } from "./sources/publicOsintFeed.js";
-import { ThreatAlertSource } from "./sources/threatAlertSource.js";
 import { toObservation } from "./domain/unifiedObservation.js";
 import { AlertsInUaSource } from "./sources/alertsInUa.js";
 import { FirmsThermalSource } from "./sources/firmsThermal.js";
@@ -66,7 +65,6 @@ const groundSensorSource = new GroundSensorSource();
 const satelliteCoordSource = new SatelliteCoordinateSource();
 const localReceiverSource = new LocalReceiverSource();
 const publicOsintSource = new PublicOsintFeedSource();
-const threatAlertSource = new ThreatAlertSource();
 const healthTracker = new SourceHealthTracker();
 sourceRegistry.setHealthTracker(healthTracker);
 sourceRegistry.register(
@@ -185,24 +183,6 @@ sourceRegistry.register(
     canProvideSpeed: false,
     evidenceFamily: "threat_alert",
     evidenceTypes: ["alert"],
-  }
-);
-
-// Threat alert source: creates real UAV/missile track positions from confirmed air raid alerts
-sourceRegistry.register(
-  "threat.alert",
-  "threat_alert",
-  threatAlertSource as any,
-  {
-    primaryCapability: "TRACK_POSITION",
-    capabilities: ["TRACK_POSITION"],
-    canCreateTrack: true,
-    canClassify: true,
-    canProvidePosition: true,
-    canProvideAltitude: true,
-    canProvideSpeed: true,
-    evidenceFamily: "threat_alert",
-    evidenceTypes: ["official_air_raid_alert", "aerial_threat_confirmed", "alert", "threat_alert", "air_defense_radar", "transonic_cruise_profile", "shahed_acoustic_signature"],
   }
 );
 
@@ -1138,21 +1118,6 @@ setInterval(async () => {
         }
       })()
     ]);
-  }
-
-  // Poll Threat Alert Source (alerts.in.ua → UAV/missile threat positions) every 15 seconds
-  if (currentCycle === 1 || currentCycle % 15 === 0) {
-    try {
-      const threatObs = await threatAlertSource.fetchThreatObservations();
-      for (const obs of threatObs) {
-        trackManager.ingest(obs);
-      }
-      if (threatObs.length > 0) {
-        hub.broadcastTracks(trackManager.toPackets(false));
-      }
-    } catch (err) {
-      // Tolerated
-    }
   }
 
   // Poll Local / Network SDR Receiver (readsb/dump1090) every 5 seconds

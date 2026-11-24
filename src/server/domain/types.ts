@@ -28,8 +28,7 @@ export type SourceKind =
   | "ground.sensor"
   | "ground.radar"
   | "ground.acoustic"
-  | "satellite.eo_coords"
-  | "threat.alert";
+  | "satellite.eo_coords";
 
 export type ThreatLevel = "low" | "medium" | "high" | "critical";
 
