@@ -81,13 +81,13 @@ const detectType = (text: string): TrackType => {
 
 function classifyKinematics(effectiveType: TrackType, text: string): {
   speed: number;
-  altitude: number;
   model?: string;
   maxAgeMs: number;
 } {
   const lower = deobfuscateCyrillic(text).toLowerCase();
   const isReactive = lower.includes("реактив") || lower.includes("герань-5");
-  const isShahed = lower.includes("шахед") || lower.includes("герань") || lower.includes("гербера") || lower.includes("італмас") || lower.includes("мопед") || lower.includes("ударн");
+  const isExplicitShahed = lower.includes("шахед") || lower.includes("shahed") || lower.includes("герань") || lower.includes("мопед");
+  const isStrikeUav = lower.includes("ударн");
   const isRecon = lower.includes("розвід") || lower.includes("zala") || lower.includes("supercam") || lower.includes("орлан");
   const isMolniya = lower.includes("молния") || lower.includes("молнія") || lower.includes("ланцет");
   const isBallistic = lower.includes("баліст") || lower.includes("баллист") || lower.includes("іскандер") || lower.includes("искандер") || lower.includes("кинджал") || lower.includes("кинжал") || lower.includes("циркон") || lower.includes("оникс") || lower.includes("онікс") || lower.includes("с-300") || lower.includes("с-400") || lower.includes("kn-23") || lower.includes("орешнік");
@@ -96,8 +96,7 @@ function classifyKinematics(effectiveType: TrackType, text: string): {
   if (effectiveType === "bomb") {
     return {
       speed: 235,
-      altitude: 2800,
-      model: lower.includes("1500") ? "КАБ-1500 (УМПК)" : lower.includes("умпб") ? "УМПБ Д-30СН" : "КАБ-500 (УМПК)",
+      model: lower.includes("1500") ? "КАБ-1500 (OSINT)" : lower.includes("умпб") ? "УМПБ (OSINT)" : "КАБ (OSINT)",
       maxAgeMs: 6 * 60 * 1000
     };
   }
@@ -106,19 +105,17 @@ function classifyKinematics(effectiveType: TrackType, text: string): {
     if (isBallistic) {
       return {
         speed: 850,
-        altitude: 12000,
         model: lower.includes("кинджал") || lower.includes("кинжал")
-          ? "Х-47М2 Кинджал"
+          ? "Аеробалістична ракета (Кинджал, OSINT)"
           : lower.includes("циркон")
-          ? "ЗМ22 Циркон"
-          : "Балістична ракета (Іскандер-М)",
+          ? "Гіперзвукова ціль (Циркон, OSINT)"
+          : "Балістична загроза (OSINT)",
         maxAgeMs: 6 * 60 * 1000
       };
     }
     return {
       speed: 230,
-      altitude: 90,
-      model: isCruise ? "Крилата ракета (Х-101/Калібр)" : "Авіаційна ракета",
+      model: isCruise ? "Крилата ракета (OSINT)" : "Ракетна ціль (OSINT)",
       maxAgeMs: 15 * 60 * 1000
     };
   }
@@ -127,15 +124,13 @@ function classifyKinematics(effectiveType: TrackType, text: string): {
     if (isMolniya) {
       return {
         speed: 32,
-        altitude: 120,
-        model: lower.includes("ланцет") ? "БпЛА Ланцет" : "Ударний БпЛА Молнія",
+        model: lower.includes("ланцет") ? "БпЛА Ланцет (OSINT)" : "БпЛА Молнія (OSINT)",
         maxAgeMs: 12 * 60 * 1000
       };
     }
     return {
       speed: 28,
-      altitude: 55,
-      model: lower.includes("опто") ? "FPV-дрон (Оптоволокно)" : "FPV-дрон (Ударний)",
+      model: lower.includes("опто") ? "FPV-дрон на оптоволокні (OSINT)" : "FPV-дрон (OSINT)",
       maxAgeMs: 10 * 60 * 1000
     };
   }
@@ -143,8 +138,7 @@ function classifyKinematics(effectiveType: TrackType, text: string): {
   if (effectiveType === "aircraft") {
     return {
       speed: 260,
-      altitude: 9500,
-      model: "Тактична авіація",
+      model: "Тактична авіація (OSINT)",
       maxAgeMs: 15 * 60 * 1000
     };
   }
@@ -152,33 +146,36 @@ function classifyKinematics(effectiveType: TrackType, text: string): {
   if (effectiveType === "helicopter") {
     return {
       speed: 65,
-      altitude: 180,
-      model: "Гелікоптер",
+      model: "Гелікоптер (OSINT)",
       maxAgeMs: 15 * 60 * 1000
     };
   }
 
-  // Default: UAV classes
+  // Truthful UAV descriptors: never upgrade generic "БпЛА" to specific hardware models unless stated in text
   if (isReactive) {
     return {
-      speed: 125, // ~450 km/h
-      altitude: 350,
-      model: "Реактивний ударний БпЛА",
+      speed: 125,
+      model: "Реактивний БпЛА (OSINT)",
       maxAgeMs: 20 * 60 * 1000
     };
   }
   if (isRecon) {
     return {
       speed: 35,
-      altitude: 1500,
-      model: "Розвідувальний БпЛА",
+      model: "Розвідувальний БпЛА (OSINT)",
+      maxAgeMs: 25 * 60 * 1000
+    };
+  }
+  if (isExplicitShahed) {
+    return {
+      speed: 52,
+      model: "Shahed / Герань (OSINT)",
       maxAgeMs: 25 * 60 * 1000
     };
   }
   return {
-    speed: 52, // ~187 km/h
-    altitude: 180,
-    model: isShahed ? "Shahed-136 / Герань-2" : "БпЛА (невідомого типу)",
+    speed: 52,
+    model: isStrikeUav ? "Ударний БпЛА (OSINT)" : "БпЛА (тип не уточнено)",
     maxAgeMs: 25 * 60 * 1000
   };
 }
@@ -280,7 +277,7 @@ export const parseOsintText = (text: string, now = Date.now()): Observation[] =>
         lon: city.lon,
         heading,
         speed: kinematics.speed,
-        altitude: kinematics.altitude,
+        altitude: undefined,
         timestamp: now,
         source: "osint",
         confidence: 0.85,
@@ -288,6 +285,7 @@ export const parseOsintText = (text: string, now = Date.now()): Observation[] =>
         meta: {
           cityName: city.nameUk,
           rawSnippet: text.slice(0, 120),
+          speedIsMeasured: false,
           evidence: "osint_threat_report",
           threatEvidence: "osint_threat_report",
           isSynthetic: false,
@@ -484,11 +482,13 @@ export const parseOsintBulletin = (
         lat,
         lon,
         heading,
-        speed: kinematics.speed,
-        altitude: kinematics.altitude,
+        // Area-only text alerts have unknown speed & direction (0 = no fabricated vector);
+        // directional bulletins keep corridor speed strictly for internal dead-reckoning (speedIsMeasured = false)
+        speed: typeof heading === "number" ? kinematics.speed : 0,
+        altitude: undefined,
         timestamp: referenceNow,
         source: "osint",
-        confidence: isReactive || detectedType === "munition" || detectedType === "bomb" ? 0.90 : 0.88,
+        confidence: isReactive || detectedType === "munition" || detectedType === "bomb" ? 0.88 : 0.84,
         uncertaintyRadius,
         isSynthetic: false,
         threatEvidence: ["official_air_force_bulletin", "air_defense_osint"],
@@ -496,6 +496,7 @@ export const parseOsintBulletin = (
           cityName: geo.destination?.point.nameUk || anchorGeo.point.nameUk,
           rawSnippet: clause.slice(0, 140),
           published_at: publishedAt,
+          speedIsMeasured: false,
           evidence: "official_air_force_bulletin",
           threatEvidence: "official_air_force_bulletin",
           isSynthetic: false,

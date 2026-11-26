@@ -40,7 +40,7 @@ export interface ClassificationOutput {
   isMeasuredSpeed: boolean;
   isMeasuredAltitude: boolean;
   speedKmh: number;
-  estimatedAltitudeM: number;
+  estimatedAltitudeM?: number;
 }
 
 function isHelicopterModel(text?: string): boolean {
@@ -118,7 +118,8 @@ export function classifyAerialObject(input: ClassificationInput): Classification
   const speedKmh = Math.round(input.speedMs * 3.6);
   const isMeasuredSpeed = input.measuredSpeed !== undefined;
   const isMeasuredAltitude = input.measuredAltitude !== undefined;
-  const alt = input.measuredAltitude ?? input.altitudeM ?? (input.claimedType === "munition" ? 150 : 250);
+  // Never fabricate default altitude when neither sensor nor source provides one
+  const alt = input.measuredAltitude ?? input.altitudeM;
 
   // Position confidence: high for direct positional feeds (ADS-B, radar, SDR)
   const posConf = input.positionConfidence ?? (
@@ -444,6 +445,32 @@ export function classifyAerialObject(input: ClassificationInput): Classification
         hintLower.includes("розвід") ||
         hintLower.includes("shark");
 
+      const isTextOsint =
+        input.sources.some((s) => s.includes("osint") || s === "manual") &&
+        !isMeasuredSpeed &&
+        !isMeasuredAltitude;
+
+      // For textual OSINT reports without physical radar speed/altitude measurements,
+      // preserve the source-grounded model label instead of fabricating specific hardware variants.
+      if (isTextOsint && input.modelHint) {
+        const classEv = uniqEv(baseEvidence, threatEvidenceList, "osint_text_classification");
+        return {
+          resolvedType: "uav",
+          resolvedModel: input.modelHint,
+          confidence: Math.min(posConf, 0.85),
+          positionConfidence: posConf,
+          classConfidence: 0.82,
+          classEvidence: classEv,
+          threatEvidence: threatEvidenceList,
+          evidence: classEv,
+          propulsion: hasJetHint ? "turbojet" : hasReconHint ? "electric" : "unknown",
+          isMeasuredSpeed: false,
+          isMeasuredAltitude: false,
+          speedKmh,
+          estimatedAltitudeM: alt
+        };
+      }
+
       // Reconnaissance UAV
       if ((speedKmh < 135 && !hasJetHint) || hasReconHint) {
         const classEv = uniqEv(baseEvidence, threatEvidenceList, "loitering_recon_velocity");
@@ -470,7 +497,7 @@ export function classifyAerialObject(input: ClassificationInput): Classification
       }
 
       // Turbojet Shahed-238
-      const isHighAltitude = alt > 600;
+      const isHighAltitude = alt !== undefined && alt > 600;
       if (speedKmh >= 310 || (hasJetHint && speedKmh >= 215) || (speedKmh >= 235 && isHighAltitude)) {
         const classEv = uniqEv(baseEvidence, threatEvidenceList, "turbojet_toloue_10_speed_profile");
         return {

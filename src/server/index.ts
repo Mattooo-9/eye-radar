@@ -39,7 +39,6 @@ import { checkpointService } from "./db/checkpointService.js";
 import { intelligenceStore } from "./db/intelligenceStore.js";
 import { watchdogService } from "./db/watchdogService.js";
 import { productionObservability } from "./core/observability.js";
-import { detectRealPixelChanges } from "./sources/cloudEoPipeline.js";
 import { uncertaintyEventManager } from "./core/uncertaintyEventManager.js";
 
 const DIST_CLIENT = resolve(process.cwd(), "dist/client");
@@ -683,7 +682,17 @@ const server = createServer(async (req, res) => {
   if (req.method === "GET" && (url.pathname === "/api/tracks" || url.pathname === "/api/targets")) {
     const list = trackManager.snapshot(false);
     if (url.pathname === "/api/targets") {
-      json(res, 200, { count: list.length, tracks: list });
+      const osintMessages = list.filter((t) => t.dataCategory === "osint_message" || t.evidenceFamilies?.includes("osint") || t.evidenceFamilies?.includes("manual")).length;
+      const sensorObservations = list.length - osintMessages;
+      json(res, 200, {
+        count: list.length,
+        categories: {
+          sensorObservations,
+          osintMessages,
+          officialAlertsActive: trackManager.getActiveAlertOblasts().length
+        },
+        tracks: list
+      });
     } else {
       json(res, 200, list);
     }
@@ -748,12 +757,10 @@ const server = createServer(async (req, res) => {
   }
 
   if (req.method === "GET" && url.pathname === "/api/eo/change-detection") {
-    // Real-pixel change detection sample across current AOI
-    const dummyT0 = Array.from({ length: 16 }, () => new Array(16).fill(120));
-    const dummyT1 = Array.from({ length: 16 }, () => new Array(16).fill(120));
-    dummyT1[5][8] = 210; // Factual optical/thermal spectral variance
-    const cvRes = detectRealPixelChanges(dummyT0, dummyT1, 40, { lat: 49.0, lon: 32.0 }, 10);
-    json(res, 200, cvRes);
+    json(res, 200, {
+      available: false,
+      reason: "External satellite optical imagery provider not configured; synthetic change-detection grids disabled."
+    });
     return;
   }
 
@@ -1082,14 +1089,6 @@ const server = createServer(async (req, res) => {
     json(res, 200, {
       count: events.length,
       events
-    });
-    return;
-  }
-
-  if (req.method === "GET" && url.pathname === "/api/targets") {
-    json(res, 200, {
-      count: trackManager.snapshot().length,
-      tracks: trackManager.snapshot()
     });
     return;
   }

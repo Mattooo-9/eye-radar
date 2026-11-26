@@ -1,731 +1,186 @@
-export interface TargetSpecification {
+// src/client/lib/targetSpecs.ts
+// Truthful, zero-fabrication display metadata for aerial observations & OSINT text reports.
+// Unknown parameters remain explicitly unknown; no synthetic airbases, military units, or template TTX are invented.
+
+export type ClientDataCategory = "osint_message" | "sensor_observation";
+
+export interface TargetDisplayMeta {
   modelName: string;
-  categoryName: string;
+  categoryLabel: string;
+  dataCategory: ClientDataCategory;
+  dataCategoryBadge: string;
   threatLevel: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
   color: string;
-  warhead: string;
-  maxRange: string;
-  typicalSpeed: string;
-  altitudeCorridor: string;
-  altitudeCategory: string;
-  guidance: string;
-  engine: string;
-  rcs: string;
-  tacticalRole: string;
-  airDefenseCounters: string;
-  soundProfile: string;
-  isJet?: boolean;
-  propulsionSummary?: string;
-  detectionSensors?: string;
-  launchOrigin?: string;
-  launchOriginDetailed?: string;
-  launchAirbase?: string;
-  launchUnit?: string;
-  launchTrajectoryVector?: string;
-  tacticalThreatAssessment?: string;
-  reactionTimeWindow?: string;
+  safetyNote: string;
 }
 
-export interface AltitudeAnalysis {
+export interface AltitudeSummary {
   altitudeM: number;
   flightLevel: string;
-  corridorCategory: string;
-  corridorBadgeColor: string;
-  tacticalDescription: string;
-  interceptionZone: string;
+  bandLabel: string;
+  badgeColor: string;
 }
 
-export function getAltitudeAnalysis(altM: number): AltitudeAnalysis {
+export function classifyClientDataCategory(id: string, callsign?: string): ClientDataCategory {
+  if (
+    id.startsWith("osint-") ||
+    id.startsWith("citizen-") ||
+    (callsign && callsign.startsWith("@"))
+  ) {
+    return "osint_message";
+  }
+  return "sensor_observation";
+}
+
+/**
+ * Formats physically measured altitude ONLY. Returns null when altitude is unknown.
+ */
+export function getAltitudeAnalysis(altM?: number | null): AltitudeSummary | null {
+  if (altM === undefined || altM === null || !Number.isFinite(altM) || altM <= 0) {
+    return null;
+  }
   const fl = Math.round(altM * 0.0328084);
   const flightLevel = `FL ${String(fl).padStart(3, "0")}`;
 
-  if (altM < 120) {
-    return {
-      altitudeM: altM,
-      flightLevel,
-      corridorCategory: "Гранично мала висота (Terrain-Following)",
-      corridorBadgeColor: "#ef4444",
-      tacticalDescription:
-        "Наднизький політ з огинанням рельєфу, лісосмуг та ярів. Ціль використовує радіогоризонт і рельєфні тіні для приховання від наземних оглядових РЛС.",
-      interceptionZone: "Зона вогню мобільних груп ППО (МВГ), кулеметів Browning/ДШК, ЗСУ Gepard"
-    };
+  if (altM < 300) {
+    return { altitudeM: Math.round(altM), flightLevel, bandLabel: "Мала висота", badgeColor: "#ef4444" };
   }
-
-  if (altM < 450) {
-    return {
-      altitudeM: altM,
-      flightLevel,
-      corridorCategory: "Мала тактична висота",
-      corridorBadgeColor: "#f97316",
-      tacticalDescription:
-        "Характерний робочий коридор ударних БПЛА Shahed-136. Достатня висота для автономної навігації при збереженні низької помітності.",
-      interceptionZone: "Зенітні самохідні установки (Gepard), ПЗРК (Stinger/Ігла), великокаліберні кулемети"
-    };
-  }
-
   if (altM < 3000) {
-    return {
-      altitudeM: altM,
-      flightLevel,
-      corridorCategory: "Середня висота польоту",
-      corridorBadgeColor: "#eab308",
-      tacticalDescription:
-        "Впевнене супроводження радіолокаційними станціями ППО. Поза зоною ефективного вогню стрілецької зброї.",
-      interceptionZone: "ЗРК малої та середньої дальності (IRIS-T SLS, Crotale, Оса, Бук-М1)"
-    };
+    return { altitudeM: Math.round(altM), flightLevel, bandLabel: "Середня висота", badgeColor: "#f59e0b" };
   }
-
   if (altM < 8000) {
+    return { altitudeM: Math.round(altM), flightLevel, bandLabel: "Високий ешелон", badgeColor: "#38bdf8" };
+  }
+  return { altitudeM: Math.round(altM), flightLevel, bandLabel: "Верхній ешелон", badgeColor: "#818cf8" };
+}
+
+/**
+ * Formats compass vector ONLY when heading is known (measured or explicitly stated in OSINT).
+ */
+export function getHeadingVectorDescription(
+  heading?: number | null,
+  hasVector = true
+): { forwardSummary: string; compassShort: string } {
+  if (!hasVector || heading === undefined || heading === null || !Number.isFinite(heading)) {
     return {
-      altitudeM: altM,
-      flightLevel,
-      corridorCategory: "Високий тактичний ешелон",
-      corridorBadgeColor: "#38bdf8",
-      tacticalDescription:
-        "Висотний транзитний коридор. Максимальна дальність радіовидимості для систем раннього виявлення.",
-      interceptionZone: "ЗРК середньої та великої дальності (NASAMS, Hawk, С-300)"
+      forwardSummary: "Напрямок руху: невідомо (повідомлення без зазначення курсу)",
+      compassShort: "Невідомо"
     };
   }
-
+  const norm = ((Math.round(heading) % 360) + 360) % 360;
+  const dirs = [
+    { short: "N", uk: "північ" },
+    { short: "NE", uk: "північний схід" },
+    { short: "E", uk: "схід" },
+    { short: "SE", uk: "південний схід" },
+    { short: "S", uk: "південь" },
+    { short: "SW", uk: "південний захід" },
+    { short: "W", uk: "захід" },
+    { short: "NW", uk: "північний захід" }
+  ];
+  const d = dirs[Math.round(norm / 45) % 8];
   return {
-    altitudeM: altM,
-    flightLevel,
-    corridorCategory: "Стратосферний / Рубіж скиду КАБ",
-    corridorBadgeColor: "#818cf8",
-    tacticalDescription:
-      "Граничні висоти тактичної та стратегічної авіації. Рубіж розгону та скиду авіабомб з УМПК за межами ППО ближнього радіусу.",
-    interceptionZone: "Далекобійні комплекси ППО/ПРО (Patriot PAC-2/PAC-3, SAMP/T, F-16 з AIM-120D)"
+    forwardSummary: `Курс ${norm}° (${d.short}, ${d.uk})`,
+    compassShort: `${norm}° ${d.short}`
   };
 }
 
-export function computeLaunchIntelligence(
-  type: string,
-  model?: string,
-  lat?: number,
-  lon?: number,
-  heading?: number,
-  id?: string
-): {
-  launchOrigin: string;
-  launchOriginDetailed: string;
-  launchAirbase: string;
-  launchUnit: string;
-  launchTrajectoryVector: string;
-} {
-  const normHeading = heading !== undefined ? ((heading % 360) + 360) % 360 : 270;
-  const currentLat = lat ?? 49.0;
-  const currentLon = lon ?? 32.0;
-  const lowerModel = (model || "").toLowerCase();
-
-  if (type === "uav") {
-    if (lowerModel.includes("shahed") || lowerModel.includes("герань") || !model) {
-      if (currentLat <= 48.2) {
-        return {
-          launchOrigin: "Приморсько-Ахтарськ (Краснодарський край, РФ) / мис Чауда (окупований Крим)",
-          launchOriginDetailed: "Мис Чауда (Феодосійський район, окупований Крим) або полігон у районі Приморсько-Ахтарська на узбережжі Азовського моря.",
-          launchAirbase: "726-й учбовий центр ППО (Приморсько-Ахтарськ) / 31-й науково-випробувальний центр МО РФ (Чауда / полігон Опук)",
-          launchUnit: "Спеціалізовані пускові розрахунки БПЛА 58-ї армії ПдВО та Центру безпілотної авіації МО РФ",
-          launchTrajectoryVector: `Курс ${Math.round(normHeading)}°: пусковий рубіж з узбережжя Азова або Криму через Чорне море / Приазов'я у напрямку південних та центральних областей України.`
-        };
-      }
-      if (currentLat > 48.2 && currentLon > 33.5) {
-        return {
-          launchOrigin: "Аеродром «Халіно» (Курськ, РФ) / Бєлгородська область РФ",
-          launchOriginDetailed: "Пусковий комплекс на базі аеродрому «Халіно» (Курська обл.) або мобільні стартові позиції вздовж кордону Бєлгородської області.",
-          launchAirbase: "Аеродром «Халіно» (Курськ-Східний, 14-й гвардійський винищувальний авіаполк) / польовий табір Томаровка",
-          launchUnit: "Роти БПЛА 20-ї гвардійської армії Західного військового округу ЗС РФ",
-          launchTrajectoryVector: `Курс ${Math.round(normHeading)}°: транзит через прикордонний рубіж Слобожанщини вглиб Лівобережжя України вздовж ярів та лісосмуг.`
-        };
-      }
-      return {
-        launchOrigin: "Авіабаза «Сеща» (Брянська обл., РФ) / Орел (РФ)",
-        launchOriginDetailed: "Військовий аеродром «Сеща» (Дубровський район, Брянська обл.) або мобільний пусковий майданчик «Орел-Південний».",
-        launchAirbase: "Авіабаза Сеща (566-й військово-транспортний авіаполк ВТА РФ) / аеродром «Орел»",
-        launchUnit: "Спеціальні мобільні пускові групи Shahed Центру БАС МО РФ",
-        launchTrajectoryVector: `Курс ${Math.round(normHeading)}°: запуск з північного напрямку, проліт через Чернігівщину/Київщину вздовж річкових русел Дніпра та Десни.`
-      };
-    }
-
-    return {
-      launchOrigin: "Прикордонна смуга РФ або ТОТ (< 35 км від ЛБЗ)",
-      launchOriginDetailed: "Польові позиції тактичної розвідки противника у прикордонних районах Бєлгородської/Курської обл. або ТОТ Донбасу/Запоріжжя.",
-      launchAirbase: "Польові стартові майданчики розвідувальних підрозділів бригад ЗС РФ",
-      launchUnit: "Роти безпілотної розвідки 1-го армійського корпусу або мотострілецьких бригад противника",
-      launchTrajectoryVector: `Курс ${Math.round(normHeading)}°: старт з пневматичної катапульти, вихід на робочу висоту 1200–2200 м для повітряної розвідки та коригування вогню.`
-    };
-  }
-
-  if (type === "bomb") {
-    return {
-      launchOrigin: "Рубіж скиду тактичної авіації над Бєлгородською/Курською обл. або ТОТ",
-      launchOriginDetailed: "Скид з надзвукових винищувачів-бомбардувальників Су-34 на висоті 10 500–12 500 м на віддаленні 65–85 км до лінії фронту.",
-      launchAirbase: "Авіабаза «Балтимор» (Воронеж, 47-й гвардійський бомбардувальний авіаполк) / «Морозовськ» (Ростовська обл.) / «Саки» (ТОТ Крим)",
-      launchUnit: "105-та змішана авіаційна дивізія 6-ї армії ВПС і ППО ЗС РФ (екіпажі літаків Су-34/Су-35)",
-      launchTrajectoryVector: `Курс ${Math.round(normHeading)}°: скид на швидкості 900+ км/год, автономне аеродинамічне планування за крилом УМПК та корекція за антеною «Комета-М».`
-    };
-  }
-
-  if (type === "munition") {
-    if (lowerModel.includes("кинджал") || lowerModel.includes("kinzhal")) {
-      return {
-        launchOrigin: "Повітряний простір над Рязанською / Тульською або Липецькою обл. РФ",
-        launchOriginDetailed: "Висотний рубіж пуску надзвукового перехоплювача МіГ-31К на висоті понад 15 000 м при швидкості розгону 2.3 Маха.",
-        launchAirbase: "Авіабаза «Саваслейка» (Нижньогородська обл., 4-й Центр бойового застосування та перенавчання льотного складу ПКС РФ)",
-        launchUnit: "Окремий дальній авіаційний полк спеціального призначення ПКС РФ (носії МіГ-31К / 9-А-7660)",
-        launchTrajectoryVector: `Курс ${Math.round(normHeading)}°: відділення від літака-носія, вихід на квазібалістичну траєкторію до 40 км, пікірування під кутом 80° на гіперзвуковій швидкості.`
-      };
-    }
-    if (lowerModel.includes("калібр") || lowerModel.includes("kalibr")) {
-      return {
-        launchOrigin: "Східна акваторія Чорного моря (район Новоросійська / Феодосії)",
-        launchOriginDetailed: "Надводні фрегати пр. 11356Р або дизель-електричні підводні човни пр. 636.3 у східній частині Чорного моря.",
-        launchAirbase: "Новоросійська військово-морська база ЧФ РФ (Краснодарський край)",
-        launchUnit: "41-ша бригада ракетних кораблів та 4-та окрема бригада підводних човнів Чорноморського флоту РФ",
-        launchTrajectoryVector: `Курс ${Math.round(normHeading)}°: вертикальний старт з УКСК 3С14 / ТА, перехід на низьковисотний дозвуковий марш (40–80 м) над морем і сушею.`
-      };
-    }
-    if (lowerModel.includes("іскандер-м") || lowerModel.includes("iskander") || lowerModel.includes("kn-23")) {
-      return {
-        launchOrigin: "Позиційний район ОТРК «Іскандер-М» (Курська / Брянська / Воронезька обл. або ТОТ Крим)",
-        launchOriginDetailed: "Польові позиційні райони 448-ї або 112-ї ракетної бригади Сухопутних військ ЗС РФ (віддалення 120–280 км від лінії зіткнення).",
-        launchAirbase: "Позиційні польові райони старту самохідних пускових установок 9П78-1 на шасі МЗКТ-7930",
-        launchUnit: "Ракетні війська та артилерія Сухопутних військ ЗС РФ (448-ма РБр, в/ч 35535 або 26-та РБр)",
-        launchTrajectoryVector: `Курс ${Math.round(normHeading)}°: балістичний підйом, активне протизенітне маневрування з перевантаженням 20–30G, час польоту 3–5 хвилин.`
-      };
-    }
-    return {
-      launchOrigin: "Пусковий рубіж над Каспійським морем або Саратовською/Вологодською обл. РФ",
-      launchOriginDetailed: "Пуск крилатих ракет повітряного базування з ракетоносців Ту-95МС над Каспійським морем (район Астрахані / Енгельса).",
-      launchAirbase: "Авіабази Дальньої авіації ПКС РФ: «Оленья» (Мурманська обл.) та «Енгельс-2» (Саратовська обл.)",
-      launchUnit: "22-га гвардійська важка бомбардувальна авіаційна дивізія Дальньої авіації ПКС РФ (Ту-95МС / Ту-160)",
-      launchTrajectoryVector: `Курс ${Math.round(normHeading)}°: скид ракети на висоті 9–11 км, запуск маршового турбореактивного двигуна ТРДД-50, політ на наднизькій висоті (30–90 м) за рельєфом.`
-    };
-  }
-
-  if (type === "fpv") {
-    return {
-      launchOrigin: "Передові позиції та бліндажі противника на лінії бойового зіткнення",
-      launchOriginDetailed: "Замасковані вогневі позиції операторів БПЛА, посадки та руїни будівель на передовій лінії фронту (відстань 2–12 км).",
-      launchAirbase: "Польові пункти управління розрахунків FPV-дронів тактичного рівня",
-      launchUnit: "Підрозділи операторів ударних безпілотників мотострілецьких бригад противника («Судоплатов», «Бобр» тощо)",
-      launchTrajectoryVector: `Курс ${Math.round(normHeading)}°: швидкісний політ на висоті 15–60 м вздовж лісосмуг та доріг з прямим відеокеруванням оператором.`
-    };
-  }
-
-  if (type === "helicopter") {
-    return {
-      launchOrigin: "Передовий польовий вертодром підскоку (Ростовська/Бєлгородська обл. або ТОТ Крим/Бердянськ)",
-      launchOriginDetailed: "Майданчики передового базування ударних вертольотів Ка-52 / Мі-28Н (віддалення 35–90 км від ЛБЗ).",
-      launchAirbase: "Аеродром «Ростов-Центральний», «Таганрог-Південний» або вертодроми в районі Бердянська/Мелітополя",
-      launchUnit: "16-та бригада армійської авіації 4-ї армії ВПС і ППО ЗС РФ",
-      launchTrajectoryVector: `Курс ${Math.round(normHeading)}°: наднизький політ (15–80 м) над кронами дерев для уникнення виявлення радіолокаційними станціями ППО.`
-    };
-  }
-
-  if (type === "aircraft") {
-    const isRussianCombat =
-      lowerModel.includes("су-") ||
-      lowerModel.includes("міг-") ||
-      lowerModel.includes("su-") ||
-      lowerModel.includes("mig-") ||
-      lowerModel.includes("tu-") ||
-      lowerModel.includes("ту-");
-
-    if (isRussianCombat) {
-      return {
-        launchOrigin: "Авіабази базування тактичної авіації ПКС РФ («Балтимор», «Халіно», «Міллерово», «Саки»)",
-        launchOriginDetailed: "Військовий аеродром постійного базування тактичної авіації ЗС РФ.",
-        launchAirbase: "Аеродром «Балтимор» (Воронеж, 47-й гвардійський бомбардувальний авіаполк) / «Кримськ» / «Саки»",
-        launchUnit: "4-та та 6-та армії ВПС і ППО Повітряно-космічних сил РФ",
-        launchTrajectoryVector: `Курс ${Math.round(normHeading)}°: висотний транзит до рубежу виконання бойового завдання або патрулювання повітряного простору.`
-      };
-    }
-
-    const lowerId = (id || "").toLowerCase();
-    const isSpartan = lowerModel.includes("spartan") || lowerModel.includes("c-27") || lowerModel.includes("c27") || lowerId.includes("rof");
-    if (isSpartan) {
-      return {
-        launchOrigin: "Авіабаза Отопень (Baza 90 Transport Aerian, Румунія)",
-        launchOriginDetailed: "90-та база військово-транспортної авіації ВПС Румунії (Бухарест/Отопень), оснащена літаками C-27J Spartan для тактичних перевезень.",
-        launchAirbase: "90-та авіабаза ВПС Румунії (Аеродром Отопень, Бухарест)",
-        launchUnit: "Ескадрилья 902 військово-транспортної авіації ВПС Румунії",
-        launchTrajectoryVector: `Курс ${Math.round(normHeading)}°: тактичний транспортний політ у східноєвропейському операційному районі вздовж кордону НАТО.`
-      };
-    }
-
-    const isGlobemaster = lowerModel.includes("globemaster") || lowerModel.includes("c-17") || lowerId.includes("rch");
-    if (isGlobemaster) {
-      return {
-        launchOrigin: "Авіабаза Папа (Pápa Air Base, Угорщина) / Рамштайн (Ramstein AB, Німеччина)",
-        launchOriginDetailed: "Стратегічне важке перевезення за програмою NATO Strategic Airlift Capability (SAC) або Air Mobility Command ПС США.",
-        launchAirbase: "Авіабаза Папа (Угорщина, Heavy Airlift Wing) або Авіабаза Рамштайн (Німеччина)",
-        launchUnit: "Heavy Airlift Wing (HAW) НАТО / Air Mobility Command ВПС США",
-        launchTrajectoryVector: `Курс ${Math.round(normHeading)}°: стратегічний ешелон логістичного забезпечення східного флангу Альянсу.`
-      };
-    }
-
-    const isPoseidon = lowerModel.includes("poseidon") || lowerModel.includes("p-8");
-    if (isPoseidon) {
-      return {
-        launchOrigin: "Військово-морська авіабаза Сігонелла (NAS Sigonella, Сицилія, Італія)",
-        launchOriginDetailed: "Морський патрульний протичовновий та розвідувальний літак ВМС США / НАТО над Чорним морем.",
-        launchAirbase: "NAS Sigonella (Сицилія) / авіабаза Міхаїл Когелнічану (Румунія)",
-        launchUnit: "Патрульна ескадрилья (VP) флоту США / 5-й флот НАТО",
-        launchTrajectoryVector: `Курс ${Math.round(normHeading)}°: бойове патрулювання та моніторинг надводної/підводної обстановки в акваторії Чорного моря.`
-      };
-    }
-
-    const isGlobalHawk = lowerModel.includes("global hawk") || lowerModel.includes("rq-4") || lowerId.includes("forte");
-    if (isGlobalHawk) {
-      return {
-        launchOrigin: "Військово-морська авіабаза Сігонелла (NAS Sigonella, Італія)",
-        launchOriginDetailed: "Стратегічний розвідувальний висотний безпілотник RQ-4B Global Hawk ВПС США.",
-        launchAirbase: "NAS Sigonella (Сицилія, Італія)",
-        launchUnit: "9-те розвідувальне крило (9th Reconnaissance Wing) ВПС США",
-        launchTrajectoryVector: `Курс ${Math.round(normHeading)}°: висотне стратегічне патрулювання FL 500 – FL 550 над Чорним морем та східним флангом НАТО.`
-      };
-    }
-
-    const isHercules = lowerModel.includes("hercules") || lowerModel.includes("c-130");
-    if (isHercules) {
-      return {
-        launchOrigin: "Авіабаза Повідз (Powidz, 33-тя база ПС Польщі) / Констанца (Mihail Kogălniceanu)",
-        launchOriginDetailed: "Тактичний військово-транспортний літак сил підтримки НАТО.",
-        launchAirbase: "33-тя база транспортної авіації (Повідз, Польща) або 57-ма авіабаза (Констанца, Румунія)",
-        launchUnit: "Військово-транспортні сили союзників НАТО",
-        launchTrajectoryVector: `Курс ${Math.round(normHeading)}°: рух за військово-транспортним маршрутом оперативного забезпечення.`
-      };
-    }
-
-    const isTanker = lowerModel.includes("stratotanker") || lowerModel.includes("kc-") || lowerModel.includes("tanker") || lowerId.includes("lagr") || lowerId.includes("homer");
-    if (isTanker) {
-      return {
-        launchOrigin: "Авіабаза Мілденхолл (RAF Mildenhall, Велика Британія) / Шпангдалем (Spangdahlem AB, Німеччина)",
-        launchOriginDetailed: "Літак-паливозаправник сил НАТО для забезпечення тривалого чергування тактичної авіації.",
-        launchAirbase: "RAF Mildenhall (100th Air Refueling Wing) або Авіабаза Повідз (Польща)",
-        launchUnit: "100-те крило повітряного дозаправлення ВПС США / флот MRTT НАТО",
-        launchTrajectoryVector: `Курс ${Math.round(normHeading)}°: виконання завдань дозаправлення у повітрі в призначеній зоні очікування.`
-      };
-    }
-
-    const isAwacs = lowerModel.includes("awacs") || lowerModel.includes("e-3") || lowerModel.includes("sentry") || lowerId.includes("nato");
-    if (isAwacs) {
-      return {
-        launchOrigin: "Авіабаза Гайленкірхен (NATO Air Base Geilenkirchen, Німеччина)",
-        launchOriginDetailed: "Літак далекого радіолокаційного виявлення та наведення (AWACS) НАТО.",
-        launchAirbase: "NATO Air Base Geilenkirchen (Німеччина) / Отепені (Румунія)",
-        launchUnit: "Компонент E-3A командування ДРЛВ НАТО (NAEW&CF)",
-        launchTrajectoryVector: `Курс ${Math.round(normHeading)}°: кругове радіолокаційне сканування повітряного простору на глибину до 450 км.`
-      };
-    }
-
-    const isFighter = lowerModel.includes("f-16") || lowerModel.includes("f-15") || lowerModel.includes("f-35") || lowerModel.includes("typhoon") || lowerModel.includes("rafale") || lowerModel.includes("gripen") || lowerModel.includes("fighter");
-    if (isFighter) {
-      const isRomania = currentLat < 48.0;
-      return {
-        launchOrigin: isRomania ? "86-та авіабаза «Фетешті» (Baza 86 Aeriană, Румунія)" : "31-ша база тактичної авіації «Кшесіни» / 32-га «Ласк» (Польща)",
-        launchOriginDetailed: "Багатоцільовий тактичний винищувач бойового чергування (Air Policing NATO).",
-        launchAirbase: isRomania ? "Авіабаза Фетешті (Borcea, Румунія)" : "Авіабаза Ласк (Польща)",
-        launchUnit: "Сили швидкого реагування НАТО з патрулювання повітряного простору (Air Policing)",
-        launchTrajectoryVector: `Курс ${Math.round(normHeading)}°: патрулювання рубежів повітряного простору у стані підвищеної бойової готовності.`
-      };
-    }
-
-    const isPoland = currentLat > 49.8;
-    return {
-      launchOrigin: isPoland ? "Аеропорти Польщі (Варшава WAW, Краків KRK, Жешув RZE)" : "Аеропорти Румунії (Бухарест OTP, Клуж CLJ) або Молдови (Кишинів RMO)",
-      launchOriginDetailed: "Міжнародний регулярний цивільний комерційний рейс у європейському безпечному авіаційному просторі.",
-      launchAirbase: isPoland ? "Міжнародний аеропорт імені Фридерика Шопена (Варшава) або Краків-Баліце" : "Міжнародний аеропорт імені Анрі Коанди (Бухарест) / Кишинів",
-      launchUnit: "Цивільні авіаперевізники під постійним радіолокаційним контролем диспетчерів Eurocontrol",
-      launchTrajectoryVector: `Курс ${Math.round(normHeading)}°: транзитний міжнародний ешелон FL 300 - FL 390 уздовж узгоджених авіаційних трас ICAO.`
-    };
-  }
-
-  return {
-    launchOrigin: "Встановлюється засобами радіотехнічної розвідки ППО",
-    launchOriginDetailed: "Первинна радіолокаційна та акустична засічка на вході в зону виявлення системи моніторингу повітряного простору.",
-    launchAirbase: "Сектор прольоту контролюється радіолокаційними постами ППО ЗСУ",
-    launchUnit: "Оперативна інформація уточнюється черговими силами ППО",
-    launchTrajectoryVector: `Курс ${Math.round(normHeading)}°: ціль на автоматичному супроводженні черговими засобами радіолокації.`
-  };
-}
-
-export function getTargetSpecification(
+/**
+ * Returns factual, source-grounded display metadata without fabricated military specs.
+ */
+export function getTargetDisplayMeta(
   type: string,
   id: string,
-  speedKmh: number,
-  altitudeM: number = 180,
   packetModel?: string,
-  packetCallsign?: string,
-  lat?: number,
-  lon?: number,
-  heading?: number
-): TargetSpecification {
-  const altAnalysis = getAltitudeAnalysis(altitudeM);
-  const launchIntel = computeLaunchIntelligence(type, packetModel, lat, lon, heading, id);
-  const rawSpec = getRawTargetSpecification(type, id, speedKmh, altitudeM, packetModel, packetCallsign, altAnalysis);
+  packetCallsign?: string
+): TargetDisplayMeta {
+  const dataCategory = classifyClientDataCategory(id, packetCallsign);
+  const dataCategoryBadge =
+    dataCategory === "osint_message"
+      ? "ТЕКСТОВЕ ПОВІДОМЛЕННЯ (OSINT)"
+      : "ФАКТИЧНЕ СПОСТЕРЕЖЕННЯ (ADS-B)";
 
-  return {
-    ...rawSpec,
-    launchOrigin: launchIntel.launchOrigin || rawSpec.launchOrigin,
-    launchOriginDetailed: launchIntel.launchOriginDetailed,
-    launchAirbase: launchIntel.launchAirbase,
-    launchUnit: launchIntel.launchUnit,
-    launchTrajectoryVector: launchIntel.launchTrajectoryVector
-  };
-}
-
-function getRawTargetSpecification(
-  type: string,
-  id: string,
-  speedKmh: number,
-  altitudeM: number,
-  packetModel: string | undefined,
-  packetCallsign: string | undefined,
-  altAnalysis: ReturnType<typeof getAltitudeAnalysis>
-): TargetSpecification {
-  if (type === "uav") {
-    const isJetShahed =
-      (packetModel && (packetModel.toLowerCase().includes("238") || packetModel.toLowerCase().includes("jet"))) ||
-      speedKmh >= 235;
-
-    if (isJetShahed) {
-      return {
-        modelName: packetModel && packetModel.includes("238") ? packetModel : "Shahed-238 (Реактивний / Jet-Powered)",
-        categoryName: "Швидкісний турбореактивний дрон-камікадзе далекої дії",
-        threatLevel: "CRITICAL",
-        color: "#ef4444",
-        warhead: "50 кг (Високобризантна термобарична ТББЧ-50 або осколково-фугасна ОФБЧ-50)",
-        maxRange: "1 000 – 1 800 км",
-        typicalSpeed: "460 – 580 км/год (турбореактивна тяга, швидкість у 3 рази вища за Shahed-136)",
-        altitudeCorridor: "300 – 1 500 м (висотний швидкісний ешелон)",
-        altitudeCategory: altAnalysis.corridorCategory,
-        guidance: "CRPA антена «Комета-М» (8-канальна) + резервна IMU + оптична/тепловізійна ГСН",
-        engine: "Малогабаритний турбореактивний двигун Toloue-10 / TJ100 (без гвинта, вихлопне сопло)",
-        rcs: "~0.08 м² (радіопоглинаюче чорне матове композитне покриття RAM)",
-        tacticalRole: "Швидкісний прорив рубежів МВГ (мобільні вогневі групи фізично не встигають навестись) та ураження пріоритетних об'єктів",
-        airDefenseCounters: "Виключно ЗРК середнього/малого радіусу (IRIS-T, NASAMS, Бук-М1) та винищувачі F-16 / МіГ-29",
-        soundProfile: "Високочастотний наростаючий свист реактивної турбіни (відмінний від звуку поршневого «мопеда»)",
-        isJet: true,
-        propulsionSummary: "🔥 Турбореактивний двигун ТРД • Реактивне сопло • Швидкість ~510 км/год • Пропелер відсутній",
-        detectionSensors: "РЛС огляду ППО ЗСУ + мережа акустичних сенсорів «Звук» (високочастотний спектр реактивної турбіни)",
-        launchOrigin: "Полігон Чауда (ТОТ Крим) / Приморсько-Ахтарськ / Курська обл. (РФ)",
-        tacticalThreatAssessment: "Критична загроза. Через швидкість ~500 км/год час на реакцію ППО скорочено до < 90 секунд на сектор. Вогонь кулеметних груп неефективний.",
-        reactionTimeWindow: "< 1.5 хв на сектор (висока швидкість наближення)"
-      };
-    }
-
-    const isRecon =
-      (packetModel && (packetModel.includes("Orlan") || packetModel.includes("Supercam") || packetModel.includes("ZALA") || packetModel.includes("Recon"))) ||
-      (!packetModel && speedKmh < 140);
-
-    if (isRecon) {
-      return {
-        modelName: packetModel || "ZALA 421 / Supercam S350 / Орлан-10",
-        categoryName: "Оперативно-тактичний розвідувальний БПЛА",
-        threatLevel: "HIGH",
-        color: "#eab308",
-        warhead: "Оптико-електронна розвідувальна станція (Full HD / тепловізор / лазерний далекомір)",
-        maxRange: "до 140–180 км",
-        typicalSpeed: "90 – 130 км/год",
-        altitudeCorridor: "1 000 – 2 500 м",
-        altitudeCategory: altAnalysis.corridorCategory,
-        guidance: "Завадостійкий супутниковий зв'язок + автономний автопілот",
-        engine: "Електродвигун або тихий бензиновий ДВЗ з тягнучим гвинтом",
-        rcs: "~0.05 м² (малопомітний радіолокаційно)",
-        tacticalRole: "Повітряна розвідка, онлайн-коригування ударів КАБ, РСЗВ та важкої артилерії",
-        airDefenseCounters: "Зенітні FPV-перехоплювачі, ЗРК малої дальності (Osa, Crotale, Стріла-10), комплекси РЕБ («Буковель-AD»)",
-        soundProfile: "Майже безшумний на робочій висоті понад 1000 м, тихе дзижчання на землі",
-        isJet: false,
-        propulsionSummary: "🔋 Електромотор / тихий ДВЗ • Тягнучий гвинт • Швидкість ~110 км/год • Оптичний підвіс",
-        detectionSensors: "РЛС огляду повітряного простору + оптичні станції спостереження",
-        launchOrigin: "Прикордонні та прифронтові райони пуску катапультного типу (< 40 км від лінії фронту)",
-        tacticalThreatAssessment: "Високий пріоритет на знищення: безпосередньо наводить та коригує удари авіабомб КАБ та ракет.",
-        reactionTimeWindow: "Баражування у секторі (15 – 35 хв)"
-      };
-    }
-
-    return {
-      modelName: packetModel || "Shahed-136 (Герань-2 / Поршневий)",
-      categoryName: "Поршневий баражуючий дрон-камікадзе далекої дії",
-      threatLevel: "CRITICAL",
-      color: "#ef4444",
-      warhead: "50–90 кг (Осколково-фугасна ОФБЧ-50 або термобарична ТББЧ-50)",
-      maxRange: "1 500 – 2 500 км",
-      typicalSpeed: "160 – 195 км/год (поршнева тяга)",
-      altitudeCorridor: "50 – 350 м (наднизька, огинання русел річок та ярів)",
-      altitudeCategory: altAnalysis.corridorCategory,
-      guidance: "CRPA антена «Комета-М» (8-канальний GPS/ГЛОНАСС) + резервний інерціальний блок",
-      engine: "Поршневий ДВЗ Mado MD-550 (2-тактний, 4-циліндровий, 50 к.с.) + штовхаючий 2-лопатевий пропелер",
-      rcs: "~0.08 м² (композитний планер)",
-      tacticalRole: "Вибіркове ураження цивільної/енергетичної інфраструктури, виснаження та перевантаження ППО",
-      airDefenseCounters: "Мобільні вогневі групи (кулемети Browning M2 / ДШК, прожектори, тепловізори), ЗСУ Gepard, ЗРК Viktor",
-      soundProfile: "Характерний гучний низькочастотний звук 2-тактного двигуна («мопед» / «бензопила»), чутно за 3–5 км",
-      isJet: false,
-      propulsionSummary: "⚙️ Поршневий ДВЗ MD-550 (50 к.с.) • Штовхаючий гвинт на хвості • Швидкість ~185 км/год • Звук «мопед»",
-      detectionSensors: "Акустична мережа «Звук» (виявлення за звуком мопеда) + мобільні пости «єППО» + РЛС низьких висот",
-      launchOrigin: "Приморсько-Ахтарськ (Краснодарський край) / мис Чауда (Крим) / Курськ / Орел",
-      tacticalThreatAssessment: "Низьковисотний політ з огинанням рельєфу. Основний засіб знищення — мобільні вогневі групи (МВГ) та зенітні гармати Gepard.",
-      reactionTimeWindow: "3.5 – 6 хв на сектор (дозвуковий поршневий темп)"
-    };
-  }
-
-  if (type === "bomb") {
-    return {
-      modelName: packetModel || "КАБ-500 / КАБ-1500 (УМПК) / УМПБ Д-30СН",
-      categoryName: "Керована плануюча авіаційна бомба з крилами УМПК",
-      threatLevel: "CRITICAL",
-      color: "#ef4444",
-      warhead: "500–1 500 кг фугасна ОФАБ / бетонобійна (ФАБ-500 М-62 з модулем планування)",
-      maxRange: "до 65–85 км від рубежу скиду тактичною авіацією Су-34",
-      typicalSpeed: "750 – 920 км/год (високошвидкісне безмоторне планування)",
-      altitudeCorridor: "1 200 – 4 500 м (стрімке зниження за глісадою до цілі)",
-      altitudeCategory: altAnalysis.corridorCategory,
-      guidance: "Завадостійкий модуль супутникової навігації «Комета-М» (CRPA) + інерціальний блок",
-      engine: "Відсутній (аеродинамічні розкривні плануючі крила та хвостові рулі)",
-      rcs: "~0.3 – 0.5 м² (складна для знищення масивна ціль)",
-      tacticalRole: "Руйнування фортифікацій, опорних пунктів та об'єктів прифронтової інфраструктури",
-      airDefenseCounters: "ЗРК дальньої дії (Patriot PAC-2, SAMP/T, F-16 з AIM-120) по літаку-носію Су-34 до рубежу скиду",
-      soundProfile: "Характерний наростаючий оглушливий реактивний свист оперення під час пікірування",
-      isJet: false,
-      propulsionSummary: "🪂 Безмоторне плануюче крило УМПК • Глісада пікірування • Швидкість ~850 км/год",
-      detectionSensors: "РЛС дального радіолокаційного виявлення (засічка скиду з винищувача Су-34)",
-      launchOrigin: "Рубіж скиду Су-34 над Бєлгородською / Курською обл. / ТОТ (висота 10–12 км, віддалення 65–80 км)",
-      tacticalThreatAssessment: "Масивна фугасна міць (до 1500 кг). Знищення самої бомби у повітрі вкрай ускладнене; єдиний надійний засіб — знищення або відтискання носія Су-34.",
-      reactionTimeWindow: "60 – 110 секунд від моменту скиду до удару"
-    };
-  }
-
-  if (type === "fpv") {
-    return {
-      modelName: packetModel || "Ударний тактичний FPV-дрон камікадзе (7-10 дюймів)",
-      categoryName: "Високоманеврений ударний тактичний квадрокоптер",
-      threatLevel: "HIGH",
-      color: "#d946ef",
-      warhead: "1.5–3.5 кг (кумулятивна граната ПГ-7ВР, пластид, кумулятивний заряд)",
-      maxRange: "12 – 22 км (до 25 км з оптоволоконною лінією зв'язку)",
-      typicalSpeed: "90 – 130 км/год (екстремальна динаміка польоту)",
-      altitudeCorridor: "15 – 90 м (наднизька висота, огинання рельєфу та посадок)",
-      altitudeCategory: altAnalysis.corridorCategory,
-      guidance: "Аналогове/цифрове відео з мінімальною затримкою, радіоканал ELRS або оптоволоконна котушка",
-      engine: "4 високооборотні безколекторні електромотори",
-      rcs: "< 0.01 м² (наднизька ЕПР, практично непомітний для оглядових РЛС)",
-      tacticalRole: "Точкове ураження живої сили, техніки, опорних пунктів та перехоплення БПЛА",
-      airDefenseCounters: "Окопні комплекси РЕБ («Купол»), портативні глушники, антидронові сітки, дробовики 12-го калібру",
-      soundProfile: "Високочастотний різкий пронизливий виск високооборотних пропелерів",
-      isJet: false,
-      propulsionSummary: "⚡ 4 безколекторні електродвигуни • Квадрокоптер • Швидкість ~110 км/год",
-      detectionSensors: "Радіочастотні сканери («Цукорок»), аналізатори відеоканалів 5.8 GHz",
-      launchOrigin: "Передові позиції та бліндажі противника на лінії зіткнення (< 15 км)",
-      tacticalThreatAssessment: "Безпосередня небезпека на передовій. Протидія: окопний РЕБ, сітки, дробовики.",
-      reactionTimeWindow: "30 – 60 секунд у зоні прямої видимості"
-    };
-  }
+  const cleanModel = (packetModel || "").trim();
 
   if (type === "munition") {
-    if (packetModel && (packetModel.includes("Кинжал") || packetModel.includes("Іскандер-М") || speedKmh > 1400)) {
-      return {
-        modelName: packetModel || "Х-47М2 «Кинджал» / 9-А-7660 (Іскандер-М)",
-        categoryName: "Аеробалістична гіперзвукова ракета",
-        threatLevel: "CRITICAL",
-        color: "#f97316",
-        warhead: "500 кг унітарна проникаюча / касетна",
-        maxRange: "до 2 000 км",
-        typicalSpeed: "до 3 400 – 4 000 км/год (10–12 Маха на розгоні)",
-        altitudeCorridor: "до 25–40 км (пікірування на ціль під кутом 80-90°)",
-        altitudeCategory: altAnalysis.corridorCategory,
-        guidance: "Інерціальна + супутникова корекція + радіолокаційна ГСН",
-        engine: "Твердопаливний ракетний двигун високої тяги",
-        rcs: "~0.1 – 0.2 м²",
-        tacticalRole: "Ураження особливо захищених бункерів, штабів, аеродромів та систем ППО",
-        airDefenseCounters: "Виключно ЗРК Patriot PAC-3 (MSE кінетичний перехоплювач) / SAMP/T",
-        soundProfile: "Сверхзвуковий подвійний ударний бавовняний фронт Маха",
-        isJet: true,
-        propulsionSummary: "⚡ Твердопаливний ракетний двигун • Гіперзвук до 10–12 Мах • Балістична дуга",
-        detectionSensors: "РЛС раннього попередження про ракетний напад",
-        launchOrigin: "Винищувачі МіГ-31К (з району Саваслейка/Рязань) або ОТРК «Іскандер-М»",
-        tacticalThreatAssessment: "Аеробалістична ціль, пікірування на швидкості > 3000 км/год. Перехоплення можливе виключно Patriot PAC-3.",
-        reactionTimeWindow: "< 40 секунд на кінцевому ешелоні перехоплення"
-      };
-    }
-
     return {
-      modelName: packetModel || "Х-101 / 3М-14 «Калібр» / Іскандер-К (Р-500)",
-      categoryName: "Стратегічна низьковисотна крилата ракета",
+      modelName: cleanModel || "Ракетна ціль (тип не уточнено)",
+      categoryLabel: "Ракетна загроза",
+      dataCategory,
+      dataCategoryBadge,
       threatLevel: "CRITICAL",
       color: "#f97316",
-      warhead: "450 кг (проникаюча фугасна або касетна з осколковими суббоєприпасами)",
-      maxRange: "2 500 – 5 500 км",
-      typicalSpeed: "720 – 900 км/год (дозвуковий марш)",
-      altitudeCorridor: "30 – 120 м (екстремально низький політ за радіовисотоміром)",
-      altitudeCategory: altAnalysis.corridorCategory,
-      guidance: "Оптико-електронна система «Отблеск-У» (DSMAC) + ТЕРКОМ + завадозахищений ГЛОНАСС",
-      engine: "Двоконтурний турбореактивний ТРДД-50 / РД-95 (висувний під фюзеляжем)",
-      rcs: "~0.01 – 0.05 м² (знижена радіопомітність, фасеточний ніс)",
-      tacticalRole: "Точкове ураження стратегічних тилових об'єктів з обходом позицій ППО",
-      airDefenseCounters: "Винищувачі F-16 / МіГ-29, ЗРК NASAMS, IRIS-T SLM, мобільні ПЗРК на маршруті",
-      soundProfile: "Низький турбореактивний гул реактивного літака, чутний безпосередньо перед прольотом",
-      isJet: true,
-      propulsionSummary: "🚀 Турбореактивний двигун ТРДД-50 / РД-95 • Швидкість ~820 км/год • Дозвуковий марш",
-      detectionSensors: "Загальнонаціональна радіолокаційна мережа ППО + спостережні пости",
-      launchOrigin: "Стратегічні ракетоносці Ту-95МС (Каспій/Енгельс) або кораблі ЧФ РФ",
-      tacticalThreatAssessment: "Низьковисотний політ (30–80 м) зі складною траєкторією обходу позицій ППО.",
-      reactionTimeWindow: "1 – 2 хвилини на перехоплення у зоні дії комплексу ППО"
+      safetyNote: "Підвищена небезпека. Перебувайте в укритті до офіційного відбою тривоги."
+    };
+  }
+
+  if (type === "bomb") {
+    return {
+      modelName: cleanModel || "Керована авіабомба / КАБ",
+      categoryLabel: "Авіабомбова загроза",
+      dataCategory,
+      dataCategoryBadge,
+      threatLevel: "CRITICAL",
+      color: "#f59e0b",
+      safetyNote: "Негайно перейдіть в укриття або захищене приміщення."
+    };
+  }
+
+  if (type === "uav") {
+    return {
+      modelName: cleanModel || "БпЛА (тип не уточнено)",
+      categoryLabel: "Безпілотний літальний апарат",
+      dataCategory,
+      dataCategoryBadge,
+      threatLevel: "HIGH",
+      color: "#ef4444",
+      safetyNote: "Слідкуйте за офіційними сповіщеннями та тримайтесь подалі від вікон."
+    };
+  }
+
+  if (type === "fpv") {
+    return {
+      modelName: cleanModel || "FPV-дрон",
+      categoryLabel: "Тактичний FPV-дрон",
+      dataCategory,
+      dataCategoryBadge,
+      threatLevel: "HIGH",
+      color: "#a855f7",
+      safetyNote: "Загроза ближньої зони. Уникайте відкритих ділянок та перебувайте в укритті."
+    };
+  }
+
+  if (type === "aircraft") {
+    return {
+      modelName: cleanModel || "Повітряне судно (модель не уточнено)",
+      categoryLabel: dataCategory === "sensor_observation" ? "Авіація (транспондер ADS-B)" : "Авіація (повідомлення)",
+      dataCategory,
+      dataCategoryBadge,
+      threatLevel: "LOW",
+      color: "#38bdf8",
+      safetyNote: "Повітряне судно зафіксовано за відкритим транспондером ADS-B."
     };
   }
 
   if (type === "helicopter") {
     return {
-      modelName: packetModel || "Ка-52 «Алігатор» / Мі-28Н «Нічний мисливець»",
-      categoryName: "Ударний розвідувально-бойовий гелікоптер",
-      threatLevel: "HIGH",
+      modelName: cleanModel || "Гелікоптер",
+      categoryLabel: "Гвинтокрил",
+      dataCategory,
+      dataCategoryBadge,
+      threatLevel: "LOW",
       color: "#10b981",
-      warhead: "12 ПТРК «Вихор» (кумулятивні 10 км), НАР С-8/С-13, 30-мм автоматична гармата 2А42",
-      maxRange: "до 460 км (бойовий радіус 200 км)",
-      typicalSpeed: "220 – 310 км/год",
-      altitudeCorridor: "15 – 150 м (політ над верхівками дерев, зависання)",
-      altitudeCategory: altAnalysis.corridorCategory,
-      guidance: "Оптико-прицільна система «Шквал-В» / «Тор» з тепловізором",
-      engine: "2 турбовальні ВК-2500 (по 2400 к.с.)",
-      rcs: "~2.5 – 3.5 м²",
-      tacticalRole: "Штурмова підтримка, полювання на бронетехніку, прикордонне патрулювання",
-      airDefenseCounters: "ПЗРК Stinger, Starstreak, RBS-70, FPV-дрони в хвостовий гвинт",
-      soundProfile: "Характерний ритмічний низькочастотний ляскіт лопатей співвісного гвинта",
-      isJet: false,
-      propulsionSummary: "🚁 2 турбовальні двигуни ВК-2500 • Співвісні гвинти • Швидкість ~260 км/год",
-      detectionSensors: "РЛС огляду низьких висот + оптико-електронні комплекси",
-      launchOrigin: "Передові майданчики підскоку (Ростовська/Бєлгородська обл. / ТОТ Крим)",
-      tacticalThreatAssessment: "Штурмова підтримка та пуски ПТРК з дистанції 8–10 км.",
-      reactionTimeWindow: "2 – 4 хвилини у зоні радіовидимості"
-    };
-  }
-
-  if (type === "aircraft") {
-    if (id.startsWith("adsb-") || packetCallsign || (packetModel && !packetModel.includes("Су-"))) {
-      const displayModel = packetModel || `Цивільний авіалайнер (${id.slice(5).toUpperCase()})`;
-      return {
-        modelName: packetCallsign ? `${displayModel} [${packetCallsign}]` : displayModel,
-        categoryName: "Міжнародний транзитний авіарейс (ADS-B)",
-        threatLevel: "LOW",
-        color: "#38bdf8",
-        warhead: "Немає (Цивільний комерційний борт)",
-        maxRange: "до 12 000 км",
-        typicalSpeed: "820 – 940 км/год",
-        altitudeCorridor: "9 000 – 12 500 м (FL 300 - FL 410)",
-        altitudeCategory: altAnalysis.corridorCategory,
-        guidance: "Авіоніка ICAO, Flight Management System (FMS), TCAS II",
-        engine: "Турбовентиляторні двигуни CFM56 / GE90 / Trent",
-        rcs: "> 25 м² (великий пасажирський планер)",
-        tacticalRole: "Міжнародні регулярні перевезення вздовж узгоджених безпечних трас",
-        airDefenseCounters: "Контролюється цивільними диспетчерами Євроконтролю та Украероруху",
-        soundProfile: "Висотний глухий гул у верхніх шарах атмосфери",
-        isJet: true,
-        propulsionSummary: "✈️ Турбовентиляторні двигуни цивільної авіації • Безпечний транзит",
-        detectionSensors: "Транспондер ADS-B (Mode S / 1090 MHz) + диспетчерські РЛС Eurocontrol",
-        launchOrigin: "Міжнародні аеропорти Європи",
-        tacticalThreatAssessment: "Безпечний комерційний рейс у міжнародному узгодженому повітряному коридорі.",
-        reactionTimeWindow: "Штатний контрольований політ"
-      };
-    }
-
-    return {
-      modelName: packetModel || "Су-34М / Су-35С (Носій КАБ з УМПК)",
-      categoryName: "Фронтовий тактичний надзвуковий винищувач-бомбардувальник",
-      threatLevel: "CRITICAL",
-      color: "#38bdf8",
-      warhead: "до 8 000 кг (КАБ-500/1500 з УМПК, ракети Х-59МК2, Х-31П, Р-77-1)",
-      maxRange: "до 4 000 км (бойовий радіус 1 100 км)",
-      typicalSpeed: "900 – 1 400 км/год (до 1 900 км/год на висоті)",
-      altitudeCorridor: "9 000 – 12 500 м (висотний рубіж пуску за 60–80 км)",
-      altitudeCategory: altAnalysis.corridorCategory,
-      guidance: "РЛС з ФАР «Хибины», прицільний комплекс «Платан» + супутникова корекція",
-      engine: "2 турбореактивні АЛ-31Ф з форсажними камерами",
-      rcs: "~5.0 – 8.0 м²",
-      tacticalRole: "Дистанційне скидання плануючих авіабомб УМПК та удари по позиціях ППО",
-      airDefenseCounters: "Далекобійні комплекси Patriot PAC-2, винищувачі F-16 з ракетами AIM-120D",
-      soundProfile: "Потужний реактивний рев двох форсажних двигунів",
-      isJet: true,
-      propulsionSummary: "⚡ 2 турбореактивні форсажні двигуни АЛ-31Ф • Швидкість до 1 900 км/год",
-      detectionSensors: "РЛС дального радіолокаційного виявлення ППО ЗСУ",
-      launchOrigin: "Авіабази ПКС РФ («Балтимор» Воронеж, «Шайковка», «Морозовськ»)",
-      tacticalThreatAssessment: "Носій плануючих авіабомб КАБ з УМПК та ракет Х-59МК2. Пріоритетна ціль для Patriot PAC-2.",
-      reactionTimeWindow: "1 – 3 хвилини до виходу на рубіж пуску"
+      safetyNote: "Гвинтокрил зафіксовано за відкритими даними спостереження."
     };
   }
 
   return {
-    modelName: packetModel || `Повітряна ціль (${id})`,
-    categoryName: "Невизначений повітряний об'єкт",
+    modelName: cleanModel || "Невідома повітряна ціль",
+    categoryLabel: "Некласифікований об'єкт",
+    dataCategory,
+    dataCategoryBadge,
     threatLevel: "MEDIUM",
     color: "#94a3b8",
-    warhead: "Невідомо (потребує візуального підтвердження)",
-    maxRange: "Не визначено",
-    typicalSpeed: `${speedKmh} км/год`,
-    altitudeCorridor: `${Math.round(altitudeM)} м`,
-    altitudeCategory: altAnalysis.corridorCategory,
-    guidance: "Радіолокаційне супроводження",
-    engine: "Не ідентифіковано",
-    rcs: "Не виміряно",
-    tacticalRole: "Повітряний рух у контрольованій зоні",
-    airDefenseCounters: "Чергові засоби моніторингу ППО",
-    soundProfile: "Невідомо",
-    propulsionSummary: "📡 Радіолокаційний контакт • Телеметрія уточнюється",
-    detectionSensors: "Радіолокаційна мережа раннього виявлення",
-    launchOrigin: "Сектор уточнюється",
-    tacticalThreatAssessment: "Ціль на супроводженні черговими засобами ППО.",
-    reactionTimeWindow: "Контрольоване супроводження"
+    safetyNote: "Дані про тип об'єкта не підтверджені незалежними джерелами."
   };
-}
-
-export function getHeadingVectorDescription(
-  lat: number,
-  lon: number,
-  heading: number
-): { directionNameUk: string; compassAbbr: string; forwardSummary: string } {
-  const norm = ((heading % 360) + 360) % 360;
-
-  let directionNameUk = "північ";
-  let compassAbbr = "N";
-
-  if (norm >= 337.5 || norm < 22.5) {
-    directionNameUk = "північ";
-    compassAbbr = "N";
-  } else if (norm >= 22.5 && norm < 67.5) {
-    directionNameUk = "північний схід";
-    compassAbbr = "NE";
-  } else if (norm >= 67.5 && norm < 112.5) {
-    directionNameUk = "схід";
-    compassAbbr = "E";
-  } else if (norm >= 112.5 && norm < 157.5) {
-    directionNameUk = "південний схід";
-    compassAbbr = "SE";
-  } else if (norm >= 157.5 && norm < 202.5) {
-    directionNameUk = "південь";
-    compassAbbr = "S";
-  } else if (norm >= 202.5 && norm < 247.5) {
-    directionNameUk = "південний захід";
-    compassAbbr = "SW";
-  } else if (norm >= 247.5 && norm < 292.5) {
-    directionNameUk = "захід";
-    compassAbbr = "W";
-  } else {
-    directionNameUk = "північний захід";
-    compassAbbr = "NW";
-  }
-
-  let forwardSummary = `Курс ${Math.round(norm)}° (${compassAbbr}, ${directionNameUk})`;
-
-  if (lat > 48.0 && lat < 51.5 && lon > 29.5 && lon < 32.5) {
-    if (norm > 300 || norm < 40) forwardSummary += " • Вектор на Північ / Київщину";
-    else if (norm >= 40 && norm <= 140) forwardSummary += " • Вектор на Черкащину / Лівий берег";
-    else if (norm > 140 && norm <= 220) forwardSummary += " • Вектор на Південь / Кіровоградщину";
-    else forwardSummary += " • Вектор на Житомирщину / Захід";
-  } else if (lat < 47.5) {
-    if (norm > 315 || norm < 45) forwardSummary += " • Вектор з моря вглиб узбережжя";
-    else forwardSummary += " • Маневрування вздовж прибережної зони";
-  } else if (lon > 35.0) {
-    if (norm > 220 && norm < 320) forwardSummary += " • Вектор зі сходу на Центральну Україну";
-  }
-
-  return { directionNameUk, compassAbbr, forwardSummary };
 }

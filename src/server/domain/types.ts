@@ -80,9 +80,18 @@ export interface Observation {
 
 export type TrackLifecycle = "TENTATIVE" | "CONFIRMED" | "COASTING" | "STALE" | "EXPIRED";
 
+/**
+ * Strict separation of data provenance categories:
+ * - official_alert: Official civil defense sirens (alerts.in.ua)
+ * - osint_message: Textual air-defense monitoring reports / eyewitness reports (no radar-measured alt/speed)
+ * - sensor_observation: Physical transponder / radar / satellite observations with measured telemetry
+ */
+export type DataCategory = "official_alert" | "osint_message" | "sensor_observation";
+
 export interface TrackState {
   id: string;
   type: TrackType;
+  dataCategory?: DataCategory;
   lat: number;
   lon: number;
   heading: number;

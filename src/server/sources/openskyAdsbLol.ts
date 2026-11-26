@@ -1,7 +1,6 @@
 ﻿import { createUnifiedObservation, type UnifiedObservation } from "../domain/unifiedObservation.js";
 import type { TrackType } from "../domain/types.js";
-import { getDistanceToUkraineBorderKm } from "../domain/geo.js";
-import { isInsideUkraineGeo } from "./ukraineGeo.js";
+import { isHelicopterAirframe, shouldIngestAdsbContact } from "./adsbClassifier.js";
 
 interface AdsbAircraft {
   hex: string;
@@ -31,116 +30,29 @@ interface AdsbResponse {
   total?: number;
 }
 
-interface OpenSkyStateResponse {
-  time: number;
-  states: Array<[
-    string,       // 0: icao24
-    string | null,// 1: callsign
-    string,       // 2: origin_country
-    number | null,// 3: time_position
-    number,       // 4: last_contact
-    number | null,// 5: longitude
-    number | null,// 6: latitude
-    number | null,// 7: baro_altitude
-    boolean,      // 8: on_ground
-    number | null,// 9: velocity (m/s)
-    number | null,// 10: true_track (deg)
-    number | null,// 11: vertical_rate
-    number[] | null,// 12: sensors
-    number | null,// 13: geo_altitude
-    string | null,// 14: squawk
-    boolean,      // 15: spi
-    number        // 16: position_source
-  ]> | null;
-}
-
+/**
+ * Dedicated adsb.lol transponder feed adapter.
+ * Owns adsb.lol endpoints exclusively (no duplicate polling of adsb.fi/opensky).
+ */
 export class OpenskyAdsbLolSource {
   private lastFetch = 0;
   private cache: UnifiedObservation[] = [];
 
-  private isHelicopter(desc?: string, model?: string): boolean {
-    const text = `${desc ?? ""} ${model ?? ""}`.toUpperCase();
-    return (
-      text.includes("HELICOPTER") ||
-      text.includes("ROTORCRAFT") ||
-      text.includes("BELL ") ||
-      text.includes("SIKORSKY") ||
-      text.includes("EUROCOPTER") ||
-      text.includes("EC1") ||
-      text.includes("H125") ||
-      text.includes("H145") ||
-      text.includes("MI-8") ||
-      text.includes("MI-2") ||
-      text.includes("R44") ||
-      text.includes("R66")
-    );
-  }
-
-  private isMilitaryAircraft(callsign?: string, desc?: string, model?: string): boolean {
-    const text = `${callsign ?? ""} ${desc ?? ""} ${model ?? ""}`.toUpperCase();
-    return (
-      text.includes("C-17") || text.includes("GLOBEMASTER") ||
-      text.includes("C-27") || text.includes("SPARTAN") ||
-      text.includes("C-130") || text.includes("HERCULES") ||
-      text.includes("A400") || text.includes("ATLAS") ||
-      text.includes("KC-") || text.includes("K35R") || text.includes("STRATOTANKER") || text.includes("PEGASUS") ||
-      text.includes("P-8") || text.includes("POSEIDON") ||
-      text.includes("E-3") || text.includes("AWACS") || text.includes("SENTRY") ||
-      text.includes("RQ-") || text.includes("MQ-") || text.includes("GLOBAL HAWK") || text.includes("REAPER") ||
-      text.includes("C295") || text.includes("C-295") || text.includes("PERSUADER") ||
-      text.includes("SKYTRUCK") || text.includes("M-28") || text.includes("M28") ||
-      text.includes("C-37") || text.includes("C37") || text.includes("C-21") || text.includes("C21") ||
-      text.includes("C-26") || text.includes("C26") || text.includes("METRO") ||
-      text.includes("F-16") || text.includes("F-15") || text.includes("F-35") || text.includes("FIGHTER") ||
-      text.includes("TYPHOON") || text.includes("RAFALE") || text.includes("GRIPEN") || text.includes("MIRAGE") ||
-      text.includes("SU-") || text.includes("MIG-") || text.includes("TU-") ||
-      text.includes("AN-") || text.includes("IL-") ||
-      text.includes("FORTE") || text.includes("LAGR") || text.includes("HOMER") || text.includes("JAKE") ||
-      text.includes("VIPER") || text.includes("RED") || text.includes("NATO") ||
-      text.includes("RCH") || text.includes("REACH") || text.includes("ROF") || text.includes("BAF") ||
-      text.includes("GAF") || text.includes("IAM") || text.includes("RFR") || text.includes("ASCOT") ||
-      text.includes("PLF") || text.includes("HAF") || text.includes("TUAF") || text.includes("USAF") ||
-      text.includes("CNV") || text.includes("DAF") || text.includes("SQF") || text.includes("CEF") ||
-      text.includes("HRZ") || text.includes("FAF") || text.includes("RAFR") || text.includes("PAROL") ||
-      text.includes("MIL_") || text.includes("MILITARY") || text.includes("NAVY") || text.includes("ARMY") ||
-      text.includes("TANKER") || text.includes("BOMBER")
-    );
-  }
-
-  private isCivilAirliner(callsign?: string, desc?: string, model?: string): boolean {
-    if (this.isMilitaryAircraft(callsign, desc, model)) return false;
-    const text = `${callsign ?? ""} ${desc ?? ""} ${model ?? ""}`.toUpperCase();
-    const civilPrefixes = [
-      "RYR", "WZZ", "WMT", "WUK", "LOT", "DLH", "KLM", "AFR", "BAW", "THY", "AUA",
-      "SXS", "PGT", "EZY", "EZS", "SAS", "FIN", "BTI", "ENT", "TOM", "FDB", "AAR",
-      "ETH", "ROT", "CAI", "ISR", "PIA", "FDX", "UPS", "BOX", "CGF", "MNB", "VLG",
-      "UTN", "LBT", "NMA", "GJT", "ASL", "EXS", "CCA", "SIA", "RYS", "NSZ", "UAE",
-      "QTR", "ETD", "ELY", "AEE", "TVS", "CLX", "GEC", "BCS", "DHK", "NJE", "VJT",
-      "B73", "B74", "B75", "B76", "B77", "B78",
-      "A31", "A32", "A33", "A35", "A38", "A20N", "A21N", "B38M", "B39M", "CIVIL"
-    ];
-    return civilPrefixes.some((p) => text.includes(p));
-  }
-
   async fetchFlightObservations(): Promise<UnifiedObservation[]> {
     const now = Date.now();
-    // Cache for 12 seconds to strictly respect public rate limits
     if (now - this.lastFetch < 12_000 && this.cache.length > 0) {
       return this.cache;
     }
 
     const obsMap = new Map<string, UnifiedObservation>();
 
-    // 1. Fetch from adsb.lol theater coverage (regional 250nm points around Ukraine border) & military transponders
     const adsbEndpoints = [
-      "https://api.adsb.lol/v2/point/50.0/22.0/250",  // Western Ukraine / Poland / Rzeszow corridor
-      "https://api.adsb.lol/v2/point/48.5/24.5/250",  // Carpathian / Slovakia / Hungary / Romania border
-      "https://api.adsb.lol/v2/point/44.5/26.0/250",  // Romania / Black Sea maritime corridor
-      "https://api.adsb.lol/v2/point/52.0/21.0/250",  // Northern approach / Eastern Poland
-      "https://api.adsb.lol/v2/point/46.5/29.0/250",  // Moldova / Southern Ukraine corridor
-      "https://api.adsb.lol/v2/mil",                   // Military feed (USAF, NATO, RAF, Allied)
-      "https://opendata.adsb.fi/api/v2/mil",           // Global military transponder feed
-      "https://api.adsb.one/v2/mil"                    // Redundant ADSB.one military transponder feed
+      "https://api.adsb.lol/v2/point/50.0/22.0/250",
+      "https://api.adsb.lol/v2/point/48.5/24.5/250",
+      "https://api.adsb.lol/v2/point/44.5/26.0/250",
+      "https://api.adsb.lol/v2/point/52.0/21.0/250",
+      "https://api.adsb.lol/v2/point/46.5/29.0/250",
+      "https://api.adsb.lol/v2/mil"
     ];
 
     await Promise.allSettled(
@@ -148,153 +60,77 @@ export class OpenskyAdsbLolSource {
         try {
           const res = await fetch(url, {
             headers: {
-              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-              "Accept": "application/json"
+              "User-Agent": "EyeRadar/2.0 (Civil Airspace Monitor)",
+              Accept: "application/json"
             },
             signal: AbortSignal.timeout(4500)
           });
-          if (res.ok) {
-            const data = (await res.json()) as AdsbResponse;
-            const aircraftList = data.aircraft ?? data.ac ?? [];
-            for (const a of aircraftList) {
-              if (
-                typeof a.lat === "number" &&
-                typeof a.lon === "number" &&
-                typeof a.gs === "number" &&
-                a.gs > 20
-              ) {
-                // Geo-boundary filter: European defense theater & allied border airlift corridors
-                if (a.lat < 36.0 || a.lat > 60.0 || a.lon < 14.0 || a.lon > 45.0) {
-                  continue;
-                }
+          if (!res.ok) return;
 
-                const hex = a.hex.toLowerCase();
-                const flight = (a.flight ?? "").trim().replace(/\s+/g, "");
-                const callsign = flight || a.t || a.hex.toUpperCase();
-                const isMil = this.isMilitaryAircraft(callsign, a.desc, a.t);
-                const isCivil = this.isCivilAirliner(callsign, a.desc, a.t);
-                const isInsideUkraine = isInsideUkraineGeo(a.lat, a.lon);
+          const data = (await res.json()) as AdsbResponse;
+          const aircraftList = data.aircraft ?? data.ac ?? [];
+          for (const a of aircraftList) {
+            if (
+              typeof a.lat !== "number" ||
+              typeof a.lon !== "number" ||
+              typeof a.gs !== "number" ||
+              a.gs <= 20
+            ) {
+              continue;
+            }
+            if (a.lat < 41.0 || a.lat > 56.0 || a.lon < 17.0 || a.lon > 43.0) {
+              continue;
+            }
 
-                // Operational Mandate: ZERO foreign civilian airliners in Europe cluttering tactical radar.
-                // Strictly ingest verified military airframes within 350km of Ukraine OR non-civil contacts inside Ukraine.
-                if (isCivil) {
-                  continue;
-                }
-                const inMilTheater = isMil && getDistanceToUkraineBorderKm(a.lat, a.lon) <= 350;
-                if (!inMilTheater && !isInsideUkraine) {
-                  continue;
-                }
+            const hex = a.hex.toLowerCase();
+            const flight = (a.flight ?? "").trim().replace(/\s+/g, "");
+            const callsign = flight || a.t || a.hex.toUpperCase();
+            const gate = shouldIngestAdsbContact(a.lat, a.lon, callsign, a.desc, a.t);
+            if (!gate.allowed) continue;
 
-                const speedMs = a.gs * 0.514444; // knots to m/s
-                const isHeli = this.isHelicopter(a.desc, a.t);
-                const objType: TrackType = isHeli ? "helicopter" : "aircraft";
-                const altM = typeof a.alt_baro === "number" ? Math.round(a.alt_baro * 0.3048) : undefined;
-                const accuracy = a.nac_p && a.nac_p >= 9 ? 30 : a.nac_p && a.nac_p >= 7 ? 100 : 350;
+            const speedMs = a.gs * 0.514444;
+            const objType: TrackType = isHelicopterAirframe(a.desc, a.t) ? "helicopter" : "aircraft";
+            const altM = typeof a.alt_baro === "number" ? Math.round(a.alt_baro * 0.3048) : undefined;
+            const accuracy = a.nac_p && a.nac_p >= 9 ? 30 : a.nac_p && a.nac_p >= 7 ? 100 : 350;
 
-                const evidence = [
+            obsMap.set(
+              hex,
+              createUnifiedObservation({
+                source_id: "adsb.lol",
+                source_family: "adsb",
+                event_id: `adsb-${hex}-${now}`,
+                object_id: flight ? `adsb-${flight}` : `adsb-${hex}`,
+                observed_at: now - (a.seen_pos ?? 0) * 1000,
+                lat: a.lat,
+                lon: a.lon,
+                speed: speedMs,
+                heading: typeof a.track === "number" ? Math.round(a.track) : undefined,
+                altitude: altM,
+                object_type: objType,
+                measurement_accuracy: accuracy,
+                source_quality: 0.95,
+                confidence: 0.96,
+                evidence: [
                   `hex_${hex}`,
                   `squawk_${a.squawk || "none"}`,
                   a.mlat ? "mlat_triangulated" : "direct_adsb"
-                ];
-
-                obsMap.set(hex, createUnifiedObservation({
-                  source_id: "adsb.lol",
-                  source_family: "adsb",
-                  event_id: `adsb-${hex}-${now}`,
-                  object_id: flight ? `adsb-${flight}` : `adsb-${hex}`,
-                  observed_at: now - ((a.seen_pos ?? 0) * 1000),
-                  lat: a.lat,
-                  lon: a.lon,
-                  speed: speedMs,
-                  heading: a.track ? Math.round(a.track) : 0,
-                  altitude: altM,
-                  object_type: objType,
-                  measurement_accuracy: accuracy,
-                  source_quality: 0.95,
-                  confidence: 0.96,
-                  evidence,
-                  provenance: isMil ? "Military / Government Transponder Feed" : "Ukrainian Airspace Transponder",
-                  model: a.desc ?? a.t ?? (isMil ? "MIL_AIRCRAFT" : "Повітряна ціль (UA Airspace)"),
-                  callsign
-                }));
-              }
-            }
+                ],
+                provenance: gate.isMil
+                  ? "ADS-B.lol · Військовий / державний транспондер"
+                  : "ADS-B.lol · Транспондер у просторі України",
+                model: a.desc ?? a.t ?? (gate.isMil ? "Військовий борт (ADS-B)" : "Повітряне судно (ADS-B)"),
+                callsign
+              })
+            );
           }
         } catch {
-          // Endpoint failure is tolerated
+          // Graceful degradation on single endpoint timeout
         }
       })
     );
-
-    // 2. OpenSky fallback strictly for activity inside Ukrainian airspace
-    if (obsMap.size < 5) {
-      try {
-        const openSkyUrl = "https://opensky-network.org/api/states/all?lamin=45.0&lomin=24.0&lamax=52.0&lomax=38.0";
-        const res = await fetch(openSkyUrl, {
-          headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            "Accept": "application/json"
-          },
-          signal: AbortSignal.timeout(3000)
-        });
-        if (res.ok) {
-          const data = (await res.json()) as OpenSkyStateResponse;
-          for (const st of data.states ?? []) {
-            const hex = st[0]?.toLowerCase();
-            const lon = st[5];
-            const lat = st[6];
-            const onGround = st[8];
-            const velocity = st[9];
-            const track = st[10];
-            const alt = st[7];
-            const callsign = (st[1] ?? "").trim();
-
-            if (
-              hex &&
-              !obsMap.has(hex) &&
-              lat !== null &&
-              lon !== null &&
-              !onGround &&
-              velocity !== null &&
-              velocity > 20
-            ) {
-              const isMil = this.isMilitaryAircraft(callsign);
-              const isCivil = this.isCivilAirliner(callsign);
-              const insideUa = isInsideUkraineGeo(lat, lon);
-              if (isCivil || (!insideUa && !(isMil && getDistanceToUkraineBorderKm(lat, lon) <= 350))) {
-                continue;
-              }
-              obsMap.set(hex, createUnifiedObservation({
-                source_id: "adsb.lol",
-                source_family: "adsb",
-                event_id: `opensky-${hex}-${now}`,
-                object_id: `adsb-${hex}`,
-                observed_at: st[3] ? st[3] * 1000 : now,
-                lat,
-                lon,
-                speed: velocity,
-                heading: track !== null ? Math.round(track) : 0,
-                altitude: alt !== null ? Math.round(alt) : undefined,
-                object_type: "aircraft",
-                measurement_accuracy: 250,
-                source_quality: 0.9,
-                confidence: 0.94,
-                evidence: [`hex_${hex}`, `opensky_sensor_count_${st[12]?.length ?? 1}`, "adsb_kinematics"],
-                provenance: `OpenSky (${st[2] || "International"})`,
-                callsign: callsign || hex.toUpperCase(),
-                model: isMil ? "MIL_AIRCRAFT" : "Повітряна ціль (UA Airspace)"
-              }));
-            }
-          }
-        }
-      } catch {
-        // OpenSky rate limit / timeout tolerated
-      }
-    }
 
     this.cache = Array.from(obsMap.values());
     this.lastFetch = now;
     return this.cache;
   }
 }
-

@@ -15,6 +15,8 @@
     "build:server": "tsup src/server/index.ts --format esm --target node20 --out-dir dist/server --clean",
     "check": "tsc --noEmit",
     "test": "vitest run",
+    "acceptance": "npm run check && vitest run && npm run build",
+    "verify:prod": "node scripts/verify-production.mjs",
     "start": "node dist/server/index.js"
   },
   "dependencies": {

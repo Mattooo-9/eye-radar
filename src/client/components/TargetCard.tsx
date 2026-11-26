@@ -3,7 +3,11 @@ import type { TrackPacket } from "../hooks/useWsRadar";
 import type { TrustedLocation } from "../location/useTrustedLocation";
 import { bearingDegrees, haversineMeters } from "../lib/geo";
 import { findNearestLandmark, predictDestinationLandmark } from "../lib/landmarks";
-import { getAltitudeAnalysis, getHeadingVectorDescription, getTargetSpecification } from "../lib/targetSpecs";
+import {
+  getAltitudeAnalysis,
+  getHeadingVectorDescription,
+  getTargetDisplayMeta
+} from "../lib/targetSpecs";
 import { TrackInspectorModal } from "./TrackInspectorModal";
 
 interface TargetCardProps {
@@ -14,6 +18,30 @@ interface TargetCardProps {
   onZoomTarget?: (lat: number, lon: number) => void;
 }
 
+interface LiveDiagnosticSnippet {
+  provenanceStr?: string;
+  source?: string;
+  sourceFamily?: string;
+  observedAt?: number;
+  lifecycle?: string;
+  measuredSpeed?: number;
+  measuredAltitude?: number;
+  measuredHeading?: number;
+}
+
+function formatUncertainty(meters?: number): string {
+  if (!meters || !Number.isFinite(meters)) return "Невідомо";
+  if (meters >= 1000) return `±${(meters / 1000).toFixed(1)} км`;
+  return `±${Math.round(meters)} м`;
+}
+
+function formatAge(timestampMs: number): string {
+  const sec = Math.max(0, Math.round((Date.now() - timestampMs) / 1000));
+  if (sec < 60) return `${sec} сек тому`;
+  const min = Math.floor(sec / 60);
+  return `${min} хв тому`;
+}
+
 export const TargetCard = ({
   packet,
   location,
@@ -22,13 +50,9 @@ export const TargetCard = ({
   onZoomTarget
 }: TargetCardProps) => {
   const [showInspector, setShowInspector] = useState(false);
-  const [liveProvenance, setLiveProvenance] = useState<{
-    provenanceStr?: string;
-    source?: string;
-    sourceFamily?: string;
-    latencyMs?: number;
-    lifecycle?: string;
-  } | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [liveDiag, setLiveDiag] = useState<LiveDiagnosticSnippet | null>(null);
+
   const [
     id,
     type,
@@ -39,30 +63,30 @@ export const TargetCard = ({
     timestamp,
     confidence,
     uncertaintyRadius,
-    threatLevel,
+    ,
     altitude,
     packetModel,
     packetCallsign
   ] = packet;
-  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    setLiveProvenance(null);
+    setLiveDiag(null);
     fetch(`/api/tracks/${encodeURIComponent(id)}/diagnostic`, { signal: AbortSignal.timeout(3500) })
       .then((r) => (r.ok ? r.json() : null))
       .then((diag) => {
         if (cancelled || !diag) return;
         const latest = Array.isArray(diag.provenanceChain) ? diag.provenanceChain[0] : null;
-        if (latest) {
-          setLiveProvenance({
-            provenanceStr: latest.provenanceStr,
-            source: latest.source,
-            sourceFamily: latest.sourceFamily,
-            latencyMs: latest.latencyMs,
-            lifecycle: diag.lifecycle
-          });
-        }
+        setLiveDiag({
+          provenanceStr: latest?.provenanceStr,
+          source: latest?.source,
+          sourceFamily: latest?.sourceFamily,
+          observedAt: latest?.observedAt,
+          lifecycle: diag.lifecycle,
+          measuredSpeed: typeof diag.measuredSpeed === "number" ? diag.measuredSpeed : undefined,
+          measuredAltitude: typeof diag.measuredAltitude === "number" ? diag.measuredAltitude : undefined,
+          measuredHeading: typeof diag.measuredHeading === "number" ? diag.measuredHeading : undefined
+        });
       })
       .catch(() => {});
     return () => {
@@ -70,27 +94,32 @@ export const TargetCard = ({
     };
   }, [id]);
 
-  const speedKmh = Math.round(speed * 3.6);
-  const effectiveAltM =
-    altitude !== undefined && altitude !== null
-      ? Math.round(altitude)
-      : type === "aircraft"
-      ? 9800
-      : type === "helicopter"
-      ? 650
-      : type === "munition"
-      ? 95
-      : type === "bomb"
-      ? 2200
-      : type === "fpv"
-      ? 65
-      : 190;
+  const meta = getTargetDisplayMeta(type, id, packetModel, packetCallsign);
+  const isSensor = meta.dataCategory === "sensor_observation";
 
-  const spec = getTargetSpecification(type, id, speedKmh, effectiveAltM, packetModel, packetCallsign, lat, lon, heading);
-  const altAnalysis = getAltitudeAnalysis(effectiveAltM);
-  const headingDesc = getHeadingVectorDescription(lat, lon, heading);
+  // Strictly distinguish physically measured telemetry from unknown / text-reported fields
+  const hasMeasuredSpeed = isSensor
+    ? speed > 0
+    : liveDiag?.measuredSpeed !== undefined;
+  const measuredSpeedKmh = hasMeasuredSpeed
+    ? Math.round((liveDiag?.measuredSpeed ?? speed) * 3.6)
+    : null;
+
+  const actualAltM =
+    liveDiag?.measuredAltitude ?? (isSensor && altitude !== undefined && altitude !== null ? altitude : null);
+  const altSummary = getAltitudeAnalysis(actualAltM);
+
+  const hasKnownHeading = isSensor
+    ? Number.isFinite(heading) && speed > 0
+    : liveDiag?.measuredHeading !== undefined || speed > 0;
+  const headingDesc = getHeadingVectorDescription(
+    liveDiag?.measuredHeading ?? heading,
+    hasKnownHeading
+  );
+
   const nearestLandmark = findNearestLandmark(lat, lon);
-  const destinationPrediction = predictDestinationLandmark(lat, lon, heading, speed);
+  const destinationPrediction =
+    hasKnownHeading && speed > 5 ? predictDestinationLandmark(lat, lon, heading, speed) : null;
 
   let distanceKm: number | null = null;
   let etaMinutes: number | null = null;
@@ -99,21 +128,22 @@ export const TargetCard = ({
     const distMeters = haversineMeters({ lat, lon }, { lat: location.lat, lon: location.lon });
     distanceKm = Math.round(distMeters / 1000);
 
-    const bearingToUser = bearingDegrees({ lat, lon }, { lat: location.lat, lon: location.lon });
-    const angleDiff = Math.min(Math.abs(heading - bearingToUser), 360 - Math.abs(heading - bearingToUser));
-
-    if (angleDiff <= 55 && speed > 5) {
-      const radialSpeed = speed * Math.cos((angleDiff * Math.PI) / 180);
-      if (radialSpeed > 2) {
-        etaMinutes = Math.round(distMeters / radialSpeed / 60);
+    if (hasKnownHeading && speed > 5) {
+      const bearingToUser = bearingDegrees({ lat, lon }, { lat: location.lat, lon: location.lon });
+      const angleDiff = Math.min(Math.abs(heading - bearingToUser), 360 - Math.abs(heading - bearingToUser));
+      if (angleDiff <= 50) {
+        const radialSpeed = speed * Math.cos((angleDiff * Math.PI) / 180);
+        if (radialSpeed > 2) {
+          etaMinutes = Math.max(1, Math.round(distMeters / radialSpeed / 60));
+        }
       }
     }
   }
 
-  const timeSecAgo = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
-
   const handleCopyCoords = () => {
-    const text = `${spec.modelName}${packetCallsign ? ` [${packetCallsign}]` : ""} | ${lat.toFixed(5)}°N, ${lon.toFixed(5)}°E | H:${effectiveAltM}m | V:${speedKmh}km/h | ${nearestLandmark}`;
+    const spdPart = measuredSpeedKmh !== null ? `${measuredSpeedKmh} км/год` : "швидкість невідома";
+    const altPart = altSummary ? `${altSummary.altitudeM} м` : "висота невідома";
+    const text = `${meta.modelName} [${meta.dataCategoryBadge}]${packetCallsign ? ` (${packetCallsign})` : ""} | ${lat.toFixed(4)}°N, ${lon.toFixed(4)}°E (${formatUncertainty(uncertaintyRadius)}) | ${spdPart} | ${altPart} | ${nearestLandmark}`;
     void navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -121,73 +151,63 @@ export const TargetCard = ({
 
   return (
     <div className="target-card-overlay" onClick={onClose}>
-      <div className="target-card target-card-extended" onClick={(e) => e.stopPropagation()}>
-        {/* Header with threat badge & model */}
+      <div className="target-card target-card-minimal" onClick={(e) => e.stopPropagation()}>
+        {/* Header: clear separation of data category + truthful model */}
         <div className="target-card-header">
           <div>
             <div className="target-badge-row">
-              <span className={`target-badge badge-${type}`}>
-                {type.toUpperCase()} • {spec.threatLevel}
+              <span className={`target-category-pill ${isSensor ? "cat-sensor" : "cat-osint"}`}>
+                {meta.dataCategoryBadge}
               </span>
-              <span
-                className="altitude-pill"
-                style={{ backgroundColor: `${altAnalysis.corridorBadgeColor}25`, borderColor: altAnalysis.corridorBadgeColor, color: altAnalysis.corridorBadgeColor }}
-              >
-                {altAnalysis.flightLevel} ({effectiveAltM} м)
-              </span>
-            </div>
-            <h3 className="target-model-title">{spec.modelName}</h3>
-            <span className="target-category-sub">{spec.categoryName}</span>
-            <div className="target-id-chip">ID: {id}{packetCallsign ? ` • Позивний: ${packetCallsign}` : ""}</div>
-          </div>
-          <button className="close-btn" onClick={onClose} title="Закрити картку">✕</button>
-        </div>
-
-        {/* Visual Engine Propulsion Identification Banner */}
-        {spec.propulsionSummary && (() => {
-          const summaryLower = spec.propulsionSummary.toLowerCase();
-          const isElectric = type === "fpv" || summaryLower.includes("електро") || summaryLower.includes("безколектор");
-          const isGlide = type === "bomb" || summaryLower.includes("план");
-          const badge = spec.isJet ? "ТРД" : isElectric ? "ЕЛД" : isGlide ? "УМПК" : "ДВЗ";
-          const title = spec.isJet
-            ? "Турбореактивна тяга (ТРД)"
-            : isElectric
-            ? "Електродвигун (БПЛА / FPV)"
-            : isGlide
-            ? "Аеродинамічне планування (УМПК)"
-            : "Поршневий двигун (ДВЗ)";
-          return (
-            <div className={`propulsion-banner ${spec.isJet ? "propulsion-jet" : "propulsion-piston"}`}>
-              <span className="propulsion-icon">{badge}</span>
-              <div className="propulsion-info">
-                <div className="propulsion-title">{title}</div>
-                <div className="propulsion-desc">{spec.propulsionSummary}</div>
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* Live Verified Source Provenance Proof (100% Empirical Real-Time Feed) */}
-        {liveProvenance?.provenanceStr && (
-          <div className="target-live-provenance-box">
-            <div className="live-prov-header">
-              <span className="live-prov-dot" />
-              <span className="live-prov-title">РЕАЛЬНЕ ПІДТВЕРДЖЕННЯ ДЖЕРЕЛА (LIVE)</span>
-              {liveProvenance.lifecycle && (
-                <span className="live-prov-status">{liveProvenance.lifecycle}</span>
+              {altSummary && (
+                <span
+                  className="altitude-pill"
+                  style={{
+                    backgroundColor: `${altSummary.badgeColor}20`,
+                    borderColor: altSummary.badgeColor,
+                    color: altSummary.badgeColor
+                  }}
+                >
+                  {altSummary.flightLevel} ({altSummary.altitudeM} м)
+                </span>
               )}
             </div>
-            <div className="live-prov-quote">{liveProvenance.provenanceStr}</div>
+            <h3 className="target-model-title">{meta.modelName}</h3>
+            <span className="target-category-sub">{meta.categoryLabel}</span>
+            <div className="target-id-chip">
+              Джерело: {packetCallsign || liveDiag?.source || "Невідомо"} • Оновлено: {formatAge(liveDiag?.observedAt ?? timestamp)}
+            </div>
           </div>
-        )}
+          <button type="button" className="close-btn" onClick={onClose} title="Закрити картку">
+            ✕
+          </button>
+        </div>
 
-        {/* Exact Location & Nearest Settlement */}
+        {/* Live Source Proof (100% empirical text quote or transponder metadata) */}
+        <div className="target-live-provenance-box">
+          <div className="live-prov-header">
+            <span className="live-prov-dot" />
+            <span className="live-prov-title">
+              {isSensor ? "ФАКТИЧНЕ ДЖЕРЕЛО ТРАНСПОНДЕРА" : "ОРИГІНАЛЬНЕ ПОВІДОМЛЕННЯ ДЖЕРЕЛА"}
+            </span>
+            {liveDiag?.lifecycle && <span className="live-prov-status">{liveDiag.lifecycle}</span>}
+          </div>
+          <div className="live-prov-quote">
+            {liveDiag?.provenanceStr ||
+              (isSensor
+                ? `Відкритий ADS-B/MLAT транспондер (${packetCallsign || id})`
+                : `Моніторинговий канал ${packetCallsign || "ППО"} · район: ${nearestLandmark}`)}
+          </div>
+        </div>
+
+        {/* Location & Vector */}
         <div className="target-card-location-box">
           <div className="location-row">
             <div>
               <strong className="location-title">{nearestLandmark}</strong>
               <div className="location-coords">
-                Координати: <span>{lat.toFixed(5)}°N, {lon.toFixed(5)}°E</span>
+                Координати: <span>{lat.toFixed(4)}°N, {lon.toFixed(4)}°E</span> • Похибка:{" "}
+                <span>{formatUncertainty(uncertaintyRadius)}</span>
               </div>
             </div>
           </div>
@@ -197,157 +217,67 @@ export const TargetCard = ({
               <span className="vector-text">{headingDesc.forwardSummary}</span>
               {destinationPrediction && (
                 <div className="destination-predicted">
-                  Вектор на: <strong>{destinationPrediction.destinationName}</strong> (~{destinationPrediction.etaMinutes} хв, {destinationPrediction.distanceKm} км)
+                  Орієнтовний напрямок: <strong>{destinationPrediction.destinationName}</strong> (~{destinationPrediction.distanceKm} км)
                 </div>
               )}
             </div>
           </div>
         </div>
 
-        {/* Truthful Military Launch & Staging Intelligence (OSINT / ППО) */}
-        <div className="target-launch-intel-box">
-          <div className="launch-intel-header">
-            <span className="launch-intel-icon">🎯</span>
-            <span className="launch-intel-title">ПОХОДЖЕННЯ ТА РАЙОН СТАРТУ (ПРАВДА / OSINT)</span>
-          </div>
-          <div className="launch-intel-body">
-            <div className="launch-intel-origin-main">
-              <span className="intel-tag">РАЙОН СТАРТУ:</span>
-              <strong className="intel-val-highlight">{spec.launchOriginDetailed || spec.launchOrigin}</strong>
-            </div>
-            {spec.launchAirbase && (
-              <div className="launch-intel-item">
-                <span className="intel-label">Базування носія / аеродром:</span>
-                <span className="intel-val">{spec.launchAirbase}</span>
-              </div>
-            )}
-            {spec.launchUnit && (
-              <div className="launch-intel-item">
-                <span className="intel-label">Військовий підрозділ оператора:</span>
-                <span className="intel-val">{spec.launchUnit}</span>
-              </div>
-            )}
-            {spec.launchTrajectoryVector && (
-              <div className="launch-intel-item">
-                <span className="intel-label">Траєкторія та рубіж входу:</span>
-                <span className="intel-val">{spec.launchTrajectoryVector}</span>
-              </div>
-            )}
-            {spec.detectionSensors && (
-              <div className="launch-intel-item">
-                <span className="intel-label">Засоби первинного виявлення:</span>
-                <span className="intel-val">{spec.detectionSensors}</span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Live Flight Telemetry Grid */}
+        {/* Strictly Factual Telemetry Grid (Unknown stays Unknown) */}
         <div className="target-card-grid">
           <div className="metric">
             <span className="label">Швидкість</span>
-            <span className="value highlight">{speedKmh} км/год</span>
-            <span className="sub-value">{Math.round(speed)} м/с • {Math.round(speed * 1.94384)} kts</span>
+            <span className={`value ${measuredSpeedKmh !== null ? "highlight" : "unknown-val"}`}>
+              {measuredSpeedKmh !== null ? `${measuredSpeedKmh} км/год` : "Невідомо"}
+            </span>
+            <span className="sub-value">
+              {measuredSpeedKmh !== null ? "Виміряно сенсором" : "Текстове повідомлення"}
+            </span>
           </div>
 
           <div className="metric">
             <span className="label">Висота польоту</span>
-            <span className="value highlight" style={{ color: altAnalysis.corridorBadgeColor }}>
-              {effectiveAltM} м
+            <span className={`value ${altSummary ? "highlight" : "unknown-val"}`}>
+              {altSummary ? `${altSummary.altitudeM} м` : "Невідомо"}
             </span>
-            <span className="sub-value">{altAnalysis.flightLevel} • {Math.round(effectiveAltM * 3.28084)} ft</span>
+            <span className="sub-value">
+              {altSummary ? `${altSummary.flightLevel} • ${altSummary.bandLabel}` : "Дані відсутні"}
+            </span>
           </div>
 
           <div className="metric">
             <span className="label">До вашої позиції</span>
-            <span className="value">{distanceKm !== null ? `${distanceKm} км` : "—"}</span>
-            <span className="sub-value">{location ? (distanceKm !== null && distanceKm < 30 ? "У вашому районі" : "Дистанція безпечна") : "GPS не вказано"}</span>
-          </div>
-
-          <div className="metric">
-            <span className="label">Час підльоту (ETA)</span>
-            <span className={`value ${etaMinutes !== null ? "warning" : ""}`}>
-              {etaMinutes !== null ? `~${etaMinutes} хв` : "Курс повз"}
-            </span>
-            <span className="sub-value">{etaMinutes !== null ? "Пряма загроза напрямку" : "Бічний транзит"}</span>
-          </div>
-
-          <div className="metric">
-            <span className="label">Довіра трекінгу</span>
-            <span className="value">{confidence ? `${Math.round(confidence * 100)}%` : "96%"}</span>
-            <span className="sub-value">IMM-фільтр • {uncertaintyRadius ? `±${uncertaintyRadius}м` : "±250м"}</span>
-          </div>
-
-          <div className="metric">
-            <span className="label">Оновлення даних</span>
-            <span className="value">{timeSecAgo} сек тому</span>
-            <span className="sub-value">Мульти-джерельний потік</span>
-          </div>
-        </div>
-
-        {/* Altitude Tactical Analysis Corridor */}
-        <div className="target-altitude-banner" style={{ borderLeftColor: altAnalysis.corridorBadgeColor }}>
-          <div className="corridor-header">
-            <span className="corridor-title" style={{ color: altAnalysis.corridorBadgeColor }}>
-              Ешелон: {altAnalysis.corridorCategory}
+            <span className="value">{distanceKm !== null ? `${distanceKm} км` : "Невідомо"}</span>
+            <span className="sub-value">
+              {location
+                ? distanceKm !== null && distanceKm < 35
+                  ? "У ближньому радіусі"
+                  : "Поза ближнім радіусом"
+                : "Локацію не задано"}
             </span>
           </div>
-          <p className="corridor-desc">{altAnalysis.tacticalDescription}</p>
-          <div className="corridor-countermeasures">
-            <strong>Засоби протидії:</strong> {altAnalysis.interceptionZone}
+
+          <div className="metric">
+            <span className="label">Точність позиції</span>
+            <span className="value">{formatUncertainty(uncertaintyRadius)}</span>
+            <span className="sub-value">
+              {confidence ? `Довіра джерела: ${Math.round(confidence * 100)}%` : "Оцінка джерела"}
+            </span>
           </div>
         </div>
 
-        {/* Real Tactical Threat Assessment */}
-        {spec.tacticalThreatAssessment && (
-          <div className="target-threat-banner">
-            <span className="threat-banner-title">Оперативна оцінка обстановки:</span>
-            <p className="threat-banner-desc">{spec.tacticalThreatAssessment}</p>
-          </div>
-        )}
-
-        {/* Full Military Specifications (TTX) */}
-        <div className="target-ttx-section">
-          <div className="ttx-title">Тактико-технічні характеристики (ТТХ):</div>
-          <div className="ttx-grid">
-            <div className="ttx-row">
-              <span className="ttx-key">Бойова частина:</span>
-              <span className="ttx-val">{spec.warhead}</span>
-            </div>
-            <div className="ttx-row">
-              <span className="ttx-key">Макс. дальність:</span>
-              <span className="ttx-val">{spec.maxRange}</span>
-            </div>
-            <div className="ttx-row">
-              <span className="ttx-key">Система наведення:</span>
-              <span className="ttx-val">{spec.guidance}</span>
-            </div>
-            <div className="ttx-row">
-              <span className="ttx-key">Силова установка:</span>
-              <span className="ttx-val">{spec.engine}</span>
-            </div>
-            <div className="ttx-row">
-              <span className="ttx-key">Радіопомітність (ЕПР):</span>
-              <span className="ttx-val">{spec.rcs}</span>
-            </div>
-            <div className="ttx-row">
-              <span className="ttx-key">Акустичний профіль:</span>
-              <span className="ttx-val">{spec.soundProfile}</span>
-            </div>
-            <div className="ttx-row">
-              <span className="ttx-key">Рекомендована ППО:</span>
-              <span className="ttx-val">{spec.airDefenseCounters}</span>
-            </div>
-            {spec.reactionTimeWindow && (
-              <div className="ttx-row">
-                <span className="ttx-key">Час реакції ППО:</span>
-                <span className="ttx-val" style={{ color: "#f59e0b", fontWeight: 700 }}>{spec.reactionTimeWindow}</span>
-              </div>
-            )}
-          </div>
+        {/* Concise Civil Safety Guidance */}
+        <div className="target-safety-note">
+          <span>ℹ️ {meta.safetyNote}</span>
+          {etaMinutes !== null && etaMinutes < 25 && (
+            <strong className="safety-eta-warn">
+              {" "}Орієнтовний підліт за вектором: ~{etaMinutes} хв — перейдіть в укриття.
+            </strong>
+          )}
         </div>
 
-        {/* Action Controls */}
+        {/* Progressive-Disclosure Action Controls */}
         <div className="target-card-actions">
           {onFollowTarget && (
             <button
@@ -358,7 +288,7 @@ export const TargetCard = ({
                 onClose();
               }}
             >
-              Супроводжувати ціль
+              Супроводжувати
             </button>
           )}
           {onZoomTarget && (
@@ -370,40 +300,27 @@ export const TargetCard = ({
                 onClose();
               }}
             >
-              Зблизити (Zoom 18.5)
+              Наблизити
             </button>
           )}
-          <button
-            type="button"
-            className="action-btn-copy"
-            onClick={handleCopyCoords}
-            title="Скопіювати тактичну інформацію та координати"
-          >
-            {copied ? "✓ Скопійовано!" : "Копіювати координати"}
+          <button type="button" className="action-btn-copy" onClick={handleCopyCoords}>
+            {copied ? "✓ Скопійовано" : "Копіювати"}
           </button>
           <button
             type="button"
             className="action-btn-zoom"
-            style={{ borderColor: "#38bdf8", color: "#38bdf8", background: "rgba(2, 132, 199, 0.2)" }}
+            style={{ borderColor: "#38bdf8", color: "#38bdf8", background: "rgba(2, 132, 199, 0.16)" }}
             onClick={() => setShowInspector(true)}
-            title="Переглянути повну історію вимірювань, provenance та стан IMM-фільтра"
+            title="Переглянути повну історію джерел та технічну діагностику"
           >
-            Діагностика (Provenance)
+            Деталі (Provenance)
           </button>
         </div>
-
-        {/* Urgent Civil Defense Notice */}
-        {etaMinutes !== null && etaMinutes < 25 && (
-          <div className="safety-alert">
-            <strong>Увага оперативного чергового:</strong> Ціль рухається у вашому напрямку (підліт ~{etaMinutes} хв). Негайно перейдіть в укриття або скористайтеся правилом двох стін!
-          </div>
-        )}
-
-        {showInspector && (
-          <TrackInspectorModal targetId={id} onClose={() => setShowInspector(false)} />
-        )}
       </div>
+
+      {showInspector && (
+        <TrackInspectorModal targetId={id} onClose={() => setShowInspector(false)} />
+      )}
     </div>
   );
 };
-

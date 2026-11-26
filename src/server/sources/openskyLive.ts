@@ -1,15 +1,6 @@
 import { createUnifiedObservation, type UnifiedObservation } from "../domain/unifiedObservation.js";
-import { getDistanceToUkraineBorderKm } from "../domain/geo.js";
 import type { Source } from "./sourceInterface.js";
-import { isInsideUkraineGeo } from "./ukraineGeo.js";
-
-const CIVIL_AIRLINE_PREFIXES = [
-  "RYR", "WZZ", "WMT", "WUK", "LOT", "DLH", "KLM", "AFR", "BAW", "THY", "AUA",
-  "SXS", "PGT", "EZY", "EZS", "SAS", "FIN", "BTI", "ENT", "TOM", "FDB", "AAR",
-  "ETH", "ROT", "CAI", "ISR", "PIA", "FDX", "UPS", "BOX", "CGF", "MNB", "VLG",
-  "UTN", "LBT", "NMA", "GJT", "ASL", "EXS", "CCA", "SIA", "RYS", "NSZ", "UAE",
-  "QTR", "ETD", "ELY", "AEE", "TVS", "CLX", "GEC", "BCS", "DHK", "NJE", "VJT"
-];
+import { shouldIngestAdsbContact } from "./adsbClassifier.js";
 
 export interface OpenSkyLiveState {
   icao24: string;
@@ -132,52 +123,12 @@ export class OpenSkyLiveSource implements Source {
           velocity > 20 &&
           lat >= 43 && lat <= 54 && lon >= 22 && lon <= 42
         ) {
-          const upperCall = (callsign || "").toUpperCase();
-          const isMilCallsign =
-            upperCall.includes("FORTE") ||
-            upperCall.includes("HOMER") ||
-            upperCall.includes("JAKE") ||
-            upperCall.includes("LAGR") ||
-            upperCall.includes("RED") ||
-            upperCall.includes("VIPER") ||
-            upperCall.includes("NATO") ||
-            upperCall.includes("K35R") ||
-            upperCall.includes("AWACS") ||
-            upperCall.includes("RCH") ||
-            upperCall.includes("REACH") ||
-            upperCall.includes("ROF") ||
-            upperCall.includes("PLF") ||
-            upperCall.includes("GAF") ||
-            upperCall.includes("BAF") ||
-            upperCall.includes("FAF") ||
-            upperCall.includes("HAF") ||
-            upperCall.includes("RFR") ||
-            upperCall.includes("ASCOT") ||
-            upperCall.includes("USAF") ||
-            upperCall.includes("CNV") ||
-            upperCall.includes("BRIO") ||
-            upperCall.includes("DRAGN") ||
-            upperCall.includes("SVF") ||
-            upperCall.includes("MMF") ||
-            upperCall.includes("NCHO") ||
-            upperCall.includes("HOIST");
-
-          const isCivilAirline =
-            !isMilCallsign &&
-            CIVIL_AIRLINE_PREFIXES.some((prefix) => upperCall.startsWith(prefix));
-
-          // Operational Mandate: ZERO foreign civilian European airliners cluttering radar.
-          // Only ingest military airframes in the Ukraine theater (<=350km from border) OR non-civil contacts inside Ukraine polygon.
-          if (isCivilAirline) {
-            continue;
-          }
-          const insideUa = isInsideUkraineGeo(lat, lon);
-          const inMilTheater = isMilCallsign && getDistanceToUkraineBorderKm(lat, lon) <= 350;
-          if (!insideUa && !inMilTheater) {
+          const gate = shouldIngestAdsbContact(lat, lon, callsign);
+          if (!gate.allowed) {
             continue;
           }
 
-          const assignedModel = isMilCallsign ? "MIL_AIRCRAFT" : "Повітряна ціль (UA Airspace)";
+          const assignedModel = gate.isMil ? "Військовий борт (OpenSky)" : "Повітряне судно (OpenSky)";
 
           observations.push(
             createUnifiedObservation({

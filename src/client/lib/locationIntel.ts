@@ -1,6 +1,6 @@
 import { haversineMeters, bearingDegrees } from "./geo";
 import { findNearestLandmark } from "./landmarks";
-import { getTargetSpecification, getAltitudeAnalysis } from "./targetSpecs";
+import { getTargetDisplayMeta, getAltitudeAnalysis } from "./targetSpecs";
 import type { TrackPacket } from "../hooks/useWsRadar";
 
 export interface NearbyThreat {
@@ -8,10 +8,10 @@ export interface NearbyThreat {
   type: string;
   modelName: string;
   distanceKm: number;
-  altitudeM: number;
-  flightLevel: string;
-  speedKmh: number;
-  heading: number;
+  altitudeM: number | null;
+  flightLevel: string | null;
+  speedKmh: number | null;
+  heading: number | null;
   isApproaching: boolean;
   etaMinutes: number | null;
   etaSeconds: number | null;
@@ -152,22 +152,18 @@ export function getLocationIntel(
     const distKm = Math.round((distMeters / 1000) * 10) / 10;
 
     if (distKm <= scanRadiusKm) {
-      const speedKmh = Math.round(speed * 3.6);
-      const effectiveAltM =
-        altitude !== undefined && altitude !== null
+      const packetModel = packet[11];
+      const packetCallsign = packet[12];
+      const meta = getTargetDisplayMeta(type, id, packetModel, packetCallsign);
+      const isSensor = meta.dataCategory === "sensor_observation";
+      const speedKmh = isSensor && speed > 0 ? Math.round(speed * 3.6) : null;
+      const actualAltM =
+        isSensor && altitude !== undefined && altitude !== null && altitude > 0
           ? Math.round(altitude)
-          : type === "aircraft"
-          ? 9800
-          : type === "helicopter"
-          ? 650
-          : type === "munition"
-          ? 95
-          : 180;
+          : null;
+      const altAnalysis = getAltitudeAnalysis(actualAltM);
 
-      const spec = getTargetSpecification(type, id, speedKmh, effectiveAltM);
-      const altAnalysis = getAltitudeAnalysis(effectiveAltM);
-
-      // Bearing & radial approach check
+      // Bearing & radial approach check (only when vector speed > 5 m/s)
       const bearingToLocation = bearingDegrees({ lat: predLat, lon: predLon }, { lat, lon });
       const angleDiff = Math.min(
         Math.abs(heading - bearingToLocation),
@@ -190,16 +186,16 @@ export function getLocationIntel(
       nearbyThreats.push({
         id,
         type,
-        modelName: spec.modelName,
+        modelName: meta.modelName,
         distanceKm: distKm,
-        altitudeM: effectiveAltM,
-        flightLevel: altAnalysis.flightLevel,
+        altitudeM: actualAltM,
+        flightLevel: altAnalysis?.flightLevel ?? null,
         speedKmh,
-        heading,
+        heading: speed > 0 ? Math.round(heading) : null,
         isApproaching,
         etaMinutes,
         etaSeconds,
-        corridorBadgeColor: altAnalysis.corridorBadgeColor
+        corridorBadgeColor: altAnalysis?.badgeColor ?? meta.color
       });
     }
   }

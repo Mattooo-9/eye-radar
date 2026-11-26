@@ -9,7 +9,7 @@ import { findNearestLandmark } from "../lib/landmarks";
 import { getLiveWeatherRadarTileUrl } from "../lib/weatherRadar";
 import { calculateSatellitePositions, type SatelliteTrack } from "../lib/satelliteRecon";
 import { getFrontlineGeoJSON } from "../lib/ukraineBorders";
-import type { FilterState } from "./StatusPanel";
+import type { FilterState } from "../types";
 import { SpatialIndex } from "../lib/spatialIndex.js";
 import { getTierConfig } from "../lib/hardwareBenchmark.js";
 import { trackStore, isCivilAviation, type ClientUncertaintyEvent } from "../lib/trackStore.js";
@@ -1245,9 +1245,12 @@ const drawMilitaryCalloutPill = (
   const screenW = ctx.canvas.width / ratio;
   const screenH = ctx.canvas.height / ratio;
 
-  const text = showAlt
-    ? `${modelName} ${speedKmh} км/год ${altStr}`
-    : `${modelName} ${speedKmh} км/год`;
+  const text =
+    speedKmh > 0 && showAlt && altStr
+      ? `${modelName} · ${speedKmh} км/год · ${altStr}`
+      : speedKmh > 0
+      ? `${modelName} · ${speedKmh} км/год`
+      : modelName;
 
   ctx.font = "bold 10px Inter, -apple-system, system-ui, sans-serif";
   const metrics = ctx.measureText(text);
@@ -2923,22 +2926,19 @@ export const MapView = ({
           const isSelected = Boolean(currentSelected && currentSelected[0] === id);
           const color = isCivil ? "#94a3b8" : (TARGET_COLORS[type] ?? "#7dd3fc");
 
-          const effectiveAltM =
-            altitude !== undefined && altitude !== null
+          const isOsintReport = id.startsWith("osint-") || id.startsWith("citizen-");
+          const measuredAltM =
+            !isOsintReport && altitude !== undefined && altitude !== null && altitude > 0
               ? altitude
-              : type === "aircraft"
-              ? 9800
-              : type === "helicopter"
-              ? 750
-              : type === "munition"
-              ? 450
-              : type === "bomb"
-              ? 2200
-              : type === "fpv"
-              ? 65
-              : 180;
-          const speedKmh = Math.round(speed * 3.6);
-          const altMsl = effectiveAltM >= 1000 ? `${(effectiveAltM / 1000).toFixed(1)} км` : `${Math.round(effectiveAltM)} м`;
+              : null;
+          // Show physical speed on map callout ONLY for real transponder/sensor observations (never invent OSINT speed)
+          const speedKmh = !isOsintReport && speed > 0 ? Math.round(speed * 3.6) : 0;
+          const altMsl =
+            measuredAltM !== null
+              ? measuredAltM >= 1000
+                ? `${(measuredAltM / 1000).toFixed(1)} км`
+                : `${Math.round(measuredAltM)} м`
+              : "";
 
           const cleanModel = packetModel
             ? packetModel

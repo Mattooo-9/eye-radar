@@ -11,29 +11,32 @@ export class AiBriefingService {
   async generateBriefing(request: AirspaceSummaryRequest): Promise<string> {
     const { tracks, userCity, userCoords } = request;
 
+    const osintReports = tracks.filter((t) => t.dataCategory === "osint_message" || t.evidenceFamilies?.includes("osint"));
+    const sensorTracks = tracks.filter((t) => t.dataCategory !== "osint_message" && !t.evidenceFamilies?.includes("osint"));
     const uavs = tracks.filter((t) => t.type === "uav");
     const missiles = tracks.filter((t) => t.type === "munition");
+    const bombs = tracks.filter((t) => t.type === "bomb");
     const total = tracks.length;
 
     // Fallback template if no AI key configured or network fails
     const defaultSummary = (): string => {
       const parts: string[] = [
-        `📊 *Оперативна оцінка повітряної обстановки (Eye Radar)*\n`,
-        `🎯 Зафіксовано активних цілей: *${total}*`,
-        `• БПЛА (Shahed/Розвідувальні): *${uavs.length}*`,
-        `• Ракети (крилаті/балістичні): *${missiles.length}*`
+        `📊 *Оперативне зведення повітряної обстановки (Eye Radar)*\n`,
+        `• Загалом активних записів: *${total}*`,
+        `• Текстові повідомлення ППО (OSINT): *${osintReports.length}* (БПЛА: ${uavs.length}, Ракети: ${missiles.length}, КАБ: ${bombs.length})`,
+        `• Фактичні спостереження сенсорів (ADS-B): *${sensorTracks.length}*`
       ];
 
       if (userCity) {
-        parts.push(`\n📍 Ваша зона моніторингу: *${userCity}*`);
+        parts.push(`\n📍 Зона моніторингу: *${userCity}*`);
       }
 
-      if (missiles.length > 0) {
-        parts.push(`\n⚠️ *Підвищена небезпека:* Зафіксовано швидкісні ракетні цілі. Дотримуйтесь правила "двох стін" або перебувайте в укриттях.`);
+      if (missiles.length > 0 || bombs.length > 0) {
+        parts.push(`\n⚠️ *Підвищена небезпека:* У зведеннях ППО є ракетні / авіабомбові загрози. Перебувайте в укритті до офіційного відбою тривоги.`);
       } else if (uavs.length > 0) {
-        parts.push(`\n⚠️ *Увага:* Рух ударних БПЛА. Не ігноруйте сигнали тривоги та тримайтеся подалі від вікон.`);
+        parts.push(`\n⚠️ *Увага:* У зведеннях ППО зафіксовано рух БПЛА. Слідкуйте за офіційними сигналами тривоги та тримайтесь подалі від вікон.`);
       } else {
-        parts.push(`\n🟢 У вашому секторі прямої загрози не зафіксовано. Моніторинг триває безперервно.`);
+        parts.push(`\n🟢 Активних повітряних загроз у зведеннях зараз не зафіксовано. Слідкуйте за офіційними сповіщеннями.`);
       }
 
       return parts.join("\n");
@@ -46,14 +49,17 @@ export class AiBriefingService {
 
     const trackDetails = tracks
       .slice(0, 10)
-      .map(
-        (t, i) =>
-          `Ціль ${i + 1}: тип ${t.type}, швидкість ${Math.round(t.speed * 3.6)} км/год, курс ${Math.round(t.heading)}°, координати (${t.lat.toFixed(2)}, ${t.lon.toFixed(2)}), впевненість ${Math.round(t.confidence * 100)}%`
-      )
+      .map((t, i) => {
+        const cat = t.dataCategory === "osint_message" ? "текстове повідомлення OSINT" : "сенсор ADS-B";
+        const spd = t.measuredSpeed !== undefined ? `${Math.round(t.measuredSpeed * 3.6)} км/год` : "швидкість невідома";
+        const alt = t.measuredAltitude !== undefined ? `${Math.round(t.measuredAltitude)} м` : "висота невідома";
+        const hdg = t.measuredHeading !== undefined ? `курс ${Math.round(t.measuredHeading)}°` : "курс невідомий";
+        return `Запис ${i + 1} [${cat}]: ${t.model || t.type}, ${spd}, ${alt}, ${hdg}, район (${t.lat.toFixed(2)}, ${t.lon.toFixed(2)})`;
+      })
       .join("\n");
 
     const systemPrompt =
-      "Ти — тактичний аналітик цивільної безпеки системи Eye Radar України. Твоє завдання — на основі телеметрії радіолокаційних треків надати чітке, стисле, спокійне та корисне оперативне зведення для цивільного населення українською мовою. Уникай паніки, виділяй головне: вектори руху, ймовірні напрямки, правила безпеки. Форматуй у Telegram Markdown. Не перевищуй 150 слів.";
+      "Ти — аналітик цивільного інформування Eye Radar України. На основі фактичних даних (строго розділяючи текстові повідомлення ППО та спостереження ADS-B) дай коротке, спокійне зведення українською мовою. НЕ вигадуй висоту, швидкість, аеродроми чи підрозділи, якщо їх немає у вхідних даних. До 140 слів.";
 
     const userPrompt = `Поточна ситуація:\nУсього треків: ${total} (БПЛА: ${uavs.length}, Ракет: ${missiles.length})\n${trackDetails}\n${
       userCity ? `Користувач знаходиться біля: ${userCity}` : ""

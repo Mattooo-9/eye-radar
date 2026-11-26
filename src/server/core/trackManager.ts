@@ -390,12 +390,15 @@ export class TrackManager {
         obsThreatEvidence.push(rawEv);
       }
 
+      const isTextReport = sourceFamily === "osint" || sourceFamily === "manual";
+      const dataCategory = isTextReport ? "osint_message" as const : "sensor_observation" as const;
+      const isMeasuredSpeedFlag = observation.meta?.speedIsMeasured !== false && !isTextReport;
       const classification = classifyAerialObject({
         claimedType: observation.type,
         speedMs: effectiveSpeed,
-        measuredSpeed: observation.speed,
+        measuredSpeed: isMeasuredSpeedFlag ? observation.speed : undefined,
         altitudeM: observation.altitude,
-        measuredAltitude: observation.altitude,
+        measuredAltitude: isTextReport ? undefined : observation.altitude,
         headingDeg: effectiveHeading,
         modelHint: typeof observation.meta?.model === "string" ? observation.meta.model : undefined,
         callsign: typeof observation.meta?.callsign === "string" ? observation.meta.callsign : undefined,
@@ -413,13 +416,18 @@ export class TrackManager {
         : (observation.uncertaintyRadius || imm.uncertaintyRadiusMeters);
       const effectiveUncertainty = Math.max(obsUncertainty, imm.uncertaintyRadiusMeters);
 
-      // Positional sources with transponder or radar start CONFIRMED; isolated indirect acoustic/optical start TENTATIVE
-      const isHighConfidence = (observation.confidence >= 0.88 && sourceFamily !== "acoustic") || observation.source === "sdr" || isSynthetic;
+      // Positional sources with transponder/radar or high-reliability OSINT start CONFIRMED; isolated indirect acoustic starts TENTATIVE
+      const isHighConfidence =
+        (observation.confidence >= 0.88 && sourceFamily !== "acoustic") ||
+        (sourceFamily === "osint" && observation.confidence >= 0.80) ||
+        observation.source === "sdr" ||
+        isSynthetic;
       const initialLifecycle: TrackLifecycle = isHighConfidence ? "CONFIRMED" : "TENTATIVE";
 
       const state: TrackState = {
         id: targetId,
         type: classification.resolvedType,
+        dataCategory,
         lat: imm.lat,
         lon: imm.lon,
         heading: effectiveHeading,
@@ -556,12 +564,18 @@ export class TrackManager {
       new Set([...(previous.threatEvidence || []), ...obsThreatEvidence])
     );
 
+    const isTextReportUpdate = sourceFamily === "osint" || sourceFamily === "manual";
+    const updatedDataCategory = isTextReportUpdate
+      ? (previous.dataCategory === "sensor_observation" ? "sensor_observation" as const : "osint_message" as const)
+      : "sensor_observation" as const;
+    const isMeasuredSpeedUpdate = observation.meta?.speedIsMeasured !== false && !isTextReportUpdate;
+
     const classification = classifyAerialObject({
       claimedType: observation.type !== "unknown" ? observation.type : previous.type,
       speedMs: updatedSpeed,
-      measuredSpeed: observation.speed ?? previous.measuredSpeed,
+      measuredSpeed: isMeasuredSpeedUpdate ? (observation.speed ?? previous.measuredSpeed) : undefined,
       altitudeM: observation.altitude ?? previous.altitude,
-      measuredAltitude: observation.altitude ?? previous.measuredAltitude,
+      measuredAltitude: isTextReportUpdate ? previous.measuredAltitude : (observation.altitude ?? previous.measuredAltitude),
       headingDeg: updatedHeading,
       modelHint: typeof observation.meta?.model === "string" ? observation.meta.model : previous.model,
       callsign: typeof observation.meta?.callsign === "string" ? observation.meta.callsign : previous.callsign,
@@ -592,6 +606,7 @@ export class TrackManager {
     existing.state = {
       ...previous,
       type: classification.resolvedType,
+      dataCategory: updatedDataCategory,
       lat: effectiveLat,
       lon: effectiveLon,
       heading: Math.round(updatedHeading * 10) / 10,
@@ -737,8 +752,9 @@ export class TrackManager {
         continue;
       }
 
-      // 4. Stationary target detection: airborne weapons and tactical aircraft cannot hover motionless
-      const isStationary = entry.state.speed < 4.0; // < 14 km/h
+      // 4. Stationary target detection: applies ONLY to physical sensor tracks (area-only OSINT reports intentionally have speed=0)
+      const isTextAreaReport = entry.state.dataCategory === "osint_message" || entry.state.evidenceFamilies?.includes("osint");
+      const isStationary = !isTextAreaReport && entry.state.speed < 4.0; // < 14 km/h
       if (isStationary) {
         if (!entry.lastStationarySince) {
           entry.lastStationarySince = now;

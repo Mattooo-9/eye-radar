@@ -137,16 +137,18 @@ export const LocationCard = ({
                 <span className="threat-model-name">
                   {intel.closestThreat.modelName}
                 </span>
-                <span
-                  className="threat-altitude-pill"
-                  style={{
-                    backgroundColor: `${intel.closestThreat.corridorBadgeColor}20`,
-                    borderColor: intel.closestThreat.corridorBadgeColor,
-                    color: intel.closestThreat.corridorBadgeColor
-                  }}
-                >
-                  {intel.closestThreat.flightLevel} ({intel.closestThreat.altitudeM} м)
-                </span>
+                {intel.closestThreat.altitudeM !== null && (
+                  <span
+                    className="threat-altitude-pill"
+                    style={{
+                      backgroundColor: `${intel.closestThreat.corridorBadgeColor}20`,
+                      borderColor: intel.closestThreat.corridorBadgeColor,
+                      color: intel.closestThreat.corridorBadgeColor
+                    }}
+                  >
+                    {intel.closestThreat.flightLevel} ({intel.closestThreat.altitudeM} м)
+                  </span>
+                )}
               </div>
 
               <div className="threat-metrics-grid">
@@ -160,14 +162,14 @@ export const LocationCard = ({
                 <div className="threat-metric">
                   <span className="m-label">Швидкість</span>
                   <span className="m-val">
-                    {intel.closestThreat.speedKmh} км/год
+                    {intel.closestThreat.speedKmh !== null ? `${intel.closestThreat.speedKmh} км/год` : "Невідомо"}
                   </span>
                 </div>
 
                 <div className="threat-metric">
                   <span className="m-label">Курс</span>
                   <span className="m-val">
-                    {intel.closestThreat.heading}°
+                    {intel.closestThreat.heading !== null ? `${intel.closestThreat.heading}°` : "Невідомо"}
                   </span>
                 </div>
 

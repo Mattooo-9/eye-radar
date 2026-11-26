@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import type { Map } from "maplibre-gl";
 import type { VisionMode } from "./MapView";
-import type { FilterState } from "./StatusPanel";
+import type { FilterState } from "../types";
 import type { TrustedLocation } from "../location/useTrustedLocation";
 import type { ImpactEvent, TrackPacket } from "../hooks/useWsRadar";
 import { LOCATIONS } from "./CitySelector";

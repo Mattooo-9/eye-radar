@@ -5114,6 +5114,58 @@ body {
   color: #7dd3fc;
 }
 
+.threat-group-label {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #64748b;
+  padding: 4px 4px 2px;
+}
+
+.target-category-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+
+.target-category-pill.cat-osint {
+  background: rgba(239, 68, 68, 0.18);
+  border: 1px solid rgba(239, 68, 68, 0.48);
+  color: #fca5a5;
+}
+
+.target-category-pill.cat-sensor {
+  background: rgba(56, 189, 248, 0.18);
+  border: 1px solid rgba(56, 189, 248, 0.48);
+  color: #7dd3fc;
+}
+
+.target-card-minimal .metric .value.unknown-val {
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.target-safety-note {
+  margin-top: 10px;
+  margin-bottom: 12px;
+  padding: 9px 11px;
+  border-radius: 9px;
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  font-size: 11.5px;
+  line-height: 1.42;
+  color: #cbd5e1;
+}
+
+.safety-eta-warn {
+  color: #fbbf24;
+}
+
 @media (max-width: 640px) {
   .live-threat-dock {
     bottom: calc(64px + env(safe-area-inset-bottom, 0px));
