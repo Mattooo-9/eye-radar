@@ -1,6 +1,7 @@
 ﻿import { createUnifiedObservation, type UnifiedObservation } from "../domain/unifiedObservation.js";
 import type { TrackType } from "../domain/types.js";
 import { getDistanceToUkraineBorderKm } from "../domain/geo.js";
+import { isInsideUkraineGeo } from "./ukraineGeo.js";
 
 interface AdsbAircraft {
   hex: string;
@@ -106,6 +107,21 @@ export class OpenskyAdsbLolSource {
     );
   }
 
+  private isCivilAirliner(callsign?: string, desc?: string, model?: string): boolean {
+    if (this.isMilitaryAircraft(callsign, desc, model)) return false;
+    const text = `${callsign ?? ""} ${desc ?? ""} ${model ?? ""}`.toUpperCase();
+    const civilPrefixes = [
+      "RYR", "WZZ", "WMT", "WUK", "LOT", "DLH", "KLM", "AFR", "BAW", "THY", "AUA",
+      "SXS", "PGT", "EZY", "EZS", "SAS", "FIN", "BTI", "ENT", "TOM", "FDB", "AAR",
+      "ETH", "ROT", "CAI", "ISR", "PIA", "FDX", "UPS", "BOX", "CGF", "MNB", "VLG",
+      "UTN", "LBT", "NMA", "GJT", "ASL", "EXS", "CCA", "SIA", "RYS", "NSZ", "UAE",
+      "QTR", "ETD", "ELY", "AEE", "TVS", "CLX", "GEC", "BCS", "DHK", "NJE", "VJT",
+      "B73", "B74", "B75", "B76", "B77", "B78",
+      "A31", "A32", "A33", "A35", "A38", "A20N", "A21N", "B38M", "B39M", "CIVIL"
+    ];
+    return civilPrefixes.some((p) => text.includes(p));
+  }
+
   async fetchFlightObservations(): Promise<UnifiedObservation[]> {
     const now = Date.now();
     // Cache for 12 seconds to strictly respect public rate limits
@@ -155,16 +171,17 @@ export class OpenskyAdsbLolSource {
                 const flight = (a.flight ?? "").trim().replace(/\s+/g, "");
                 const callsign = flight || a.t || a.hex.toUpperCase();
                 const isMil = this.isMilitaryAircraft(callsign, a.desc, a.t);
-                const isCivil = !isMil;
+                const isCivil = this.isCivilAirliner(callsign, a.desc, a.t);
+                const isInsideUkraine = isInsideUkraineGeo(a.lat, a.lon);
 
-                // Operational Sector Gating:
-                // Distant foreign civil airliners (> 120 km from Ukraine's border) are excluded from cluttering tactical map.
-                // Military, recon, transport, helicopter, or unknown contacts are NEVER dropped.
-                if (isCivil && !isMil) {
-                  const distKm = getDistanceToUkraineBorderKm(a.lat, a.lon);
-                  if (distKm > 120) {
-                    continue;
-                  }
+                // Operational Mandate: ZERO foreign civilian airliners in Europe cluttering tactical radar.
+                // Strictly ingest verified military airframes within 350km of Ukraine OR non-civil contacts inside Ukraine.
+                if (isCivil) {
+                  continue;
+                }
+                const inMilTheater = isMil && getDistanceToUkraineBorderKm(a.lat, a.lon) <= 350;
+                if (!inMilTheater && !isInsideUkraine) {
+                  continue;
                 }
 
                 const speedMs = a.gs * 0.514444; // knots to m/s
@@ -195,8 +212,8 @@ export class OpenskyAdsbLolSource {
                   source_quality: 0.95,
                   confidence: 0.96,
                   evidence,
-                  provenance: isCivil ? "Civilian Air Corridor Transponder" : "Military / Government Transponder Feed",
-                  model: a.desc ?? a.t ?? (isMil ? "MIL_AIRCRAFT" : "Civilian Aircraft"),
+                  provenance: isMil ? "Military / Government Transponder Feed" : "Ukrainian Airspace Transponder",
+                  model: a.desc ?? a.t ?? (isMil ? "MIL_AIRCRAFT" : "Повітряна ціль (UA Airspace)"),
                   callsign
                 }));
               }
@@ -240,7 +257,12 @@ export class OpenskyAdsbLolSource {
               velocity !== null &&
               velocity > 20
             ) {
+              const isMil = this.isMilitaryAircraft(callsign);
               const isCivil = this.isCivilAirliner(callsign);
+              const insideUa = isInsideUkraineGeo(lat, lon);
+              if (isCivil || (!insideUa && !(isMil && getDistanceToUkraineBorderKm(lat, lon) <= 350))) {
+                continue;
+              }
               obsMap.set(hex, createUnifiedObservation({
                 source_id: "adsb.lol",
                 source_family: "adsb",
@@ -259,7 +281,7 @@ export class OpenskyAdsbLolSource {
                 evidence: [`hex_${hex}`, `opensky_sensor_count_${st[12]?.length ?? 1}`, "adsb_kinematics"],
                 provenance: `OpenSky (${st[2] || "International"})`,
                 callsign: callsign || hex.toUpperCase(),
-                model: isCivil ? "Civilian Aircraft" : "AIRCRAFT"
+                model: isMil ? "MIL_AIRCRAFT" : "Повітряна ціль (UA Airspace)"
               }));
             }
           }

@@ -113,17 +113,28 @@ export const TargetCard = ({
         </div>
 
         {/* Visual Engine Propulsion Identification Banner */}
-        {spec.propulsionSummary && (
-          <div className={`propulsion-banner ${spec.isJet ? "propulsion-jet" : "propulsion-piston"}`}>
-            <span className="propulsion-icon">{spec.isJet ? "ТРД" : "ДВЗ"}</span>
-            <div className="propulsion-info">
-              <div className="propulsion-title">
-                {spec.isJet ? "Турбореактивна тяга (ТРД)" : "Поршневий двигун (ДВЗ)"}
+        {spec.propulsionSummary && (() => {
+          const summaryLower = spec.propulsionSummary.toLowerCase();
+          const isElectric = type === "fpv" || summaryLower.includes("електро") || summaryLower.includes("безколектор");
+          const isGlide = type === "bomb" || summaryLower.includes("план");
+          const badge = spec.isJet ? "ТРД" : isElectric ? "ЕЛД" : isGlide ? "УМПК" : "ДВЗ";
+          const title = spec.isJet
+            ? "Турбореактивна тяга (ТРД)"
+            : isElectric
+            ? "Електродвигун (БПЛА / FPV)"
+            : isGlide
+            ? "Аеродинамічне планування (УМПК)"
+            : "Поршневий двигун (ДВЗ)";
+          return (
+            <div className={`propulsion-banner ${spec.isJet ? "propulsion-jet" : "propulsion-piston"}`}>
+              <span className="propulsion-icon">{badge}</span>
+              <div className="propulsion-info">
+                <div className="propulsion-title">{title}</div>
+                <div className="propulsion-desc">{spec.propulsionSummary}</div>
               </div>
-              <div className="propulsion-desc">{spec.propulsionSummary}</div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Exact Location & Nearest Settlement */}
         <div className="target-card-location-box">

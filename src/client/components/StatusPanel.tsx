@@ -132,8 +132,8 @@ export const StatusPanel = ({
             </div>
 
             <div className="source-row">
-              <span className="source-label">Тактичний симулятор 24/7</span>
-              <span className="source-badge online">ОНЛАЙН (Автономний)</span>
+              <span className="source-label">Повітряні Сили ЗСУ / Очі ППО (OSINT)</span>
+              <span className="source-badge online">🟢 ОНЛАЙН (Реальні цілі)</span>
             </div>
           </div>
 

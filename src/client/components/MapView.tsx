@@ -2535,7 +2535,7 @@ export const MapView = ({
   // 6. Synchronized Canvas overlay render loop (locked 1:1 with MapLibre camera, event-driven with idle sleep)
   useEffect(() => {
     let rafId: number | null = null;
-    let throttleTimerId: ReturnType<typeof setTimeout> | null = null;
+    let throttleTimerId: number | null = null;
     let idleHeartbeatTimer: any = null;
     let lastAudioCheck = 0;
     let cachedCtx: CanvasRenderingContext2D | null = null;

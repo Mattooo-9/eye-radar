@@ -128,20 +128,41 @@ export function classifyAerialObject(input: ClassificationInput): Classification
     ) ? 0.96 : 0.82
   );
 
-  // Extract independent threat evidence from connected sensors (acoustic, optical, radar)
-  const threatEvidenceList = [
-    ...(input.threatEvidence ?? []),
-    ...(input.evidence ?? []).filter(e =>
+  // Deduplicate and bound evidence arrays to prevent unbounded O(2^n) growth across track updates
+  const uniqEv = (...lists: Array<string | string[] | undefined>): string[] => {
+    const seen = new Set<string>();
+    for (const item of lists) {
+      if (!item) continue;
+      if (typeof item === "string") {
+        seen.add(item);
+      } else {
+        for (const s of item) {
+          if (s) seen.add(s);
+        }
+      }
+      if (seen.size >= 24) break;
+    }
+    return Array.from(seen).slice(0, 24);
+  };
+
+  // Extract independent threat evidence from connected sensors (acoustic, optical, radar, air-defense OSINT)
+  const threatEvidenceList = uniqEv(
+    input.threatEvidence,
+    (input.evidence ?? []).filter(e =>
       e.startsWith("acoustic_") ||
       e.startsWith("optical_") ||
       e.startsWith("radar_") ||
       e.startsWith("threat_") ||
+      e.startsWith("osint_") ||
+      e.includes("air_force") ||
+      e.startsWith("citizen_") ||
+      e.startsWith("spotter_") ||
       e.includes("shahed") ||
       e.includes("missile") ||
       e.includes("kab") ||
       e.includes("ballistic")
     )
-  ];
+  );
 
   const hasSensorThreatEvidence = threatEvidenceList.length > 0;
   const isSyntheticCombat = Boolean(input.isSynthetic);
@@ -155,7 +176,7 @@ export function classifyAerialObject(input: ClassificationInput): Classification
     transponderSourceNames.has(s.toLowerCase())
   );
 
-  const baseEvidence = [...(input.evidence ?? [])];
+  const baseEvidence = uniqEv(input.evidence);
 
   // 1. Helicopter with transponder metadata or explicit rotary wing profile
   if (
@@ -163,7 +184,7 @@ export function classifyAerialObject(input: ClassificationInput): Classification
     isHelicopterModel(input.modelHint) ||
     isHelicopterModel(input.callsign)
   ) {
-    const classEv = [...baseEvidence, "rotary_wing_profile", "transponder_metadata"];
+    const classEv = uniqEv(baseEvidence, "rotary_wing_profile", "transponder_metadata");
     return {
       resolvedType: "helicopter",
       resolvedModel: input.modelHint || "Гелікоптер",
@@ -187,7 +208,7 @@ export function classifyAerialObject(input: ClassificationInput): Classification
     input.claimedType === "aircraft" ||
     isVerifiedAircraftModel(input.modelHint)
   ) {
-    const classEv = [...baseEvidence, "fixed_wing_adsb", "transponder_metadata"];
+    const classEv = uniqEv(baseEvidence, "fixed_wing_adsb", "transponder_metadata");
     return {
       resolvedType: "aircraft",
       resolvedModel: input.modelHint || "Літак",
@@ -210,7 +231,7 @@ export function classifyAerialObject(input: ClassificationInput): Classification
   // Strictly FORBID combat types (Shahed, Missile, KAB, FPV).
   // Always resolve to real aircraft metadata or UNKNOWN AIR TARGET.
   if (isTransponderOnly && !hasCombatEvidence) {
-    const classEv = [...baseEvidence, "adsb_mlat_kinematics_only", "unconfirmed_threat_evidence_absent"];
+    const classEv = uniqEv(baseEvidence, "adsb_mlat_kinematics_only", "unconfirmed_threat_evidence_absent");
     return {
       resolvedType: "unknown",
       resolvedModel: "Невідома повітряна ціль",
@@ -234,7 +255,7 @@ export function classifyAerialObject(input: ClassificationInput): Classification
   // 4. UNKNOWN CLAIMED TYPE WITHOUT SENSOR THREAT EVIDENCE:
   // FORBID assigning combat types (uav, munition, bomb, fpv) solely based on speed, altitude, course, or kinematics!
   if (input.claimedType === "unknown" && !hasCombatEvidence) {
-    const classEv = [...baseEvidence, "insufficient_threat_evidence", "kinematics_unconfirmed"];
+    const classEv = uniqEv(baseEvidence, "insufficient_threat_evidence", "kinematics_unconfirmed");
     return {
       resolvedType: "unknown",
       resolvedModel: input.modelHint || "Невідома повітряна ціль",
@@ -264,7 +285,7 @@ export function classifyAerialObject(input: ClassificationInput): Classification
     const model = isAcoustic
       ? "Непідтверджена повітряна ціль (акустичний контакт)"
       : (input.modelHint || "Непідтверджена повітряна ціль");
-    const classEv = [...baseEvidence, ...threatEvidenceList, "unconfirmed_single_sensor_contact"];
+    const classEv = uniqEv(baseEvidence, threatEvidenceList, "unconfirmed_single_sensor_contact");
     return {
       resolvedType: "unknown",
       resolvedModel: model,
@@ -301,7 +322,7 @@ export function classifyAerialObject(input: ClassificationInput): Classification
       threatEvidenceList.some(e => e.includes("missile") || e.includes("ballistic") || e.includes("cruise"))
     ) {
       if (speedKmh > 1200 || threatEvidenceList.some(e => e.includes("ballistic"))) {
-        const classEv = [...baseEvidence, ...threatEvidenceList, "hyper_high_velocity_ballistic"];
+        const classEv = uniqEv(baseEvidence, threatEvidenceList, "hyper_high_velocity_ballistic");
         return {
           resolvedType: "munition",
           resolvedModel: input.modelHint || "Іскандер-М / Кинджал (Балістика)",
@@ -324,7 +345,7 @@ export function classifyAerialObject(input: ClassificationInput): Classification
         };
       }
 
-      const classEv = [...baseEvidence, ...threatEvidenceList, "terrain_hugging_transonic_cruise"];
+      const classEv = uniqEv(baseEvidence, threatEvidenceList, "terrain_hugging_transonic_cruise");
       return {
         resolvedType: "munition",
         resolvedModel: input.modelHint || "Х-101 / Калібр (Крилата ракета)",
@@ -352,7 +373,7 @@ export function classifyAerialObject(input: ClassificationInput): Classification
       input.claimedType === "bomb" ||
       threatEvidenceList.some(e => e.includes("kab") || e.includes("glide") || e.includes("umpk"))
     ) {
-      const classEv = [...baseEvidence, ...threatEvidenceList, "aerodynamic_glide_umpk"];
+      const classEv = uniqEv(baseEvidence, threatEvidenceList, "aerodynamic_glide_umpk");
       return {
         resolvedType: "bomb",
         resolvedModel: input.modelHint || "КАБ-500 з УМПК",
@@ -380,7 +401,7 @@ export function classifyAerialObject(input: ClassificationInput): Classification
       input.claimedType === "fpv" ||
       threatEvidenceList.some(e => e.includes("fpv") || e.includes("quad"))
     ) {
-      const classEv = [...baseEvidence, ...threatEvidenceList, "rotary_quad_low_level"];
+      const classEv = uniqEv(baseEvidence, threatEvidenceList, "rotary_quad_low_level");
       return {
         resolvedType: "fpv",
         resolvedModel: input.modelHint || "FPV-дрон (Ударний квадрокоптер)",
@@ -425,7 +446,7 @@ export function classifyAerialObject(input: ClassificationInput): Classification
 
       // Reconnaissance UAV
       if ((speedKmh < 135 && !hasJetHint) || hasReconHint) {
-        const classEv = [...baseEvidence, ...threatEvidenceList, "loitering_recon_velocity"];
+        const classEv = uniqEv(baseEvidence, threatEvidenceList, "loitering_recon_velocity");
         return {
           resolvedType: "uav",
           resolvedModel: input.modelHint || "Supercam S350 Recon",
@@ -451,7 +472,7 @@ export function classifyAerialObject(input: ClassificationInput): Classification
       // Turbojet Shahed-238
       const isHighAltitude = alt > 600;
       if (speedKmh >= 310 || (hasJetHint && speedKmh >= 215) || (speedKmh >= 235 && isHighAltitude)) {
-        const classEv = [...baseEvidence, ...threatEvidenceList, "turbojet_toloue_10_speed_profile"];
+        const classEv = uniqEv(baseEvidence, threatEvidenceList, "turbojet_toloue_10_speed_profile");
         return {
           resolvedType: "uav",
           resolvedModel: "Shahed-238 (Jet)",
@@ -474,7 +495,7 @@ export function classifyAerialObject(input: ClassificationInput): Classification
 
       // Transitional speed band hysteresis (Shahed-136 diving / tailwind)
       if (speedKmh >= 215 && speedKmh < 310) {
-        const classEv = [...baseEvidence, ...threatEvidenceList, "transitional_speed_band"];
+        const classEv = uniqEv(baseEvidence, threatEvidenceList, "transitional_speed_band");
         return {
           resolvedType: "uav",
           resolvedModel: "Shahed-136",
@@ -498,7 +519,7 @@ export function classifyAerialObject(input: ClassificationInput): Classification
       }
 
       // Standard Piston Shahed-136 with sensor evidence
-      const classEv = [...baseEvidence, ...threatEvidenceList, "md550_piston_propeller_velocity"];
+      const classEv = uniqEv(baseEvidence, threatEvidenceList, "md550_piston_propeller_velocity");
       return {
         resolvedType: "uav",
         resolvedModel: "Shahed-136",
@@ -523,7 +544,7 @@ export function classifyAerialObject(input: ClassificationInput): Classification
   }
 
   // 6. Default Fallback UNKNOWN
-  const classEv = [...baseEvidence, "unconfirmed_observation"];
+  const classEv = uniqEv(baseEvidence, "unconfirmed_observation");
   return {
     resolvedType: "unknown",
     resolvedModel: "Невідома повітряна ціль",

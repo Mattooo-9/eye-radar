@@ -17,7 +17,8 @@ export type EvidenceFamily =
   | "radar_ground"
   | "acoustic_optical"
   | "satellite_coords"
-  | "osint";
+  | "osint"
+  | "manual";
 
 export interface SourceCapability {
   primaryCapability: CapabilityType;

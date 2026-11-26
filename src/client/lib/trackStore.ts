@@ -33,10 +33,23 @@ export const isCivilAviation = (packet: TrackPacket): boolean => {
     return false;
   }
 
+  // Known commercial airline prefixes are ALWAYS civil aviation regardless of model label
+  const civilPrefixes = [
+    "RYR", "WZZ", "WMT", "WUK", "LOT", "DLH", "KLM", "AFR", "BAW", "THY", "AUA",
+    "SXS", "PGT", "EZY", "EZS", "SAS", "FIN", "BTI", "ENT", "TOM", "FDB", "AAR",
+    "ETH", "ROT", "CAI", "ISR", "FDX", "UPS", "EXS", "CCA", "SIA", "RYS", "NSZ",
+    "VLG", "UAE", "QTR", "ETD", "ELY", "AEE", "TVS"
+  ];
+  if (civilPrefixes.some((p) => callsign.startsWith(p))) {
+    return true;
+  }
+
   // Explicit military, government, reconnaissance or tanker indicators are NEVER civil aviation
   if (
     model.includes("MIL_") ||
     model.includes("MILITARY") ||
+    model.includes("ТАКТИЧН") ||
+    model.includes("UA AIRSPACE") ||
     model.includes("RECON") ||
     model.includes("TANKER") ||
     model.includes("AWACS") ||

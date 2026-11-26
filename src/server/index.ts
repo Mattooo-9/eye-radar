@@ -258,19 +258,53 @@ sourceRegistry.register(
 sourceRegistry.register(
   "public.osint",
   "osint",
-  publicOsintSource,
+  publicOsintSource as any,
   {
-    primaryCapability: "THREAT_ALERT",
-    capabilities: ["THREAT_ALERT"],
-    canCreateTrack: false,
-    canClassify: false,
-    canProvidePosition: false,
-    canProvideAltitude: false,
-    canProvideSpeed: false,
+    primaryCapability: "TRACK_POSITION",
+    capabilities: ["TRACK_POSITION", "THREAT_ALERT"],
+    canCreateTrack: true,
+    canClassify: true,
+    canProvidePosition: true,
+    canProvideAltitude: true,
+    canProvideSpeed: true,
     evidenceFamily: "osint",
-    evidenceTypes: ["osint"],
-  },
-  { disabled: true }
+    evidenceTypes: [
+      "osint",
+      "threat_alert",
+      "official_air_force_bulletin",
+      "air_defense_osint",
+      "osint_threat_report",
+      "public_osint_message",
+      "channel_",
+      "shahed_acoustic_signature",
+      "reactive_uav",
+      "cruise_missile_profile"
+    ],
+  }
+);
+
+sourceRegistry.register(
+  "manual",
+  "manual",
+  {} as any,
+  {
+    primaryCapability: "TRACK_POSITION",
+    capabilities: ["TRACK_POSITION", "THREAT_ALERT"],
+    canCreateTrack: true,
+    canClassify: true,
+    canProvidePosition: true,
+    canProvideAltitude: true,
+    canProvideSpeed: true,
+    evidenceFamily: "manual",
+    evidenceTypes: [
+      "manual",
+      "citizen_report",
+      "acoustic_report",
+      "visual_spotter",
+      "threat_visual",
+      "air_defense_intercept"
+    ],
+  }
 );
 
 sourceRegistry.register(
@@ -943,8 +977,17 @@ const server = createServer(async (req, res) => {
         source: "manual",
         confidence: 0.88,
         altitude: isMunition ? 120 : 250,
+        uncertaintyRadius: 4500,
+        isSynthetic: false,
+        threatEvidence: ["visual_spotter", "citizen_report"],
         meta: {
+          source_id: "manual",
+          source_family: "manual",
           reportType,
+          evidence: "visual_spotter",
+          provenance: "Рапорт очевидця (Мережа спостереження)",
+          model: isMunition ? "Крилата ракета (спостереження)" : "БпЛА Shahed/Ударний (спостереження)",
+          isSynthetic: false,
           comment: parsed.comment || "Citizen acoustic report"
         }
       };
@@ -1045,6 +1088,7 @@ botManager.setHealthTracker(
   () => trackManager.snapshot()
 );
 botManager.setAlertsSource(alertsSource);
+botManager.setOnReportHandler((obs) => ingestBatch([obs], hub));
 
 server.on("upgrade", (req, socket, head) => {
   const url = new URL(req.url ?? "/", env.publicBaseUrl);
@@ -1183,7 +1227,9 @@ setInterval(async () => {
     try {
       const activeAlerts = await alertsSource.fetchAlerts();
       const latency = Date.now() - t0;
-      trackManager.setActiveAlertOblasts(alertsSource.getActiveAlertOblastNames());
+      const oblastNames = alertsSource.getActiveAlertOblastNames();
+      trackManager.setActiveAlertOblasts(oblastNames);
+      publicOsintSource.setActiveAlertOblasts(oblastNames);
       healthTracker.recordSuccess("alerts.in.ua", latency, activeAlerts.length);
     } catch (err) {
       healthTracker.recordError("alerts.in.ua", err instanceof Error ? err : String(err));
@@ -1201,7 +1247,23 @@ setInterval(async () => {
     }
   }
 
-  // Public OSINT reposts completely excluded per primary API mandate
+  // Poll Official Air Defense & Air Force OSINT Feed ("Очі ППО": kpszsu, tlknewsua, raketa_trevoga, monitorwarr, vanek_nikolaev, war_monitor) every 10 seconds
+  if (currentCycle === 1 || currentCycle % 10 === 0) {
+    const tOsint = Date.now();
+    try {
+      const osintObs = await publicOsintSource.fetchPublicOsintObservations();
+      const latency = Date.now() - tOsint;
+      for (const uo of osintObs) {
+        trackManager.ingest(toObservation(uo), now);
+      }
+      healthTracker.recordSuccess("public.osint", latency, osintObs.length);
+      if (osintObs.length > 0) {
+        sourceRegistry.validateAndActivate("public.osint", osintObs, latency);
+      }
+    } catch (err) {
+      healthTracker.recordError("public.osint", err instanceof Error ? err : String(err));
+    }
+  }
 
   // Poll NASA FIRMS Thermal Satellite Observations on cycle 1 and every 15 seconds
   if (currentCycle === 1 || currentCycle % 15 === 0) {
@@ -1212,6 +1274,9 @@ setInterval(async () => {
       healthTracker.recordSuccess("nasa-firms", latency, thermals.length);
       if (thermals.length > 0) {
         sourceRegistry.validateAndActivate("nasa-firms", thermals, latency);
+        for (const t of thermals) {
+          uncertaintyEventManager.ingestObservation(t, now);
+        }
       }
     } catch (err) {
       healthTracker.recordError("nasa-firms", err instanceof Error ? err : String(err));

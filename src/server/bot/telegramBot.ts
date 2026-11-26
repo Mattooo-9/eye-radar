@@ -9,6 +9,8 @@ import type { AlertsInUaSource } from "../sources/alertsInUa.js";
 import type { SourceHealthTracker } from "../sources/sourceHealth.js";
 import { findCityInText, UKRAINE_CITIES } from "../sources/ukraineGeo.js";
 import { alertStateMachine } from "../core/alertStateMachine.js";
+import { parseOsintText } from "../ingest/osintParser.js";
+import type { Observation } from "../domain/types.js";
 
 function findNearestOblast(lat: number, lon: number): { nameUk: string; oblast: string } {
   let closest = UKRAINE_CITIES.kyiv;
@@ -34,6 +36,7 @@ export class EyeRadarBotManager {
   private alertsSource?: AlertsInUaSource;
   private lastLaunchMessageMap = new Map<number, number>();
   private deletionTimer?: NodeJS.Timeout;
+  private onReportHandler?: (obs: Observation) => void;
 
   constructor() {
     if (!env.botToken || env.botToken === "YOUR_TELEGRAM_BOT_TOKEN") {
@@ -81,6 +84,10 @@ export class EyeRadarBotManager {
 
   setAlertsSource(source: AlertsInUaSource): void {
     this.alertsSource = source;
+  }
+
+  setOnReportHandler(handler: (obs: Observation) => void): void {
+    this.onReportHandler = handler;
   }
 
   private setupHandlers(): void {
@@ -334,7 +341,7 @@ export class EyeRadarBotManager {
         `📡 Активні повітряні цілі: *${trackCount}*\n` +
         `👥 Підписників на гео-оповіщення: *${subsCount}*\n\n` +
         `🔌 *Статус адаптерів даних:*\n` +
-        (sourcesReport || "• alerts.in.ua: 🟢 OK\n• airplanes.live: 🟢 OK\n• open-meteo: 🟢 OK\n• simulator: 🟢 Active")
+        (sourcesReport || "• alerts.in.ua: 🟢 OK\n• kpszsu/osint: 🟢 OK\n• adsb-mil: 🟢 OK\n• open-meteo: 🟢 OK")
       );
     };
 
@@ -372,13 +379,28 @@ export class EyeRadarBotManager {
     bot.command("report", async (ctx) => {
       const text = ctx.message.text.replace(/^\/report\s*/, "").trim();
       if (!text) {
-        await replyAndSchedule(ctx, "Вкажіть спостереження після команди. Приклад: `/report Чую звук двигуна БПЛА на південь від міста`", {
+        await replyAndSchedule(ctx, "Вкажіть спостереження після команди. Приклад: `/report Чую звук двигуна БПЛА на південь від Білої Церкви`", {
           parse_mode: "Markdown"
         });
         return;
       }
 
-      await replyAndSchedule(ctx, "✅ Дякуємо за інформацію! Повідомлення передано в чергу аналізу для зіставлення з даними сенсорів.");
+      const parsedObs = parseOsintText(text, Date.now());
+      if (parsedObs.length > 0 && this.onReportHandler) {
+        for (const obs of parsedObs) {
+          obs.source = "manual";
+          obs.meta = {
+            ...obs.meta,
+            source_id: "telegram_spotter",
+            reportType: "citizen_telegram_report",
+            isSynthetic: false
+          };
+          this.onReportHandler(obs);
+        }
+        await replyAndSchedule(ctx, `✅ Дякуємо! Спостереження (${parsedObs.length} ціль) зафіксовано та внесено в ситуаційну сітку.`);
+      } else {
+        await replyAndSchedule(ctx, "✅ Дякуємо за інформацію! Повідомлення передано в чергу аналізу.");
+      }
     });
   }
 

@@ -111,7 +111,7 @@ export const App = () => {
     autoTracking: false,
     minSpeedKmh: 0,
     maxSpeedKmh: 2500,
-    threatOnly: false,
+    threatOnly: true,
     dangerRadiusKm: 35,
     showWind: false
   });
@@ -127,8 +127,8 @@ export const App = () => {
   });
 
   const [showFrontline, setShowFrontline] = useState(true);
-  const [showFirms, setShowFirms] = useState(false);
-  const [showAviation, setShowAviation] = useState(true);
+  const [showFirms, setShowFirms] = useState(true);
+  const [showAviation, setShowAviation] = useState(false);
   const [showAlerts, setShowAlerts] = useState(true);
   const [showUncertainty, setShowUncertainty] = useState(true);
   const [currentZoom, setCurrentZoom] = useState(5.5);
@@ -139,10 +139,15 @@ export const App = () => {
       window.Telegram?.WebApp?.expand();
       window.Telegram?.WebApp?.setHeaderColor?.("#0b1220");
       window.Telegram?.WebApp?.setBackgroundColor?.("#070b14");
-      // Fullscreen on supported versions (Bot API 7.7+)
-      (window.Telegram?.WebApp as any)?.requestFullscreen?.();
+      // Fullscreen on supported Telegram Bot API 8.0+ clients only
+      const tgApp = window.Telegram?.WebApp as any;
+      if (tgApp?.isVersionAtLeast?.("8.0")) {
+        tgApp?.requestFullscreen?.();
+      }
       // Prevent accidental swipe-down close on map drag
-      (window.Telegram?.WebApp as any)?.disableVerticalSwipes?.();
+      if (tgApp?.isVersionAtLeast?.("7.7")) {
+        tgApp?.disableVerticalSwipes?.();
+      }
     } catch {}
   }, []);
 
@@ -194,8 +199,9 @@ export const App = () => {
 
       const isCivil = isCivilAviation(p);
 
-      // "Threat only" filter hides civilian commercial flights, but strictly keeps all military targets (combat aircraft, UAVs, missiles, bombs, FPV)
-      if ((tacticalFilters.threatOnly || threatOnly) && isCivil) {
+      // Civilian commercial flights are hidden when threatOnly is active or showAviation is disabled
+      // Strictly preserves all military targets (combat aircraft, UAVs, missiles, bombs, FPV, allied transports/tankers)
+      if (isCivil && (tacticalFilters.threatOnly || threatOnly || !showAviation)) {
         return false;
       }
 
@@ -212,7 +218,7 @@ export const App = () => {
 
       return true;
     });
-  }, [packets, tacticalFilters, threatOnly, filters, currentZoom]);
+  }, [packets, tacticalFilters, threatOnly, showAviation, filters, currentZoom]);
 
   // ── Auto-Sentinel: Proximity monitoring without unwanted auto-selection ───
   useEffect(() => {

@@ -640,7 +640,11 @@ export const TacticalMenuModal: React.FC<TacticalMenuModalProps> = ({
                   <div className="sensor-status online">🟢 ОФІЦІЙНО ОНЛАЙН</div>
                 </div>
                 <div className="sensor-card">
-                  <div className="sensor-name">airplanes.live (ADS-B)</div>
+                  <div className="sensor-name">Повітряні Сили ЗСУ / Очі ППО</div>
+                  <div className="sensor-status online">🟢 РЕАЛЬНИЙ МОНІТОРИНГ</div>
+                </div>
+                <div className="sensor-card">
+                  <div className="sensor-name">ADS-B Військова авіація</div>
                   <div className="sensor-status online">🟢 ТРАНСЛЯЦІЯ АКТИВНА</div>
                 </div>
                 <div className="sensor-card">

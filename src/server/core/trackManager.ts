@@ -106,7 +106,11 @@ export class TrackManager {
             e.startsWith("acoustic_") ||
             e.startsWith("optical_") ||
             e.startsWith("radar_") ||
-            e.startsWith("threat_")
+            e.startsWith("threat_") ||
+            e.startsWith("osint_") ||
+            e.includes("air_force") ||
+            e.startsWith("citizen_") ||
+            e.startsWith("spotter_")
         )) ||
       Boolean(track.isSynthetic);
 
@@ -168,6 +172,8 @@ export class TrackManager {
 
     for (const t of checkpoint.tracks) {
       if (!t.id || typeof t.lat !== "number" || typeof t.lon !== "number" || t.isSynthetic) continue;
+      const trackAgeMs = Math.max(0, Date.now() - (t.timestamp || baseTime));
+      if (trackAgeMs > 120_000 || t.model === "Civilian Aircraft") continue;
       const filter = new ImmFilter2D();
       filter.update(t.timestamp || baseTime, t.lat, t.lon);
 
@@ -370,7 +376,9 @@ export class TrackManager {
         rawEv.startsWith("acoustic_") ||
         rawEv.startsWith("optical_") ||
         rawEv.startsWith("radar_") ||
-        rawEv.startsWith("threat_")
+        rawEv.startsWith("threat_") ||
+        rawEv.includes("osint") ||
+        rawEv.includes("air_force")
       )) {
         obsThreatEvidence.push(rawEv);
       }
@@ -471,8 +479,8 @@ export class TrackManager {
       : (imm.headingDeg || previous.heading);
     const derivedSpeed = distanceMeters / elapsedSeconds;
 
-    // EW / Impossible Jump Detection (gated to non-synthetic movement jumps > 3000m):
-    const isImpossibleJump = !isSynthetic && (
+    // EW / Impossible Jump Detection (gated to non-synthetic positional telemetry; OSINT/manual corridor updates excluded):
+    const isImpossibleJump = !isSynthetic && sourceFamily !== "osint" && sourceFamily !== "manual" && (
       (derivedSpeed > 1100 && distanceMeters > 3000) ||
       (distanceMeters > 40_000 && elapsedSeconds < 30 && previous.speed < 300)
     );
@@ -529,7 +537,9 @@ export class TrackManager {
       rawEv.startsWith("acoustic_") ||
       rawEv.startsWith("optical_") ||
       rawEv.startsWith("radar_") ||
-      rawEv.startsWith("threat_")
+      rawEv.startsWith("threat_") ||
+      rawEv.includes("osint") ||
+      rawEv.includes("air_force")
     )) {
       obsThreatEvidence.push(rawEv);
     }
@@ -640,8 +650,11 @@ export class TrackManager {
         continue;
       }
 
-      // Kinematic dead-reckoning extrapolation
-      if (entry.state.speed > 2 && entry.state.heading !== undefined) {
+      // Kinematic dead-reckoning extrapolation (skip blind drift for non-directional OSINT/manual spotters)
+      const hasDirectionalVector =
+        typeof entry.state.measuredHeading === "number" ||
+        (!entry.state.evidenceFamilies?.includes("osint") && !entry.state.evidenceFamilies?.includes("manual"));
+      if (entry.state.speed > 2 && entry.state.heading !== undefined && hasDirectionalVector) {
         const dist = entry.state.speed * dt;
         const nextPos = destinationPoint(entry.state.lat, entry.state.lon, entry.state.heading, dist);
         entry.state.lat = Math.round(nextPos.lat * 1_000_000) / 1_000_000;
@@ -652,6 +665,8 @@ export class TrackManager {
         if (entry.state.lifecycle === "COASTING" && entry.state.uncertaintyRadius) {
           entry.state.uncertaintyRadius = Math.min(8000, entry.state.uncertaintyRadius + Math.round(dt * 15));
         }
+      } else if (!hasDirectionalVector) {
+        entry.state.timestamp = now;
       }
     }
   }
@@ -666,8 +681,10 @@ export class TrackManager {
         continue;
       }
 
-      // 2. Stale measurement timeout (15 seconds without fresh measurement data)
-      if (measurementAge > STALE_AFTER_MS) {
+      // 2. Stale measurement timeout (45s for sensor streams; 5 min for manual eyewitness spotters)
+      const isManualSpotter = entry.state.evidenceFamilies?.includes("manual");
+      const effectiveStaleMs = isManualSpotter ? 300_000 : STALE_AFTER_MS;
+      if (measurementAge > effectiveStaleMs) {
         this.removeTrack(id);
         continue;
       }
@@ -811,12 +828,14 @@ export class TrackManager {
             return cycle % 4 === 0;
           });
 
+    // Periodic full-delta heartbeat every 15s ensures stationary/area OSINT tracks refresh client TTL
+    const forceFullFields = cycle > 0 && cycle % 15 === 0;
     const binaryBuffer = encodeBinaryDelta(
       deltaTracks,
       removedIds,
       seq,
       Date.now(),
-      this.lastPublishedState
+      forceFullFields ? new Map() : this.lastPublishedState
     );
 
     for (const t of deltaTracks) {

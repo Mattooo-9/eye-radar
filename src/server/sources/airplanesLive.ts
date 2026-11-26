@@ -1,5 +1,6 @@
 ﻿import type { Observation, TrackType } from "../domain/types.js";
 import { getDistanceToUkraineBorderKm } from "../domain/geo.js";
+import { isInsideUkraineGeo } from "./ukraineGeo.js";
 
 interface AdsbFiAircraft {
   hex: string;
@@ -107,10 +108,11 @@ export class AirplanesLiveSource {
     if (this.isMilitaryAircraft(callsign, desc, model)) return false;
     const text = `${callsign ?? ""} ${desc ?? ""} ${model ?? ""}`.toUpperCase();
     const civilPrefixes = [
-      "RYR", "WZZ", "WUK", "LOT", "DLH", "KLM", "AFR", "BAW", "THY", "AUA",
-      "SXS", "PGT", "EZY", "EZS", "SAS", "FIN", "BTI", "ENT", "TOM", "FDB",
-      "ETH", "ROT", "CAI", "ISR", "PIA", "FDX", "UPS", "BOX", "CGF", "MNB",
-      "UTN", "LBT", "NMA", "GJT", "ASL", "EXS", "CCA", "SIA", "RYS", "NSZ",
+      "RYR", "WZZ", "WMT", "WUK", "LOT", "DLH", "KLM", "AFR", "BAW", "THY", "AUA",
+      "SXS", "PGT", "EZY", "EZS", "SAS", "FIN", "BTI", "ENT", "TOM", "FDB", "AAR",
+      "ETH", "ROT", "CAI", "ISR", "PIA", "FDX", "UPS", "BOX", "CGF", "MNB", "VLG",
+      "UTN", "LBT", "NMA", "GJT", "ASL", "EXS", "CCA", "SIA", "RYS", "NSZ", "UAE",
+      "QTR", "ETD", "ELY", "AEE", "TVS", "CLX", "GEC", "BCS", "DHK", "NJE", "VJT",
       "B73", "B74", "B75", "B76", "B77", "B78",
       "A31", "A32", "A33", "A35", "A38", "A20N", "A21N", "B38M", "B39M", "CIVIL"
     ];
@@ -160,20 +162,22 @@ export class AirplanesLiveSource {
                 const flightCode = (a.flight ?? "").trim().replace(/\s+/g, "");
                 const callsign = flightCode || a.t || a.hex;
                 const isMil = this.isMilitaryAircraft(callsign, a.desc, a.t);
-                const isCivil = !isMil && this.isCivilAirliner(callsign, a.desc, a.t);
+                const isCivil = this.isCivilAirliner(callsign, a.desc, a.t);
+                const isInsideUkraine = isInsideUkraineGeo(a.lat, a.lon);
 
-                // Operational Sector Gating: civil airliners beyond 120 km from border are excluded
-                // Military, transport, recon, helicopter, or defense flights are NEVER excluded
-                if (isCivil && !isMil) {
-                  const distKm = getDistanceToUkraineBorderKm(a.lat, a.lon);
-                  if (distKm > 120) {
-                    continue;
-                  }
+                // Operational Mandate: ZERO foreign civilian airliners cluttering tactical radar.
+                // Only ingest verified military airframes within 350km of Ukraine OR non-civil contacts inside Ukraine.
+                if (isCivil) {
+                  continue;
+                }
+                const inMilTheater = isMil && getDistanceToUkraineBorderKm(a.lat, a.lon) <= 350;
+                if (!inMilTheater && !isInsideUkraine) {
+                  continue;
                 }
 
                 const id = flightCode ? `adsb-${flightCode}` : `adsb-${a.hex}`;
                 const rawModel = a.desc ?? a.t;
-                const model = rawModel ?? (isMil ? "MIL_AIRCRAFT" : "Civilian Aircraft");
+                const model = rawModel ?? (isMil ? "MIL_AIRCRAFT" : "Повітряна ціль (UA Airspace)");
                 const speedMs = a.gs * 0.514444; // knots to m/s
                 const altM = a.alt_baro ? Math.round(a.alt_baro * 0.3048) : undefined;
                 const type: TrackType = this.isHelicopter(a.desc, a.t) ? "helicopter" : "aircraft";
@@ -235,7 +239,12 @@ export class AirplanesLiveSource {
               velocity !== null &&
               velocity > 25
             ) {
+              const isMil = this.isMilitaryAircraft(callsign);
               const isCivil = this.isCivilAirliner(callsign);
+              const insideUa = isInsideUkraineGeo(lat, lon);
+              if (isCivil || (!insideUa && !(isMil && getDistanceToUkraineBorderKm(lat, lon) <= 350))) {
+                continue;
+              }
               obsMap.set(hex, {
                 id: `adsb-${hex}`,
                 type: "aircraft",
@@ -250,7 +259,7 @@ export class AirplanesLiveSource {
                 meta: {
                   source_id: "airplanes.live",
                   callsign: callsign || hex,
-                  model: isCivil ? "Civilian Aircraft" : "AIRCRAFT",
+                  model: isMil ? "MIL_AIRCRAFT" : "Повітряна ціль (UA Airspace)",
                   country: st[2]
                 }
               });
