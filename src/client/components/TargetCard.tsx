@@ -4,6 +4,7 @@ import type { TrustedLocation } from "../location/useTrustedLocation";
 import { bearingDegrees, haversineMeters } from "../lib/geo";
 import { findNearestLandmark, predictDestinationLandmark } from "../lib/landmarks";
 import {
+  formatTruthfulCoords,
   getAltitudeAnalysis,
   getHeadingVectorDescription,
   getTargetDisplayMeta
@@ -96,6 +97,7 @@ export const TargetCard = ({
 
   const meta = getTargetDisplayMeta(type, id, packetModel, packetCallsign);
   const isSensor = meta.dataCategory === "sensor_observation";
+  const isUnverified = meta.dataCategory === "unverified_report";
 
   // Strictly distinguish physically measured telemetry from unknown / text-reported fields
   const hasMeasuredSpeed = isSensor
@@ -111,15 +113,18 @@ export const TargetCard = ({
 
   const hasKnownHeading = isSensor
     ? Number.isFinite(heading) && speed > 0
-    : liveDiag?.measuredHeading !== undefined || speed > 0;
+    : liveDiag?.measuredHeading !== undefined || (!isUnverified && speed > 0);
   const headingDesc = getHeadingVectorDescription(
     liveDiag?.measuredHeading ?? heading,
     hasKnownHeading
   );
 
   const nearestLandmark = findNearestLandmark(lat, lon);
+  // Zero false precision: ONLY compute destination ETA when velocity is physically measured by a sensor
   const destinationPrediction =
-    hasKnownHeading && speed > 5 ? predictDestinationLandmark(lat, lon, heading, speed) : null;
+    hasMeasuredSpeed && hasKnownHeading && speed > 5
+      ? predictDestinationLandmark(lat, lon, heading, speed)
+      : null;
 
   let distanceKm: number | null = null;
   let etaMinutes: number | null = null;
@@ -128,7 +133,7 @@ export const TargetCard = ({
     const distMeters = haversineMeters({ lat, lon }, { lat: location.lat, lon: location.lon });
     distanceKm = Math.round(distMeters / 1000);
 
-    if (hasKnownHeading && speed > 5) {
+    if (hasMeasuredSpeed && hasKnownHeading && speed > 5) {
       const bearingToUser = bearingDegrees({ lat, lon }, { lat: location.lat, lon: location.lon });
       const angleDiff = Math.min(Math.abs(heading - bearingToUser), 360 - Math.abs(heading - bearingToUser));
       if (angleDiff <= 50) {
@@ -140,10 +145,12 @@ export const TargetCard = ({
     }
   }
 
+  const coordsText = formatTruthfulCoords(lat, lon, meta.dataCategory);
+
   const handleCopyCoords = () => {
     const spdPart = measuredSpeedKmh !== null ? `${measuredSpeedKmh} км/год` : "швидкість невідома";
     const altPart = altSummary ? `${altSummary.altitudeM} м` : "висота невідома";
-    const text = `${meta.modelName} [${meta.dataCategoryBadge}]${packetCallsign ? ` (${packetCallsign})` : ""} | ${lat.toFixed(4)}°N, ${lon.toFixed(4)}°E (${formatUncertainty(uncertaintyRadius)}) | ${spdPart} | ${altPart} | ${nearestLandmark}`;
+    const text = `${meta.modelName} [${meta.dataCategoryBadge}]${packetCallsign ? ` (${packetCallsign})` : ""} | ${coordsText} (${formatUncertainty(uncertaintyRadius)}) | ${spdPart} | ${altPart} | ${nearestLandmark}`;
     void navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -156,7 +163,11 @@ export const TargetCard = ({
         <div className="target-card-header">
           <div>
             <div className="target-badge-row">
-              <span className={`target-category-pill ${isSensor ? "cat-sensor" : "cat-osint"}`}>
+              <span
+                className={`target-category-pill ${
+                  isSensor ? "cat-sensor" : isUnverified ? "cat-unverified" : "cat-osint"
+                }`}
+              >
                 {meta.dataCategoryBadge}
               </span>
               {altSummary && (
@@ -206,7 +217,7 @@ export const TargetCard = ({
             <div>
               <strong className="location-title">{nearestLandmark}</strong>
               <div className="location-coords">
-                Координати: <span>{lat.toFixed(4)}°N, {lon.toFixed(4)}°E</span> • Похибка:{" "}
+                {isSensor ? "Координати" : "Орієнтовна зона"}: <span>{coordsText}</span> • Похибка:{" "}
                 <span>{formatUncertainty(uncertaintyRadius)}</span>
               </div>
             </div>

@@ -150,11 +150,11 @@ export class EyeRadarBotManager {
 
         const msgRes = await sendBotMessage(
           chatId,
-          `🛰️ *EYE RADAR // ТАКТИЧНА СИСТЕМА МОНІТОРИНГУ*\n\n` +
-          `• Живі повітряні цілі: Шахеди, ракети, бойова авіація\n` +
-          `• Зони тривог, супутникові термоточки та метеодані\n` +
-          `• Оперативне AI-зведення, анти-спуфінг та акустичний моніторинг\n\n` +
-          `_Усі модулі, статус та налаштування — в інтерактивному додатку._`,
+          `🛰️ *EYE RADAR // СИСТЕМА ЦИВІЛЬНОГО ІНФОРМУВАННЯ*\n\n` +
+          `• Офіційні сигнали повітряної тривоги (alerts.in.ua)\n` +
+          `• Текстові повідомлення 14 каналів моніторингу ППО (OSINT)\n` +
+          `• Відкриті спостереження військової авіації (ADS-B) та NASA FIRMS\n\n` +
+          `_Усі шари розділено за джерелом та часом оновлення. У разі тривоги орієнтуйтесь на офіційні сигнали._`,
           {
             parse_mode: "Markdown",
             reply_markup: {
@@ -354,22 +354,41 @@ export class EyeRadarBotManager {
       await replyAndSchedule(ctx, formatStatusReport(), { parse_mode: "Markdown" });
     });
 
-    bot.command("alerts", async (ctx) => {
-      await replyAndSchedule(
-        ctx,
-        "🔔 *Статус тривог*: активні сектори та повітряні цілі відображаються на інтерактивній мапі.",
-        {
-          parse_mode: "Markdown",
-          reply_markup: {
-            inline_keyboard: [[getRadarButton("🗺️ Відкрити радар")]]
-          }
-        }
+    const formatAlertsReport = (): string => {
+      if (!this.alertsSource) {
+        return "🔔 *Статус тривог*: відкрийте карту для перегляду активних секторів.";
+      }
+      const meta = this.alertsSource.getMetadata();
+      if (meta.stale) {
+        return "⚠️ *Офіційне джерело тривог тимчасово недоступне.* Перевірте офіційні канали ДСНС / обласної ОВА.";
+      }
+      const names = this.alertsSource.getActiveAlertOblastNames();
+      const updatedLabel = meta.updatedAt
+        ? `${Math.max(0, Math.round((Date.now() - meta.updatedAt) / 1000))} сек тому`
+        : "невідомо";
+      if (names.length === 0) {
+        return `🟢 *Офіційні повітряні тривоги відсутні*\nДжерело: ${meta.source} (оновлено ${updatedLabel})`;
+      }
+      return (
+        `🚨 *Офіційні повітряні тривоги (${names.length}):*\n` +
+        names.slice(0, 20).map((n) => `• ${n}`).join("\n") +
+        `\n\n_Джерело: ${meta.source} · оновлено ${updatedLabel}_`
       );
+    };
+
+    bot.command("alerts", async (ctx) => {
+      await replyAndSchedule(ctx, formatAlertsReport(), {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [[getRadarButton("🗺️ Відкрити радар")]]
+        }
+      });
     });
 
     bot.action("cmd_alerts", async (ctx) => {
       await ctx.answerCbQuery();
-      await replyAndSchedule(ctx, "🔔 Відкрийте карту для перегляду актуальних секторів тривоги.", {
+      await replyAndSchedule(ctx, formatAlertsReport(), {
+        parse_mode: "Markdown",
         reply_markup: {
           inline_keyboard: [[getRadarButton("🗺️ Відкрити радар")]]
         }
@@ -377,9 +396,9 @@ export class EyeRadarBotManager {
     });
 
     bot.command("report", async (ctx) => {
-      const text = ctx.message.text.replace(/^\/report\s*/, "").trim();
+      const text = ctx.message.text.replace(/^\/report\s*/, "").trim().slice(0, 240);
       if (!text) {
-        await replyAndSchedule(ctx, "Вкажіть спостереження після команди. Приклад: `/report Чую звук двигуна БПЛА на південь від Білої Церкви`", {
+        await replyAndSchedule(ctx, "Вкажіть спостереження після команди. Приклад: `/report Чую звук БпЛА біля Білої Церкви`", {
           parse_mode: "Markdown"
         });
         return;
@@ -388,18 +407,31 @@ export class EyeRadarBotManager {
       const parsedObs = parseOsintText(text, Date.now());
       if (parsedObs.length > 0 && this.onReportHandler) {
         for (const obs of parsedObs) {
+          obs.id = `citizen-tg-${Date.now().toString(36)}`;
           obs.source = "manual";
+          obs.speed = 0;
+          obs.altitude = undefined;
+          obs.confidence = 0.45;
+          obs.uncertaintyRadius = 5000;
+          obs.threatEvidence = ["citizen_report"];
           obs.meta = {
             ...obs.meta,
-            source_id: "telegram_spotter",
+            source_id: "manual",
+            source_family: "manual",
             reportType: "citizen_telegram_report",
+            unverifiedEyewitness: true,
+            speedIsMeasured: false,
+            model: "Неперевірене повідомлення очевидця (Telegram)",
+            provenance: `Неперевірене повідомлення очевидця: «${text.slice(0, 120)}»`,
             isSynthetic: false
           };
           this.onReportHandler(obs);
         }
-        await replyAndSchedule(ctx, `✅ Дякуємо! Спостереження (${parsedObs.length} ціль) зафіксовано та внесено в ситуаційну сітку.`);
+        await replyAndSchedule(ctx, `✅ Повідомлення зафіксовано як *неперевірене повідомлення очевидця* (без статусу підтвердженого ППО).`, {
+          parse_mode: "Markdown"
+        });
       } else {
-        await replyAndSchedule(ctx, "✅ Дякуємо за інформацію! Повідомлення передано в чергу аналізу.");
+        await replyAndSchedule(ctx, "ℹ️ Не вдалося визначити населений пункт у повідомленні. Вкажіть місто або район України.");
       }
     });
   }
@@ -519,43 +551,54 @@ export class EyeRadarBotManager {
         }
       }
 
-      // 2. Direct aerial targets: Alert State Machine (NEW -> APPROACHING -> CRITICAL -> PASSED/CLEARED)
+      // 2. Direct aerial targets: Alert State Machine (skip unverified anonymous citizen reports)
       if (tracks.length > 0) {
         for (const track of tracks) {
-          if (track.threatLevel === "critical" || track.threatLevel === "high" || track.type === "uav" || track.type === "munition") {
+          if (track.id.startsWith("citizen-")) continue;
+          if (track.threatLevel === "critical" || track.threatLevel === "high" || track.type === "uav" || track.type === "munition" || track.type === "bomb") {
             const evalResult = alertStateMachine.evaluateTrack(pref, track, now);
             if (evalResult.shouldNotify) {
               pref.lastNotified = now;
               this.storage.savePreference(pref);
 
+              const isOsint = track.dataCategory === "osint_message" || track.evidenceFamilies?.includes("osint");
+              const sourceLine = isOsint
+                ? `📡 Джерело: текстове повідомлення ППО (${track.callsign || "OSINT"}, точність ~±${Math.round((track.uncertaintyRadius || 6500) / 1000)} км)\n`
+                : `📡 Джерело: фактичне спостереження сенсора (${track.callsign || "ADS-B"})\n`;
+              const measuredKinematicsLine =
+                !isOsint && track.measuredSpeed !== undefined
+                  ? `🧭 Швидкість: *${evalResult.speedKmh} км/год*` +
+                    (evalResult.etaMinutes !== null ? ` · орієнтовно *~${evalResult.etaMinutes} хв*\n` : "\n")
+                  : `🧭 Швидкість та висота: *невідомо* (текстове повідомлення)\n`;
+
               let msg = "";
               if (evalResult.state === "CRITICAL") {
                 msg =
-                  `🔴 *КРИТИЧНА НЕБЕЗПЕКА: ЦІЛЬ ПОРУЧ!*\n\n` +
-                  `🎯 Ціль: *${evalResult.targetModel}*\n` +
-                  `📏 Відстань: *~${evalResult.distanceKm} км*\n` +
-                  `🧭 Швидкість: *${evalResult.speedKmh} км/год*\n` +
-                  (evalResult.etaMinutes !== null ? `⏱️ Орієнтовний підліт (ETA): *~${evalResult.etaMinutes} хв*\n\n` : "\n") +
-                  `🚨 *Негайно перебувайте в укритті!*`;
+                  `🔴 *ПІДВИЩЕНА НЕБЕЗПЕКА В СЕКТОРІ*\n\n` +
+                  `🎯 Об'єкт: *${evalResult.targetModel}*\n` +
+                  sourceLine +
+                  `📏 Орієнтовна відстань: *~${evalResult.distanceKm} км*\n` +
+                  measuredKinematicsLine +
+                  `\n🚨 *Перебувайте в укритті та стежте за офіційним сигналом тривоги!*`;
               } else if (evalResult.state === "APPROACHING") {
                 msg =
-                  `⚠️ *УВАГА: НАБЛИЖЕННЯ ПОВІТРЯНОЇ ЦІЛІ!*\n\n` +
-                  `🎯 Ціль: *${evalResult.targetModel}*\n` +
-                  `📏 Відстань до вас: *~${evalResult.distanceKm} км*\n` +
-                  `🧭 Швидкість: *${evalResult.speedKmh} км/год*\n` +
-                  (evalResult.etaMinutes !== null ? `⏱️ Орієнтовний підліт (ETA): *~${evalResult.etaMinutes} хв*\n\n` : "\n") +
-                  `🛡️ Перейдіть у безпечне місце / правило двох стін!`;
+                  `⚠️ *УВАГА: ПОВІДОМЛЕННЯ ПРО РУХ У ВАШОМУ НАПРЯМКУ*\n\n` +
+                  `🎯 Об'єкт: *${evalResult.targetModel}*\n` +
+                  sourceLine +
+                  `📏 Орієнтовна відстань: *~${evalResult.distanceKm} км*\n` +
+                  measuredKinematicsLine +
+                  `\n🛡️ Перейдіть у безпечне місце / правило двох стін.`;
               } else if (evalResult.state === "PASSED") {
                 msg =
-                  `🛡️ *ЦІЛЬ ПРОЙШЛА ПОВЗ ВАШ СЕКТОР*\n\n` +
-                  `🎯 Ціль: *${evalResult.targetModel}*\n` +
-                  `📏 Відстань збільшується: *~${evalResult.distanceKm} км*\n` +
-                  `Безпосередня небезпека для поточної точки знизилась.`;
+                  `ℹ️ *ДИСТАНЦІЯ ДО ОБ'ЄКТА ЗБІЛЬШУЄТЬСЯ*\n\n` +
+                  `🎯 Об'єкт: *${evalResult.targetModel}*\n` +
+                  `📏 Орієнтовна відстань: *~${evalResult.distanceKm} км*\n` +
+                  `Не залишайте укриття до офіційного відбою тривоги.`;
               } else if (evalResult.state === "CLEARED") {
                 msg =
-                  `🟢 *ЗАГРОЗУ СКАСОВАНО / ЦІЛЬ ЗНИЩЕНО*\n\n` +
-                  `🎯 Ціль: *${evalResult.targetModel}*\n` +
-                  `Ціль зникла з радіолокаційного поля спостереження.`;
+                  `ℹ️ *ОНОВЛЕННЯ ПО ОБ'ЄКТУ ПРИПИНИЛИСЯ*\n\n` +
+                  `🎯 Об'єкт: *${evalResult.targetModel}*\n` +
+                  `Нових повідомлень по цьому треку не надходило. Орієнтуйтесь на офіційний відбій тривоги.`;
               }
 
               if (msg) {

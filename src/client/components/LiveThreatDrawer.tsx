@@ -94,14 +94,16 @@ export const LiveThreatDrawer: React.FC<LiveThreatDrawerProps> = ({
   }, [packets, location]);
 
   const osintItems = useMemo(() => enriched.filter((e) => e.dataCategory === "osint_message"), [enriched]);
+  const unverifiedItems = useMemo(() => enriched.filter((e) => e.dataCategory === "unverified_report"), [enriched]);
   const sensorItems = useMemo(() => enriched.filter((e) => e.dataCategory === "sensor_observation"), [enriched]);
 
   const countsText = useMemo(() => {
     const parts: string[] = [];
     if (osintItems.length > 0) parts.push(`${osintItems.length} ППО`);
+    if (unverifiedItems.length > 0) parts.push(`${unverifiedItems.length} очев.`);
     if (sensorItems.length > 0) parts.push(`${sensorItems.length} ADS-B`);
     return parts.join(" · ");
-  }, [osintItems.length, sensorItems.length]);
+  }, [osintItems.length, unverifiedItems.length, sensorItems.length]);
 
   const renderRow = (item: (typeof enriched)[number]) => {
     const badge = TYPE_BADGE[item.type] ?? TYPE_BADGE.unknown;
@@ -182,6 +184,12 @@ export const LiveThreatDrawer: React.FC<LiveThreatDrawerProps> = ({
                 <>
                   <div className="threat-group-label">Повідомлення ППО / OSINT ({osintItems.length})</div>
                   {osintItems.map(renderRow)}
+                </>
+              )}
+              {unverifiedItems.length > 0 && (
+                <>
+                  <div className="threat-group-label">Неперевірені повідомлення очевидців ({unverifiedItems.length})</div>
+                  {unverifiedItems.map(renderRow)}
                 </>
               )}
               {sensorItems.length > 0 && (

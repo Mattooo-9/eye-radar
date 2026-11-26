@@ -5141,6 +5141,12 @@ body {
   color: #fca5a5;
 }
 
+.target-category-pill.cat-unverified {
+  background: rgba(245, 158, 11, 0.18);
+  border: 1px solid rgba(245, 158, 11, 0.52);
+  color: #fcd34d;
+}
+
 .target-category-pill.cat-sensor {
   background: rgba(56, 189, 248, 0.18);
   border: 1px solid rgba(56, 189, 248, 0.48);

@@ -2,7 +2,7 @@
 // Truthful, zero-fabrication display metadata for aerial observations & OSINT text reports.
 // Unknown parameters remain explicitly unknown; no synthetic airbases, military units, or template TTX are invented.
 
-export type ClientDataCategory = "osint_message" | "sensor_observation";
+export type ClientDataCategory = "unverified_report" | "osint_message" | "sensor_observation";
 
 export interface TargetDisplayMeta {
   modelName: string;
@@ -22,14 +22,23 @@ export interface AltitudeSummary {
 }
 
 export function classifyClientDataCategory(id: string, callsign?: string): ClientDataCategory {
-  if (
-    id.startsWith("osint-") ||
-    id.startsWith("citizen-") ||
-    (callsign && callsign.startsWith("@"))
-  ) {
+  if (id.startsWith("citizen-")) {
+    return "unverified_report";
+  }
+  if (id.startsWith("osint-") || (callsign && callsign.startsWith("@"))) {
     return "osint_message";
   }
   return "sensor_observation";
+}
+
+/**
+ * Formats coordinates truthfully to match source spatial precision (no false ±11 m precision for ±6.5 km text alerts).
+ */
+export function formatTruthfulCoords(lat: number, lon: number, category: ClientDataCategory): string {
+  if (category === "sensor_observation") {
+    return `${lat.toFixed(4)}°N, ${lon.toFixed(4)}°E`;
+  }
+  return `~${lat.toFixed(2)}°N, ~${lon.toFixed(2)}°E`;
 }
 
 /**
@@ -96,7 +105,9 @@ export function getTargetDisplayMeta(
 ): TargetDisplayMeta {
   const dataCategory = classifyClientDataCategory(id, packetCallsign);
   const dataCategoryBadge =
-    dataCategory === "osint_message"
+    dataCategory === "unverified_report"
+      ? "НЕПЕРЕВІРЕНЕ ПОВІДОМЛЕННЯ (ОЧЕВИДЕЦЬ)"
+      : dataCategory === "osint_message"
       ? "ТЕКСТОВЕ ПОВІДОМЛЕННЯ (OSINT)"
       : "ФАКТИЧНЕ СПОСТЕРЕЖЕННЯ (ADS-B)";
 

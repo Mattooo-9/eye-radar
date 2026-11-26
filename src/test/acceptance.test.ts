@@ -6,10 +6,12 @@ import { shouldIngestAdsbContact } from "../server/sources/adsbClassifier.js";
 import { classifyAerialObject } from "../server/core/classificationEngine.js";
 import {
   classifyClientDataCategory,
+  formatTruthfulCoords,
   getAltitudeAnalysis,
   getHeadingVectorDescription,
   getTargetDisplayMeta
 } from "../client/lib/targetSpecs.js";
+import { AlertsInUaSource } from "../server/sources/alertsInUa.js";
 
 describe("EYE RADAR — Mandatory Automated Acceptance Criteria (ACCEPTANCE.md)", () => {
   const originalEnv = process.env.NODE_ENV;
@@ -94,6 +96,37 @@ describe("EYE RADAR — Mandatory Automated Acceptance Criteria (ACCEPTANCE.md)"
       expect(osintMeta.dataCategoryBadge).toContain("OSINT");
       expect(classifyClientDataCategory("adsb-RCH436", "RCH436")).toBe("sensor_observation");
       expect(classifyClientDataCategory("osint-uav-kyiv-area", "@kpszsu")).toBe("osint_message");
+      expect(classifyClientDataCategory("citizen-abc123")).toBe("unverified_report");
+
+      const citizenMeta = getTargetDisplayMeta("uav", "citizen-abc123", "Неперевірене повідомлення: БпЛА (очевидець)");
+      expect(citizenMeta.dataCategory).toBe("unverified_report");
+      expect(citizenMeta.dataCategoryBadge).toContain("НЕПЕРЕВІРЕНЕ");
+
+      // Coordinate precision must match spatial uncertainty (2 decimals + ~ for OSINT/unverified, 4 decimals for ADS-B)
+      expect(formatTruthfulCoords(49.9935, 36.2304, "osint_message")).toBe("~49.99°N, ~36.23°E");
+      expect(formatTruthfulCoords(49.9935, 36.2304, "unverified_report")).toBe("~49.99°N, ~36.23°E");
+      expect(formatTruthfulCoords(47.1234, 22.4567, "sensor_observation")).toBe("47.1234°N, 22.4567°E");
+    });
+
+    it("expires stale official air-raid alerts after 3 minutes of upstream outage (no stale alarms shown as active)", () => {
+      const src = new AlertsInUaSource();
+      const t0 = 1_795_520_000_000;
+      (src as any).activeAlerts.set("київська область", {
+        id: "київська область",
+        name: "Київська область",
+        active: true,
+        type: "oblast",
+        updatedAt: t0
+      });
+      (src as any).lastSuccessfulFetch = t0;
+
+      // Fresh within 3 min -> active & not stale
+      expect(src.isStale(t0 + 60_000)).toBe(false);
+      expect(src.getActiveAlertOblastNames(t0 + 60_000)).toContain("Київська область");
+
+      // Past 3 min without fresh official update -> marked stale and active list cleared
+      expect(src.isStale(t0 + 200_000)).toBe(true);
+      expect(src.getActiveAlertOblastNames(t0 + 200_000)).toHaveLength(0);
     });
 
     it("strictly separates sensor_observation from osint_message and rejects stale observations (>25s)", () => {

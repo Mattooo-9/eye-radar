@@ -343,13 +343,44 @@ sourceRegistry.register(
   { disabled: true }
 );
 
+const MAX_BODY_BYTES = 64 * 1024; // 64 KB strict payload ceiling against DoS
+const REPORT_RATE_LIMIT_WINDOW_MS = 5 * 60 * 1000;
+const REPORT_RATE_LIMIT_MAX = 3;
+const reportRateLimits = new Map<string, number[]>();
+
+const isAuthorizedAdminOrIngest = (req: IncomingMessage): boolean => {
+  const configuredSecret = process.env.INGEST_API_KEY || process.env.ADMIN_API_KEY;
+  if (!configuredSecret) return false;
+  const headerKey =
+    (typeof req.headers["x-api-key"] === "string" ? req.headers["x-api-key"] : "") ||
+    (typeof req.headers.authorization === "string"
+      ? req.headers.authorization.replace(/^Bearer\s+/i, "").trim()
+      : "");
+  return headerKey.length > 0 && headerKey === configuredSecret;
+};
+
+const checkReportRateLimit = (ip: string, now = Date.now()): boolean => {
+  const key = ip || "unknown";
+  const recent = (reportRateLimits.get(key) ?? []).filter((ts) => now - ts < REPORT_RATE_LIMIT_WINDOW_MS);
+  if (recent.length >= REPORT_RATE_LIMIT_MAX) {
+    reportRateLimits.set(key, recent);
+    return false;
+  }
+  recent.push(now);
+  reportRateLimits.set(key, recent);
+  if (reportRateLimits.size > 2000) {
+    reportRateLimits.clear();
+  }
+  return true;
+};
+
 const readBody = async (req: IncomingMessage): Promise<string> =>
   new Promise((resolveBody, rejectBody) => {
     let raw = "";
     req.setEncoding("utf8");
     req.on("data", (chunk) => {
       raw += chunk;
-      if (raw.length > 1_000_000) {
+      if (raw.length > MAX_BODY_BYTES) {
         rejectBody(new Error("Body too large"));
       }
     });
@@ -361,6 +392,8 @@ const json = (res: ServerResponse, statusCode: number, payload: unknown): void =
   res.writeHead(statusCode, {
     "Content-Type": "application/json; charset=utf-8",
     "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
     "Access-Control-Allow-Origin": "*"
   });
   res.end(JSON.stringify(payload));
@@ -574,9 +607,13 @@ const server = createServer(async (req, res) => {
   }
 
   if (req.method === "GET" && url.pathname === "/api/bot/diagnostic-lifecycle") {
+    if (!isAuthorizedAdminOrIngest(req)) {
+      json(res, 401, { ok: false, error: "Unauthorized: admin API key required" });
+      return;
+    }
     const rawChatId = url.searchParams.get("chatId") || env.adminId;
     const chatId = parseInt(rawChatId, 10);
-    const ttlSeconds = parseInt(url.searchParams.get("ttl") || "5", 10);
+    const ttlSeconds = Math.min(30, Math.max(1, parseInt(url.searchParams.get("ttl") || "5", 10) || 5));
     const ttlMs = ttlSeconds * 1000;
     const sentAt = Date.now();
 
@@ -709,7 +746,15 @@ const server = createServer(async (req, res) => {
 
   if (req.method === "GET" && url.pathname === "/api/alerts") {
     const alerts = await alertsSource.fetchAlerts();
-    json(res, 200, { alerts, count: alerts.length });
+    const meta = alertsSource.getMetadata();
+    json(res, 200, {
+      dataCategory: "official_alert",
+      source: meta.source,
+      updatedAt: meta.updatedAt,
+      stale: meta.stale,
+      alerts,
+      count: alerts.length
+    });
     return;
   }
 
@@ -949,6 +994,10 @@ const server = createServer(async (req, res) => {
   }
 
   if (req.method === "POST" && url.pathname === "/api/ingest/osint") {
+    if (!isAuthorizedAdminOrIngest(req)) {
+      json(res, 401, { error: "Unauthorized: ingest API key required" });
+      return;
+    }
     try {
       const raw = await readBody(req);
       const parsed = JSON.parse(raw) as { text?: string; observations?: Observation[] };
@@ -962,6 +1011,10 @@ const server = createServer(async (req, res) => {
   }
 
   if (req.method === "POST" && url.pathname === "/api/ingest/sdr") {
+    if (!isAuthorizedAdminOrIngest(req)) {
+      json(res, 401, { error: "Unauthorized: ingest API key required" });
+      return;
+    }
     try {
       const raw = await readBody(req);
       const parsed = JSON.parse(raw) as { observations: SdrPayload[] };
@@ -975,6 +1028,11 @@ const server = createServer(async (req, res) => {
   }
 
   if (req.method === "POST" && url.pathname === "/api/report") {
+    const ip = getIpAddress(req);
+    if (!checkReportRateLimit(ip)) {
+      json(res, 429, { error: "Занадто багато рапортів. Спробуйте через кілька хвилин." });
+      return;
+    }
     try {
       const raw = await readBody(req);
       const parsed = JSON.parse(raw) as {
@@ -985,11 +1043,19 @@ const server = createServer(async (req, res) => {
         comment?: string;
       };
 
-      const lat = typeof parsed.lat === "number" && !isNaN(parsed.lat) ? parsed.lat : 50.45;
-      const lon = typeof parsed.lon === "number" && !isNaN(parsed.lon) ? parsed.lon : 30.52;
-      const reportType = parsed.type || "uav_sound";
+      const lat = typeof parsed.lat === "number" && Number.isFinite(parsed.lat) ? parsed.lat : NaN;
+      const lon = typeof parsed.lon === "number" && Number.isFinite(parsed.lon) ? parsed.lon : NaN;
+      if (Number.isNaN(lat) || Number.isNaN(lon) || lat < 44.0 || lat > 52.6 || lon < 22.0 || lon > 40.5) {
+        json(res, 400, { error: "Потрібні коректні координати в межах України." });
+        return;
+      }
 
-      let headingDeg = 180;
+      const reportType = typeof parsed.type === "string" ? parsed.type.slice(0, 40) : "uav_sound";
+      const safeComment = typeof parsed.comment === "string"
+        ? parsed.comment.replace(/[<>\r\n]+/g, " ").trim().slice(0, 240)
+        : "";
+
+      let headingDeg: number | undefined;
       switch (parsed.direction) {
         case "N": headingDeg = 0; break;
         case "NE": headingDeg = 45; break;
@@ -1002,33 +1068,40 @@ const server = createServer(async (req, res) => {
       }
 
       const isMunition = reportType === "munition_visual";
+      // Strictly truthful unverified eyewitness observation: NO fabricated speed, altitude, default heading, or "Shahed" label
       const observation: Observation = {
         id: `citizen-${Date.now().toString(36)}`,
         type: isMunition ? "munition" : "uav",
-        lat,
-        lon,
+        lat: Number(lat.toFixed(3)),
+        lon: Number(lon.toFixed(3)),
         heading: headingDeg,
-        speed: isMunition ? 220 : 52,
+        speed: 0,
         timestamp: Date.now(),
         source: "manual",
-        confidence: 0.88,
-        altitude: isMunition ? 120 : 250,
-        uncertaintyRadius: 4500,
+        confidence: 0.45,
+        altitude: undefined,
+        uncertaintyRadius: 5000,
         isSynthetic: false,
-        threatEvidence: ["visual_spotter", "citizen_report"],
+        threatEvidence: ["citizen_report"],
         meta: {
           source_id: "manual",
           source_family: "manual",
           reportType,
-          evidence: "visual_spotter",
-          provenance: "Рапорт очевидця (Мережа спостереження)",
-          model: isMunition ? "Крилата ракета (спостереження)" : "БпЛА Shahed/Ударний (спостереження)",
+          unverifiedEyewitness: true,
+          speedIsMeasured: false,
+          evidence: "citizen_report",
+          provenance: safeComment
+            ? `Неперевірене повідомлення очевидця: «${safeComment}»`
+            : "Неперевірене повідомлення очевидця (без підтвердження ППО)",
+          model: isMunition
+            ? "Неперевірене повідомлення: ракета (очевидець)"
+            : "Неперевірене повідомлення: БпЛА (очевидець)",
           isSynthetic: false,
-          comment: parsed.comment || "Citizen acoustic report"
+          comment: safeComment
         }
       };
 
-      const lowerComment = (parsed.comment || "").toLowerCase();
+      const lowerComment = safeComment.toLowerCase();
       const isIntercept =
         reportType.includes("air_defense") ||
         reportType.includes("intercept") ||

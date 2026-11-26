@@ -69,6 +69,9 @@ async function main() {
   const osintFakeAlt = tracks.filter(
     (t) => t.dataCategory === "osint_message" && (t.altitude !== undefined && t.altitude !== null)
   );
+  const osintFakeMeasuredSpeed = tracks.filter(
+    (t) => t.dataCategory === "osint_message" && (t.measuredSpeed !== undefined && t.measuredSpeed !== null)
+  );
   const evidenceBloat = tracks.filter((t) => Array.isArray(t.evidence) && t.evidence.length > 24);
 
   check(
@@ -81,6 +84,7 @@ async function main() {
   check("100% tracks carry timestamp & provenanceChain", missingProvenance.length === 0, `missing=${missingProvenance.length}/${tracks.length}`);
   check("100% tracks strictly tagged with dataCategory", missingCategory.length === 0, `missing=${missingCategory.length}/${tracks.length}`);
   check("0 fabricated altitudes on textual OSINT tracks", osintFakeAlt.length === 0, `fakeAlt=${osintFakeAlt.length}`);
+  check("0 fabricated measuredSpeed on textual OSINT tracks", osintFakeMeasuredSpeed.length === 0, `fakeSpd=${osintFakeMeasuredSpeed.length}`);
   check("Bounded deduplicated evidence arrays (<=24)", evidenceBloat.length === 0, `bloated=${evidenceBloat.length}`);
 
   // 3. No synthetic EO dummy payload
@@ -91,15 +95,30 @@ async function main() {
     JSON.stringify(eo.json)
   );
 
-  // 4. Failure / missing track handling (404 clean, never 500)
+  // 4. Security & failure handling checks
   const missingDiag = await fetchJson(`${RENDER_BASE}/api/tracks/nonexistent-track-id-check/diagnostic`);
-  check(
-    "Missing track diagnostic degrades cleanly with HTTP 404",
-    missingDiag.status === 404,
-    `HTTP ${missingDiag.status}`
-  );
+  check("Missing track diagnostic degrades cleanly with HTTP 404", missingDiag.status === 404, `HTTP ${missingDiag.status}`);
 
-  // 5. Vercel production frontend + rewrites
+  const botDiagUnauth = await fetchJson(`${RENDER_BASE}/api/bot/diagnostic-lifecycle`);
+  check("Admin diagnostic endpoint rejects unauthenticated requests (HTTP 401)", botDiagUnauth.status === 401, `HTTP ${botDiagUnauth.status}`);
+
+  const ingestUnauthRes = await fetch(`${RENDER_BASE}/api/ingest/osint`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text: "test" }),
+    signal: AbortSignal.timeout(10_000)
+  });
+  check("OSINT ingest endpoint rejects unauthenticated writes (HTTP 401)", ingestUnauthRes.status === 401, `HTTP ${ingestUnauthRes.status}`);
+
+  const badReportRes = await fetch(`${RENDER_BASE}/api/report`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type: "uav_sound", lat: 10, lon: 10 }),
+    signal: AbortSignal.timeout(10_000)
+  });
+  check("Citizen /api/report rejects out-of-Ukraine coordinates (HTTP 400)", badReportRes.status === 400, `HTTP ${badReportRes.status}`);
+
+  // 5. Vercel production frontend + rewrites + official alert metadata
   const vercelApp = await fetch(`${VERCEL_BASE}/app`, { signal: AbortSignal.timeout(15_000) });
   const vercelHtml = await vercelApp.text();
   const scriptMatch = vercelHtml.match(/\/assets\/index-[^"]+\.js/);
@@ -112,9 +131,13 @@ async function main() {
     `HTTP ${vercelApp.status}, bundle=${scriptMatch?.[0] ?? "none"}`
   );
   check(
-    "Vercel /api/osint/feed & /api/alerts rewrites healthy",
-    vercelFeed.status === 200 && vercelAlerts.status === 200,
-    `feed=${vercelFeed.json?.count ?? 0} items, alerts=${vercelAlerts.json?.count ?? 0}`
+    "Vercel /api/osint/feed & /api/alerts carry official metadata & freshness",
+    vercelFeed.status === 200 &&
+      vercelAlerts.status === 200 &&
+      vercelAlerts.json?.dataCategory === "official_alert" &&
+      typeof vercelAlerts.json?.source === "string" &&
+      vercelAlerts.json?.stale === false,
+    `feed=${vercelFeed.json?.count ?? 0}, alerts=${vercelAlerts.json?.count ?? 0}, src=${vercelAlerts.json?.source}, stale=${vercelAlerts.json?.stale}`
   );
 
   const failed = results.filter((r) => !r.ok);
