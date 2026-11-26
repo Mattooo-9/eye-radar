@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import type { Map } from "maplibre-gl";
 import type { VisionMode } from "./MapView";
 import type { FilterState } from "./StatusPanel";
@@ -111,6 +111,43 @@ export const TacticalMenuModal: React.FC<TacticalMenuModalProps> = ({
   activeAlerts
 }) => {
   const [activeTab, setActiveTab] = useState<"targets" | "vision" | "layers" | "cities" | "impacts" | "intel">("targets");
+  const [liveHealth, setLiveHealth] = useState<{
+    database?: { ok: boolean; latencyMs?: number };
+    intelligenceDb?: { connected: boolean; bulletinsStored: number; snapshotsStored: number };
+    osintChannels?: { totalChannels: number; respondingChannels: number; activeBulletins: number };
+    watchdog?: { memoryMb?: number; uptimeSeconds?: number };
+    summary?: { overallHealth?: string; livePositionalSources?: string[] };
+  } | null>(null);
+  const [osintFeed, setOsintFeed] = useState<
+    Array<{
+      postRef: string;
+      channel: string;
+      channelLabel: string;
+      text: string;
+      publishedAt: number;
+      cityName?: string;
+      lat?: number;
+      lon?: number;
+      model?: string;
+      targetType?: string;
+    }>
+  >([]);
+
+  useEffect(() => {
+    if (!isOpen || activeTab !== "intel") return;
+    let cancelled = false;
+    Promise.all([
+      fetch("/health", { signal: AbortSignal.timeout(4000) }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      fetch("/api/osint/feed?limit=15", { signal: AbortSignal.timeout(4000) }).then((r) => (r.ok ? r.json() : null)).catch(() => null)
+    ]).then(([healthData, feedData]) => {
+      if (cancelled) return;
+      if (healthData) setLiveHealth(healthData);
+      if (feedData && Array.isArray(feedData.items)) setOsintFeed(feedData.items);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, activeTab]);
 
   if (!isOpen) return null;
 
@@ -631,31 +668,86 @@ export const TacticalMenuModal: React.FC<TacticalMenuModalProps> = ({
               </div>
 
               <div className="tactical-section-title" style={{ marginTop: 16 }}>
-                СТАТУС ПІДКЛЮЧЕНИХ ДЖЕРЕЛ ДАНИХ:
+                ЖИВА ТЕЛЕМЕТРІЯ СЕНСОРІВ ТА БАЗИ ДАНИХ:
               </div>
 
               <div className="sensors-status-grid">
                 <div className="sensor-card">
-                  <div className="sensor-name">alerts.in.ua (Сирени)</div>
-                  <div className="sensor-status online">🟢 ОФІЦІЙНО ОНЛАЙН</div>
-                </div>
-                <div className="sensor-card">
-                  <div className="sensor-name">Повітряні Сили ЗСУ / Очі ППО</div>
-                  <div className="sensor-status online">🟢 РЕАЛЬНИЙ МОНІТОРИНГ</div>
+                  <div className="sensor-name">Повітряні Сили / Очі ППО (OSINT)</div>
+                  <div className="sensor-status online">
+                    🟢 {liveHealth?.osintChannels
+                      ? `${liveHealth.osintChannels.respondingChannels}/${liveHealth.osintChannels.totalChannels} КАНАЛІВ LIVE`
+                      : "14 КАНАЛІВ ППО"}
+                  </div>
                 </div>
                 <div className="sensor-card">
                   <div className="sensor-name">ADS-B Військова авіація</div>
-                  <div className="sensor-status online">🟢 ТРАНСЛЯЦІЯ АКТИВНА</div>
+                  <div className="sensor-status online">
+                    🟢 {liveHealth?.summary?.livePositionalSources?.some((s) => s.includes("adsb") || s.includes("airplanes"))
+                      ? "LIVE (4 АГРЕГАТОРИ)"
+                      : "ТРАНСЛЯЦІЯ АКТИВНА"}
+                  </div>
+                </div>
+                <div className="sensor-card">
+                  <div className="sensor-name">alerts.in.ua (Офіційні сирени)</div>
+                  <div className="sensor-status online">🟢 ОНЛАЙН ({activeAlerts.length} обл.)</div>
+                </div>
+                <div className="sensor-card">
+                  <div className="sensor-name">Neon PostgreSQL (БД та історія)</div>
+                  <div className={`sensor-status ${liveHealth?.database?.ok === false ? "offline" : "online"}`}>
+                    {liveHealth?.database?.ok
+                      ? `🐘 LIVE (${liveHealth.database.latencyMs ?? 0} мс · ${liveHealth.intelligenceDb?.bulletinsStored ?? 0} звед.)`
+                      : "🐘 ПІДКЛЮЧЕНО"}
+                  </div>
                 </div>
                 <div className="sensor-card">
                   <div className="sensor-name">NASA FIRMS (Тепловізія)</div>
-                  <div className="sensor-status online">🟢 СУПУТНИКОВИЙ МОНІТОРИНГ</div>
+                  <div className="sensor-status online">🟢 СУПУТНИК VIIRS</div>
                 </div>
                 <div className="sensor-card">
-                  <div className="sensor-name">RainViewer (Метео)</div>
-                  <div className="sensor-status online">🟢 СИНХРОНІЗОВАНО</div>
+                  <div className="sensor-name">Автономний Воркер (24/7)</div>
+                  <div className="sensor-status online">
+                    🟢 {liveHealth?.watchdog?.memoryMb
+                      ? `${liveHealth.watchdog.memoryMb} MB · ${Math.floor((liveHealth.watchdog.uptimeSeconds ?? 0) / 60)} хв`
+                      : "HEALTHY"}
+                  </div>
                 </div>
               </div>
+
+              {osintFeed.length > 0 && (
+                <>
+                  <div className="tactical-section-title" style={{ marginTop: 16 }}>
+                    📡 СТРІЧКА ППО В РЕАЛЬНОМУ ЧАСІ ({osintFeed.length}):
+                  </div>
+                  <div className="intel-live-feed-list">
+                    {osintFeed.map((item) => (
+                      <button
+                        key={item.postRef}
+                        type="button"
+                        className="intel-feed-item"
+                        onClick={() => {
+                          if (typeof item.lat === "number" && typeof item.lon === "number") {
+                            onFlyToCoord(item.lat, item.lon);
+                            onClose();
+                          }
+                        }}
+                      >
+                        <div className="intel-feed-item-top">
+                          <span className="intel-feed-channel">{item.channelLabel}</span>
+                          <span className="intel-feed-age">{formatTimeAgo(item.publishedAt)}</span>
+                        </div>
+                        <div className="intel-feed-text">{item.text.slice(0, 140)}</div>
+                        {(item.cityName || item.model) && (
+                          <div className="intel-feed-tags">
+                            {item.model && <span className="intel-feed-tag">{item.model}</span>}
+                            {item.cityName && <span className="intel-feed-tag city">📍 {item.cityName}</span>}
+                          </div>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>

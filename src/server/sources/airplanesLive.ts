@@ -128,10 +128,11 @@ export class AirplanesLiveSource {
 
     const obsMap = new Map<string, Observation>();
 
-    // 1. Fetch strictly from military feeds to exclude foreign civil passenger airways
+    // 1. Fetch strictly from redundant military feeds to exclude foreign civil passenger airways
     const adsbFiEndpoints = [
       "https://opendata.adsb.fi/api/v2/mil",
-      "https://api.adsb.lol/v2/mil"
+      "https://api.adsb.lol/v2/mil",
+      "https://api.adsb.one/v2/mil"
     ];
 
     await Promise.allSettled(

@@ -12,7 +12,7 @@ import {
 
 const typeByKeyword: Array<{ keywords: string[]; type: TrackType }> = [
   {
-    keywords: ["каб", "умпк", "умпб", "авіабомб", "авіаційна бомба", "керована авіабомба", "плануюча бомба", "glide bomb", "фаб-500", "фаб-1500"],
+    keywords: ["каб", "умпк", "умпб", "авіабомб", "авіаційна бомба", "керована авіабомба", "плануюча бомба", "glide bomb", "фаб-500", "фаб-1500", "фаб-250", "фаб-3000", "одаб"],
     type: "bomb"
   },
   {
@@ -20,7 +20,7 @@ const typeByKeyword: Array<{ keywords: string[]; type: TrackType }> = [
     type: "fpv"
   },
   {
-    keywords: ["реактив", "реактивний", "шахед", "shahed", "герань", "дрон", "мопед", "бпла", "uav", "крило", "розвідник", "ударних", "ударні", "ударний", "ударных", "ударный", "ударные", "zala", "supercam", "орлан"],
+    keywords: ["герань-5", "реактив", "реактивний", "шахед", "shahed", "герань", "гербера", "пародія", "італмас", "дрон", "мопед", "бпла", "uav", "крило", "розвідник", "ударних", "ударні", "ударний", "ударных", "ударный", "ударные", "zala", "supercam", "орлан"],
     type: "uav"
   },
   {
@@ -29,19 +29,26 @@ const typeByKeyword: Array<{ keywords: string[]; type: TrackType }> = [
       "калібр",
       "калибр",
       "х-101",
+      "х-555",
       "х-59",
       "х-69",
+      "х-35",
       "х-22",
       "х-31",
       "кинджал",
       "кинжал",
       "балістика",
       "баллистика",
+      "аеробаліст",
       "іскандер",
       "искандер",
+      "с-300",
+      "с-400",
+      "kn-23",
       "циркон",
       "оникс",
       "онікс",
+      "орешнік",
       "munition",
       "missile"
     ],
@@ -79,12 +86,12 @@ function classifyKinematics(effectiveType: TrackType, text: string): {
   maxAgeMs: number;
 } {
   const lower = deobfuscateCyrillic(text).toLowerCase();
-  const isReactive = lower.includes("реактив");
-  const isShahed = lower.includes("шахед") || lower.includes("герань") || lower.includes("мопед") || lower.includes("ударн");
+  const isReactive = lower.includes("реактив") || lower.includes("герань-5");
+  const isShahed = lower.includes("шахед") || lower.includes("герань") || lower.includes("гербера") || lower.includes("італмас") || lower.includes("мопед") || lower.includes("ударн");
   const isRecon = lower.includes("розвід") || lower.includes("zala") || lower.includes("supercam") || lower.includes("орлан");
   const isMolniya = lower.includes("молния") || lower.includes("молнія") || lower.includes("ланцет");
-  const isBallistic = lower.includes("баліст") || lower.includes("баллист") || lower.includes("іскандер") || lower.includes("искандер") || lower.includes("кинджал") || lower.includes("кинжал") || lower.includes("циркон") || lower.includes("оникс") || lower.includes("онікс");
-  const isCruise = lower.includes("х-101") || lower.includes("калібр") || lower.includes("калибр") || lower.includes("х-59") || lower.includes("х-69") || lower.includes("х-22") || lower.includes("х-31") || lower.includes("ракета");
+  const isBallistic = lower.includes("баліст") || lower.includes("баллист") || lower.includes("іскандер") || lower.includes("искандер") || lower.includes("кинджал") || lower.includes("кинжал") || lower.includes("циркон") || lower.includes("оникс") || lower.includes("онікс") || lower.includes("с-300") || lower.includes("с-400") || lower.includes("kn-23") || lower.includes("орешнік");
+  const isCruise = lower.includes("х-101") || lower.includes("х-555") || lower.includes("калібр") || lower.includes("калибр") || lower.includes("х-59") || lower.includes("х-69") || lower.includes("х-35") || lower.includes("х-22") || lower.includes("х-31") || lower.includes("ракета");
 
   if (effectiveType === "bomb") {
     return {
@@ -503,4 +510,70 @@ export const parseOsintBulletin = (
   }
 
   return results;
+};
+
+export interface ParsedOsintImpact {
+  type: "impact" | "intercept";
+  lat: number;
+  lon: number;
+  region: string;
+  targetModel: string;
+  targetType: TrackType;
+  details: string;
+  timestamp: number;
+}
+
+/**
+ * Extracts verified live explosion / impact / air-defense interception reports from Ukrainian OSINT posts.
+ * Zero fabrication: strictly matches explicit active impact or PVO interception reports with geolocated Ukrainian towns.
+ */
+export const parseOsintImpact = (
+  rawText: string,
+  publishedAt: number,
+  defaultRegion?: string
+): ParsedOsintImpact | null => {
+  if (!rawText || isNonThreatPost(rawText) || isStandDownMessage(rawText)) return null;
+  const deob = deobfuscateCyrillic(rawText);
+  const lower = deob.toLowerCase();
+
+  const isIntercept =
+    lower.includes("робота ппо") ||
+    lower.includes("працює ппо") ||
+    lower.includes("збито") ||
+    lower.includes("збита ") ||
+    lower.includes("збили ") ||
+    lower.includes("знищено бпла") ||
+    lower.includes("відпрацювала ппо");
+
+  const isImpact =
+    lower.includes("вибух у") ||
+    lower.includes("вибухи у") ||
+    lower.includes("вибух в") ||
+    lower.includes("вибухи в") ||
+    lower.includes("чутно вибух") ||
+    lower.includes("приліт у") ||
+    lower.includes("приліт в") ||
+    lower.includes("прильот") ||
+    lower.includes("влучання");
+
+  if (!isIntercept && !isImpact) return null;
+
+  const geo = findGeoContextInText(deob, defaultRegion);
+  const anchor = geo.destination ?? geo.primary;
+  if (!anchor) return null;
+
+  const detected = detectType(deob);
+  const targetType: TrackType = detected !== "unknown" ? detected : "uav";
+  const kinematics = classifyKinematics(targetType, deob);
+
+  return {
+    type: isIntercept ? "intercept" : "impact",
+    lat: anchor.point.lat,
+    lon: anchor.point.lon,
+    region: anchor.point.nameUk,
+    targetModel: kinematics.model || "Повітряна ціль",
+    targetType,
+    details: deob.replace(/\s+/g, " ").trim().slice(0, 140),
+    timestamp: publishedAt
+  };
 };

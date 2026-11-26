@@ -173,7 +173,14 @@ export class TrackManager {
     for (const t of checkpoint.tracks) {
       if (!t.id || typeof t.lat !== "number" || typeof t.lon !== "number" || t.isSynthetic) continue;
       const trackAgeMs = Math.max(0, Date.now() - (t.timestamp || baseTime));
-      if (trackAgeMs > 120_000 || t.model === "Civilian Aircraft") continue;
+      if (
+        trackAgeMs > 90_000 ||
+        t.isDegraded ||
+        t.model === "Civilian Aircraft" ||
+        (typeof t.model === "string" && t.model.includes("аномальний стрибок РЕБ"))
+      ) {
+        continue;
+      }
       const filter = new ImmFilter2D();
       filter.update(t.timestamp || baseTime, t.lat, t.lon);
 

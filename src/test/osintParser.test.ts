@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseOsintBulletin, parseOsintText, isStandDownMessage } from "../server/ingest/osintParser.js";
+import { parseOsintBulletin, parseOsintImpact, parseOsintText, isStandDownMessage } from "../server/ingest/osintParser.js";
 import { isInsideUkraineGeo } from "../server/sources/ukraineGeo.js";
 import { classifyAerialObject } from "../server/core/classificationEngine.js";
 
@@ -137,5 +137,22 @@ describe("OSINT Parser", () => {
     }
     expect(evidence.length).toBeLessThanOrEqual(10);
     expect(threatEvidence.length).toBeLessThanOrEqual(10);
+  });
+
+  it("extracts real OSINT air-defense interceptions and explosions with expanded Ukraine geo coverage", () => {
+    const now = 1_795_518_000_000;
+    const intercept = parseOsintImpact("🛡️ Робота ППО у Затоці, збито ворожий БпЛА!", now);
+    expect(intercept).not.toBeNull();
+    expect(intercept?.type).toBe("intercept");
+    expect(intercept?.region).toBe("Затока");
+
+    const explosion = parseOsintImpact("💥 Вибух в Охтирці після прильоту КАБ!", now);
+    expect(explosion).not.toBeNull();
+    expect(explosion?.type).toBe("impact");
+    expect(explosion?.region).toBe("Охтирка");
+
+    const geran5 = parseOsintBulletin("⚠️ Ракета Герань-5 на Деснянську ТЕЦ!", now, now + 10_000);
+    expect(geran5).toHaveLength(1);
+    expect(geran5[0].observation.meta?.cityName).toBe("Деснянський р-н");
   });
 });

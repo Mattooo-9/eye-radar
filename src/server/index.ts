@@ -36,6 +36,7 @@ import { pingDb, getPool, query } from "./db/pool.js";
 import { initSchema } from "./db/schema.js";
 import { UKRAINE_CITIES } from "./sources/ukraineGeo.js";
 import { checkpointService } from "./db/checkpointService.js";
+import { intelligenceStore } from "./db/intelligenceStore.js";
 import { watchdogService } from "./db/watchdogService.js";
 import { productionObservability } from "./core/observability.js";
 import { detectRealPixelChanges } from "./sources/cloudEoPipeline.js";
@@ -454,10 +455,13 @@ const server = createServer(async (req, res) => {
     const offlineSources = sourceRegistry.getOfflineSources().map(s => s.name);
     const dbHealth = await pingDb();
     const watchdogHealth = watchdogService.getHealthStatus();
+    const intelDbStats = await intelligenceStore.getStats();
 
     json(res, 200, {
       ok: true,
       database: dbHealth,
+      intelligenceDb: intelDbStats,
+      osintChannels: publicOsintSource.getChannelSummary(),
       watchdog: watchdogHealth,
       sequenceId: trackManager.getSequence(),
       uptime: process.uptime(),
@@ -697,6 +701,31 @@ const server = createServer(async (req, res) => {
   if (req.method === "GET" && url.pathname === "/api/alerts") {
     const alerts = await alertsSource.fetchAlerts();
     json(res, 200, { alerts, count: alerts.length });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/osint/feed") {
+    const limitParam = Number(url.searchParams.get("limit") || "25");
+    const limit = Number.isFinite(limitParam) ? Math.min(60, Math.max(1, limitParam)) : 25;
+    const items = publicOsintSource.getLiveFeed(limit);
+    json(res, 200, {
+      count: items.length,
+      channels: publicOsintSource.getChannelSummary(),
+      items
+    });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/replay") {
+    const offsetSec = Math.max(0, Math.min(7200, Number(url.searchParams.get("offsetSec") || "0")));
+    const targetTs = Date.now() - offsetSec * 1000;
+    const historical = offsetSec >= 30 ? await intelligenceStore.getHistoricalSnapshotNear(targetTs) : null;
+    json(res, 200, {
+      timestamp: targetTs,
+      offsetSec,
+      source: historical ? "neon_postgres" : "live_state",
+      tracks: historical ?? trackManager.snapshot(false)
+    });
     return;
   }
 
@@ -1256,6 +1285,20 @@ setInterval(async () => {
       for (const uo of osintObs) {
         trackManager.ingest(toObservation(uo), now);
       }
+      // Feed verified live OSINT explosions & air-defense interceptions into ImpactManager
+      for (const evt of publicOsintSource.drainImpactEvents()) {
+        impactManager.recordEvent({
+          id: evt.id,
+          type: evt.type,
+          lat: Number(evt.lat.toFixed(5)),
+          lon: Number(evt.lon.toFixed(5)),
+          timestamp: evt.timestamp,
+          targetModel: evt.targetModel,
+          targetType: evt.targetType,
+          region: evt.region,
+          details: `${evt.channel}: ${evt.details}`
+        });
+      }
       healthTracker.recordSuccess("public.osint", latency, osintObs.length);
       if (osintObs.length > 0) {
         sourceRegistry.validateAndActivate("public.osint", osintObs, latency);
@@ -1310,6 +1353,11 @@ setInterval(async () => {
     hub.broadcastUncertaintyEvents(uncertaintyEventManager.getActiveEvents(now));
   }
 
+  // Persist empirical track snapshot to Neon Postgres every 30s for historical replay
+  if (currentCycle % 30 === 0) {
+    void intelligenceStore.recordTrackSnapshot(trackManager.snapshot(false), now);
+  }
+
   // Broadcast personal threat alerts to bot subscribers
   void botManager.broadcastThreatAlerts(trackManager.snapshot(false));
 
@@ -1320,6 +1368,16 @@ setInterval(async () => {
 const main = async (): Promise<void> => {
   // 1. Initialize Postgres schema migrations
   await initSchema();
+
+  // 1b. Hydrate recent empirical OSINT air-defense bulletins from Neon Postgres (zero blind-spot boot)
+  try {
+    const hydratedCount = await publicOsintSource.hydrateFromDb();
+    if (hydratedCount > 0) {
+      console.log(`📡 OSINT Feed: hydrated ${hydratedCount} live bulletins from Neon Postgres`);
+    }
+  } catch (err) {
+    console.warn("⚠️ Could not hydrate OSINT bulletins from DB:", err);
+  }
 
   // 2. Restore latest track checkpoint from Neon Postgres / local backup
   try {

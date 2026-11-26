@@ -13,6 +13,7 @@ import { TacticalMenuModal } from "./components/TacticalMenuModal";
 import { ImpactCard } from "./components/ImpactCard";
 import { TargetCard } from "./components/TargetCard";
 import { LocationCard } from "./components/LocationCard";
+import { LiveThreatDrawer } from "./components/LiveThreatDrawer";
 import { type ImpactEvent, type TrackPacket, useWsRadar } from "./hooks/useWsRadar";
 import { haversineMeters } from "./lib/geo";
 import { soundEngine } from "./lib/sound";
@@ -371,6 +372,7 @@ export const App = () => {
         totalTracksCount={filteredPackets.length}
         activeAlertsCount={activeAlerts.length}
         uncertaintyCount={uncertaintyEvents.length}
+        connectionState={connectionState}
         onOpenMenu={() => setTacticalMenuOpen(true)}
         onOpenReport={() => setReportOpen(true)}
         onOpenAlerts={() => setAlertsModalOpen(true)}
@@ -443,6 +445,25 @@ export const App = () => {
           }}
         />
       </ErrorBoundary>
+
+      {/* Live Interactive Threat Feed Dock (Bottom-Left) */}
+      <LiveThreatDrawer
+        packets={filteredPackets}
+        location={location}
+        selectedTargetId={selectedTarget?.[0] ?? null}
+        onSelectTarget={(packet) => {
+          setSelectedTarget(packet);
+          setInspectedTarget(packet);
+          setSelectedImpact(null);
+          setSelectedLocation(null);
+          mapInstance?.flyTo({
+            center: [packet[3], packet[2]],
+            zoom: Math.max(mapInstance.getZoom(), 9.2),
+            duration: 950
+          });
+        }}
+        onFitAll={handleFitAllTargets}
+      />
 
       {/* Floating "Моя локація" / Locator Button on Map */}
       {location && (

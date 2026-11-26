@@ -139,7 +139,8 @@ export class OpenskyAdsbLolSource {
       "https://api.adsb.lol/v2/point/52.0/21.0/250",  // Northern approach / Eastern Poland
       "https://api.adsb.lol/v2/point/46.5/29.0/250",  // Moldova / Southern Ukraine corridor
       "https://api.adsb.lol/v2/mil",                   // Military feed (USAF, NATO, RAF, Allied)
-      "https://opendata.adsb.fi/api/v2/mil"            // Global military transponder feed
+      "https://opendata.adsb.fi/api/v2/mil",           // Global military transponder feed
+      "https://api.adsb.one/v2/mil"                    // Redundant ADSB.one military transponder feed
     ];
 
     await Promise.allSettled(

@@ -5,6 +5,7 @@ interface TacticalTopBarProps {
   totalTracksCount?: number;
   activeAlertsCount: number;
   uncertaintyCount?: number;
+  connectionState?: "idle" | "connecting" | "open" | "closed";
   onOpenMenu: () => void;
   onOpenReport: () => void;
   onOpenAlerts: () => void;
@@ -15,19 +16,21 @@ export const TacticalTopBar: React.FC<TacticalTopBarProps> = ({
   totalTracksCount,
   activeAlertsCount,
   uncertaintyCount = 0,
+  connectionState = "open",
   onOpenMenu,
   onOpenReport,
   onOpenAlerts
 }) => {
+  const isLiveWs = connectionState === "open";
   return (
     <header className="tactical-top-bar">
       <div className="top-bar-left" onClick={onOpenMenu} title="Натисніть для відкриття тактичного меню">
         <img src="/avatar.jpg" alt="Eye Radar" className="top-bar-avatar" />
         <div className="top-bar-brand">
           <span className="brand-text">EYE RADAR</span>
-          <span className="live-status-pill">
+          <span className={`live-status-pill ${isLiveWs ? "ws-open" : "ws-sync"}`}>
             <span className="live-dot" />
-            <span className="live-text">LIVE</span>
+            <span className="live-text">{isLiveWs ? "LIVE WS" : "LIVE"}</span>
           </span>
         </div>
       </div>

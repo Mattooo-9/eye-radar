@@ -1,5 +1,12 @@
 import { createUnifiedObservation, type UnifiedObservation } from "../domain/unifiedObservation.js";
-import { isStandDownMessage, parseOsintBulletin, parseOsintText } from "../ingest/osintParser.js";
+import {
+  isStandDownMessage,
+  parseOsintBulletin,
+  parseOsintImpact,
+  parseOsintText,
+  type ParsedOsintImpact
+} from "../ingest/osintParser.js";
+import { intelligenceStore, type PersistedOsintBulletin } from "../db/intelligenceStore.js";
 
 interface RawBulletinEntry {
   channel: string;
@@ -11,6 +18,9 @@ interface RawBulletinEntry {
 const CHANNEL_META: Record<string, { label: string; reliability: number; defaultRegion?: string }> = {
   kpszsu: { label: "Повітряні Сили ЗСУ (@kpszsu)", reliability: 0.95 },
   radar_raketaa: { label: "Радар Ракета (@radar_raketaa)", reliability: 0.90 },
+  mon1tor_ua: { label: "ППО | РАДАР (@mon1tor_ua)", reliability: 0.90 },
+  monitor_ukr: { label: "Монітор Україна (@monitor_ukr)", reliability: 0.89 },
+  bpla_radar: { label: "БпЛА Радар (@bpla_radar)", reliability: 0.89 },
   radar_zp: { label: "Радар Запоріжжя (@radar_zp)", reliability: 0.89, defaultRegion: "Запорізька область" },
   monitor1654: { label: "Монітор 1654 Харків (@monitor1654)", reliability: 0.89, defaultRegion: "Харківщина" },
   tlknewsua: { label: "TLK Моніторинг (@tlknewsua)", reliability: 0.89, defaultRegion: "Харківщина" },
@@ -51,6 +61,55 @@ export class PublicOsintFeedSource {
   private cachedBulletins: RawBulletinEntry[] = [];
   private latestStandDownByType = new Map<string, number>();
   private activeAlertOblasts = new Set<string>();
+  private channelSuccessTimestamps = new Map<string, number>();
+  private seenImpactPostRefs = new Set<string>();
+  private pendingImpactEvents: Array<ParsedOsintImpact & { id: string; channel: string }> = [];
+
+  /**
+   * Hydrates recent empirical bulletins from Neon PostgreSQL on cold boot for zero blind-spot startup.
+   */
+  async hydrateFromDb(): Promise<number> {
+    try {
+      const persisted = await intelligenceStore.loadRecentBulletins(30 * 60 * 1000);
+      if (persisted.length > 0 && this.cachedBulletins.length === 0) {
+        this.cachedBulletins = persisted.map((p) => ({
+          channel: p.channel,
+          postRef: p.postRef,
+          text: p.text,
+          publishedAt: p.publishedAt
+        }));
+      }
+      return persisted.length;
+    } catch {
+      return 0;
+    }
+  }
+
+  drainImpactEvents(): Array<ParsedOsintImpact & { id: string; channel: string }> {
+    const out = this.pendingImpactEvents;
+    this.pendingImpactEvents = [];
+    return out;
+  }
+
+  getChannelSummary(): { totalChannels: number; respondingChannels: number; activeBulletins: number } {
+    const cutoff = Date.now() - 120_000;
+    let responding = 0;
+    for (const ts of this.channelSuccessTimestamps.values()) {
+      if (ts >= cutoff) responding++;
+    }
+    return {
+      totalChannels: Object.keys(CHANNEL_META).length,
+      respondingChannels: responding,
+      activeBulletins: this.cachedBulletins.length
+    };
+  }
+
+  getLiveFeed(limit = 25): Array<PersistedOsintBulletin & { channelLabel: string }> {
+    return intelligenceStore.getLatestFeedItems(limit).map((b) => ({
+      ...b,
+      channelLabel: CHANNEL_META[b.channel]?.label ?? `@${b.channel}`
+    }));
+  }
 
   setActiveAlertOblasts(oblasts: string[]): void {
     this.activeAlertOblasts = new Set(
@@ -119,6 +178,7 @@ export class PublicOsintFeedSource {
           });
 
           if (!res.ok) return;
+          this.channelSuccessTimestamps.set(channel, now);
           const html = await res.text();
           const messageRegex =
             /<div class="tgme_widget_message\b[^>]*data-post="([^"]+)"[\s\S]*?<div class="tgme_widget_message_text[^>]*>([\s\S]*?)<\/div>[\s\S]*?<time datetime="([^"]+)"/g;
@@ -173,10 +233,43 @@ export class PublicOsintFeedSource {
       string,
       { obs: UnifiedObservation; publishedAt: number; reliability: number }
     >();
+    const toPersist: PersistedOsintBulletin[] = [];
 
     for (const entry of this.cachedBulletins) {
       const chMeta = CHANNEL_META[entry.channel] ?? { label: `@${entry.channel}`, reliability: 0.85 };
       const parsedTargets = parseOsintBulletin(entry.text, entry.publishedAt, now, chMeta.defaultRegion);
+
+      // Extract real empirical impact / PVO interception reports (deduplicated per postRef)
+      if (!this.seenImpactPostRefs.has(entry.postRef) && now - entry.publishedAt <= 20 * 60 * 1000) {
+        const impact = parseOsintImpact(entry.text, entry.publishedAt, chMeta.defaultRegion);
+        if (impact) {
+          this.seenImpactPostRefs.add(entry.postRef);
+          if (this.seenImpactPostRefs.size > 500) {
+            this.seenImpactPostRefs.clear();
+          }
+          this.pendingImpactEvents.push({
+            ...impact,
+            id: `osint-evt-${entry.postRef.replace(/[^a-zA-Z0-9_-]/g, "-")}`,
+            channel: `@${entry.channel}`
+          });
+        }
+      }
+
+      if (parsedTargets.length > 0) {
+        const first = parsedTargets[0];
+        toPersist.push({
+          postRef: entry.postRef,
+          channel: entry.channel,
+          text: entry.text,
+          publishedAt: entry.publishedAt,
+          targetType: first.observation.type,
+          oblast: first.oblast,
+          cityName: typeof first.observation.meta?.cityName === "string" ? first.observation.meta.cityName : undefined,
+          lat: first.observation.lat,
+          lon: first.observation.lon,
+          model: typeof first.observation.meta?.model === "string" ? first.observation.meta.model : undefined
+        });
+      }
 
       for (const target of parsedTargets) {
         const obsRaw = target.observation;
@@ -285,6 +378,10 @@ export class PublicOsintFeedSource {
       } catch {
         // Tolerated
       }
+    }
+
+    if (toPersist.length > 0) {
+      void intelligenceStore.saveBulletins(toPersist);
     }
 
     return Array.from(bestByCorridor.values()).map((v) => v.obs);

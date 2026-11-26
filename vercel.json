@@ -43,6 +43,10 @@
       "destination": "https://eye-radar.onrender.com/api/alerts/:match*"
     },
     {
+      "source": "/api/osint/:match*",
+      "destination": "https://eye-radar.onrender.com/api/osint/:match*"
+    },
+    {
       "source": "/api/report",
       "destination": "https://eye-radar.onrender.com/api/report"
     },

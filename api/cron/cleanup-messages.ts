@@ -3,10 +3,18 @@ export default async function handler(req: any, res: any) {
   try {
     const { messageDeletionService } = await import("../../src/server/bot/messageDeletionService.js");
     const result = await messageDeletionService.processPendingDeletions();
+    let backendHealthy = false;
+    try {
+      const healthRes = await fetch("https://eye-radar.onrender.com/health", {
+        signal: AbortSignal.timeout(8000)
+      });
+      backendHealthy = healthRes.ok;
+    } catch {}
     const payload = {
       ok: true,
       deleted: result.deleted,
       errors: result.errors,
+      backendHealthy,
       timestamp: Date.now()
     };
     if (typeof res.status === "function") {

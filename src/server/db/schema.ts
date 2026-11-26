@@ -72,6 +72,31 @@ CREATE TABLE IF NOT EXISTS worker_locks (
   acquired_at BIGINT NOT NULL,
   expires_at BIGINT NOT NULL
 );
+
+-- 7. Persistent Empirical OSINT Air-Defense Bulletins (Zero-blind-spot restart & live feed)
+CREATE TABLE IF NOT EXISTS osint_bulletins (
+  post_ref VARCHAR(128) PRIMARY KEY,
+  channel VARCHAR(64) NOT NULL,
+  text TEXT NOT NULL,
+  published_at BIGINT NOT NULL,
+  target_type VARCHAR(32),
+  oblast VARCHAR(64),
+  city_name VARCHAR(128),
+  lat DOUBLE PRECISION,
+  lon DOUBLE PRECISION,
+  model VARCHAR(128),
+  created_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_osint_bulletins_pub ON osint_bulletins (published_at DESC);
+
+-- 8. Empirical Track History Snapshots (Powers real historical timeline replay)
+CREATE TABLE IF NOT EXISTS track_history_snapshots (
+  id BIGSERIAL PRIMARY KEY,
+  recorded_at BIGINT NOT NULL,
+  tracks_count INT NOT NULL,
+  tracks_json JSONB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_track_history_recorded ON track_history_snapshots (recorded_at DESC);
 `;
 
 export async function initSchema(): Promise<boolean> {
