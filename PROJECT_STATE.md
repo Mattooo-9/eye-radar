@@ -13,10 +13,10 @@
 1. **`official_alert` (`/api/alerts`)** — Official civil defense air-raid sirens (`alerts.in.ua` / `ubilling.net.ua` mirror) with explicit `dataCategory`, `source`, `updatedAt`, and `stale` flag; alerts expire automatically after 3 minutes of upstream outage so stale sirens are never shown as active.
 2. **`osint_message` (`/api/osint/feed` & `/api/targets` where `dataCategory="osint_message"`)** — 14 live Ukrainian air-defense OSINT channels (`@kpszsu`, `@radar_raketaa`, `@mon1tor_ua`, `@monitor_ukr`, `@bpla_radar`, `@radar_zp`, `@monitor1654`, `@tlknewsua`, `@raketa_trevoga`, `@dnipro_alerts`, `@monitoringwar`, `@monitorwarr`, `@vanek_nikolaev`, `@war_monitor`).
    - Unknown altitude, speed, and heading remain `undefined` / `"Невідомо"`.
-   - Coordinates display at ~2-decimal precision (`~49.99°N, ~36.23°E`) matching spatial uncertainty (`±3.5–18 km`).
+   - Coordinates display at ~2-decimal precision (`~49.99°N, ~36.23°E`) and spatial uncertainty never collapses below truthful settlement/corridor bounds (`≥3.5 km` OSINT, `≥2.5 km` eyewitness) across repeated Kalman cycles or checkpoint restores.
    - Minute-by-minute ETA is NEVER computed from unmeasured OSINT speeds.
    - Generic `"БпЛА"` messages are never silently upgraded to `"Shahed-136"`.
-3. **`unverified_report` (`citizen-*`)** — Web `/api/report` and Telegram `/report` eyewitness submissions are explicitly badged `НЕПЕРЕВІРЕНЕ ПОВІДОМЛЕННЯ (ОЧЕВИДЕЦЬ)`, separated in `LiveThreatDrawer`, capped at `confidence: 0.45`, excluded from automated Telegram push blasts, and carry zero fabricated speed/altitude/heading.
+3. **`unverified_report` (`citizen-*`)** — Web `/api/report` and Telegram `/report` eyewitness submissions are explicitly classified as `sourceFamily="manual"` / `lifecycle="TENTATIVE"` (until corroborated by independent sensors), badged `НЕПЕРЕВІРЕНЕ ПОВІДОМЛЕННЯ (ОЧЕВИДЕЦЬ)`, separated in `LiveThreatDrawer`, capped at `confidence: 0.45`, excluded from automated Telegram push blasts, and carry zero fabricated speed/altitude/heading.
 4. **`sensor_observation` (`/api/targets` where `dataCategory="sensor_observation"`)** — Physical military ADS-B/MLAT transponders gated through the single canonical `src/server/sources/adsbClassifier.ts` (non-overlapping feeds: `adsb.lol`, `adsb.fi` + `adsb.one`, `opensky.live`), NASA FIRMS VIIRS thermal hotspots, and Open-Meteo atmospheric wind vectors.
 
 ## Security & Abuse Controls
@@ -27,5 +27,5 @@
 ## Governance & Regression Protection
 - **Agent Protocol (Codex & Antigravity):** [`AGENTS.md`](./AGENTS.md)
 - **Mandatory Acceptance Criteria & Sign-Off:** [`ACCEPTANCE.md`](./ACCEPTANCE.md)
-- **Local Pre-Deploy Gate:** `npm run acceptance` (`tsc --noEmit` + Vitest 30 suites / 128 tests + Vite & tsup builds)
-- **Live Production Verification Gate:** `npm run verify:prod` (19 live checks across Render, Neon Postgres, security guards, and Vercel)
+- **Local Pre-Deploy Gate:** `npm run acceptance` (`tsc --noEmit` + Vitest 30 suites / 129 tests + Vite & tsup builds)
+- **Live Production Verification Gate:** `npm run verify:prod` (20 live checks across Render, Neon Postgres, zero false precision, security guards, and Vercel)
