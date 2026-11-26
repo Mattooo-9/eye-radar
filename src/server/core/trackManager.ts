@@ -479,9 +479,10 @@ export class TrackManager {
       : (imm.headingDeg || previous.heading);
     const derivedSpeed = distanceMeters / elapsedSeconds;
 
-    // EW / Impossible Jump Detection (gated to non-synthetic positional telemetry; OSINT/manual corridor updates excluded):
+    // EW / Impossible Jump Detection (OSINT/manual corridor updates excluded; ADS-B multi-aggregator cache skew tolerated up to 15km):
+    const minJumpDistM = sourceFamily === "adsb" ? 15_000 : 3_000;
     const isImpossibleJump = !isSynthetic && sourceFamily !== "osint" && sourceFamily !== "manual" && (
-      (derivedSpeed > 1100 && distanceMeters > 3000) ||
+      (derivedSpeed > 1100 && distanceMeters > minJumpDistM) ||
       (distanceMeters > 40_000 && elapsedSeconds < 30 && previous.speed < 300)
     );
     const effectiveLat = isImpossibleJump ? previous.lat : imm.lat;
