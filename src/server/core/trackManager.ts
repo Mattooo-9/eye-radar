@@ -181,6 +181,20 @@ export class TrackManager {
       ) {
         continue;
       }
+      // Sanitize textual OSINT tracks restored from checkpoints so legacy fabricated alt/speed never persist
+      const isRestoredOsint =
+        t.dataCategory === "osint_message" ||
+        t.id.startsWith("osint-") ||
+        t.id.startsWith("citizen-") ||
+        t.evidenceFamilies?.includes("osint");
+      if (isRestoredOsint) {
+        t.dataCategory = "osint_message";
+        t.altitude = undefined;
+        t.measuredAltitude = undefined;
+        t.measuredSpeed = undefined;
+      } else if (!t.dataCategory) {
+        t.dataCategory = "sensor_observation";
+      }
       const filter = new ImmFilter2D();
       filter.update(t.timestamp || baseTime, t.lat, t.lon);
 
@@ -574,8 +588,8 @@ export class TrackManager {
       claimedType: observation.type !== "unknown" ? observation.type : previous.type,
       speedMs: updatedSpeed,
       measuredSpeed: isMeasuredSpeedUpdate ? (observation.speed ?? previous.measuredSpeed) : undefined,
-      altitudeM: observation.altitude ?? previous.altitude,
-      measuredAltitude: isTextReportUpdate ? previous.measuredAltitude : (observation.altitude ?? previous.measuredAltitude),
+      altitudeM: isTextReportUpdate ? observation.altitude : (observation.altitude ?? previous.altitude),
+      measuredAltitude: isTextReportUpdate ? undefined : (observation.altitude ?? previous.measuredAltitude),
       headingDeg: updatedHeading,
       modelHint: typeof observation.meta?.model === "string" ? observation.meta.model : previous.model,
       callsign: typeof observation.meta?.callsign === "string" ? observation.meta.callsign : previous.callsign,

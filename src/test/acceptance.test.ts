@@ -227,13 +227,16 @@ describe("EYE RADAR — Mandatory Automated Acceptance Criteria (ACCEPTANCE.md)"
             isSynthetic: false
           },
           {
-            id: "valid-live",
+            id: "osint-uav-legacy-ckpt",
             type: "uav",
             dataCategory: "osint_message",
             lat: 49.99,
             lon: 36.23,
             heading: 0,
             speed: 0,
+            altitude: 350,
+            measuredAltitude: 350,
+            measuredSpeed: 125,
             timestamp: now - 5_000,
             confidence: 0.85,
             sources: new Set(["osint"]),
@@ -243,7 +246,11 @@ describe("EYE RADAR — Mandatory Automated Acceptance Criteria (ACCEPTANCE.md)"
         ]
       });
       expect(restored).toBe(1);
-      expect(tm.getTrack("valid-live")).toBeDefined();
+      const restoredTrack = tm.getTrack("osint-uav-legacy-ckpt");
+      expect(restoredTrack).toBeDefined();
+      expect(restoredTrack?.altitude).toBeUndefined();
+      expect(restoredTrack?.measuredAltitude).toBeUndefined();
+      expect(restoredTrack?.measuredSpeed).toBeUndefined();
       expect(tm.getTrack("fake-synth")).toBeUndefined();
       expect(tm.getTrack("ew-corrupted")).toBeUndefined();
     });
