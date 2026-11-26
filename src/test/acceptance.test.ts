@@ -170,6 +170,51 @@ describe("EYE RADAR — Mandatory Automated Acceptance Criteria (ACCEPTANCE.md)"
       );
       expect(stale).toBeNull();
     });
+
+    it("never collapses spatial uncertainty of repeated OSINT or citizen reports below truthful bounds", () => {
+      const tm = new TrackManager(sourceRegistry);
+      const baseNow = 1_795_520_000_000;
+      let latest = null;
+      for (let i = 0; i < 6; i++) {
+        const t = baseNow + i * 10_000;
+        const obs = parseOsintBulletin("БпЛА курсом на Суми", t, t)[0].observation;
+        latest = tm.ingest(obs, t);
+      }
+      expect(latest).not.toBeNull();
+      expect(latest?.uncertaintyRadius).toBeGreaterThanOrEqual(3_500);
+      expect(latest?.altitude).toBeUndefined();
+      expect(latest?.measuredSpeed).toBeUndefined();
+
+      let citizenTrack = null;
+      for (let i = 0; i < 3; i++) {
+        const t = baseNow + i * 10_000;
+        citizenTrack = tm.ingest(
+          {
+            id: "citizen-test-1",
+            type: "uav",
+            lat: 49.99,
+            lon: 36.23,
+            heading: undefined,
+            speed: 0,
+            altitude: undefined,
+            timestamp: t,
+            source: "manual",
+            confidence: 0.45,
+            uncertaintyRadius: 4_500,
+            meta: {
+              source_id: "manual",
+              speedIsMeasured: false,
+              unverifiedEyewitness: true
+            }
+          },
+          t
+        );
+      }
+      expect(citizenTrack?.lifecycle).toBe("TENTATIVE");
+      expect(citizenTrack?.dataCategory).toBe("osint_message");
+      expect(citizenTrack?.evidenceFamilies).toContain("manual");
+      expect(citizenTrack?.uncertaintyRadius).toBeGreaterThanOrEqual(2_500);
+    });
   });
 
   describe("2. Architecture & Single-Source ADS-B Gate", () => {

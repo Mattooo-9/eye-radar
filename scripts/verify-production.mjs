@@ -72,6 +72,9 @@ async function main() {
   const osintFakeMeasuredSpeed = tracks.filter(
     (t) => t.dataCategory === "osint_message" && (t.measuredSpeed !== undefined && t.measuredSpeed !== null)
   );
+  const osintFalsePrecision = tracks.filter(
+    (t) => t.dataCategory === "osint_message" && typeof t.uncertaintyRadius === "number" && t.uncertaintyRadius < 2500
+  );
   const evidenceBloat = tracks.filter((t) => Array.isArray(t.evidence) && t.evidence.length > 24);
 
   check(
@@ -85,6 +88,7 @@ async function main() {
   check("100% tracks strictly tagged with dataCategory", missingCategory.length === 0, `missing=${missingCategory.length}/${tracks.length}`);
   check("0 fabricated altitudes on textual OSINT tracks", osintFakeAlt.length === 0, `fakeAlt=${osintFakeAlt.length}`);
   check("0 fabricated measuredSpeed on textual OSINT tracks", osintFakeMeasuredSpeed.length === 0, `fakeSpd=${osintFakeMeasuredSpeed.length}`);
+  check("0 false sub-2.5km precision on textual OSINT tracks", osintFalsePrecision.length === 0, `falsePrec=${osintFalsePrecision.length}`);
   check("Bounded deduplicated evidence arrays (<=24)", evidenceBloat.length === 0, `bloated=${evidenceBloat.length}`);
 
   // 3. No synthetic EO dummy payload

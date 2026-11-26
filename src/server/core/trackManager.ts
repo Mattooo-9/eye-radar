@@ -188,10 +188,12 @@ export class TrackManager {
         t.id.startsWith("citizen-") ||
         t.evidenceFamilies?.includes("osint");
       if (isRestoredOsint) {
+        const minTextFloor = t.id.startsWith("citizen-") ? 2_500 : 3_500;
         t.dataCategory = "osint_message";
         t.altitude = undefined;
         t.measuredAltitude = undefined;
         t.measuredSpeed = undefined;
+        t.uncertaintyRadius = Math.max(minTextFloor, t.uncertaintyRadius || 0);
       } else if (!t.dataCategory) {
         t.dataCategory = "sensor_observation";
       }
@@ -358,6 +360,8 @@ export class TrackManager {
       sourceFamily = "optical";
     } else if (sourceId.includes("simulation") || observation.source === "simulation") {
       sourceFamily = "simulation";
+    } else if (sourceId.includes("manual") || observation.source === "manual" || observation.id.startsWith("citizen-")) {
+      sourceFamily = "manual";
     } else if (sourceId.includes("osint") || observation.source === "osint") {
       sourceFamily = "osint";
     } else if (sourceId.includes("sdr") || observation.source === "sdr") {
@@ -424,11 +428,12 @@ export class TrackManager {
         isCorroborated: false
       });
 
-      // Maintain explicit spatial uncertainty from observation (e.g. 12km for acoustic, 250m for optical, 30m for radar)
+      // Maintain explicit spatial uncertainty from observation (e.g. 12km for acoustic, >=3.5km for OSINT, >=2.5km for citizen reports)
       const obsUncertainty = typeof observation.meta?.measurement_accuracy === "number"
         ? (observation.meta.measurement_accuracy as number)
         : (observation.uncertaintyRadius || imm.uncertaintyRadiusMeters);
-      const effectiveUncertainty = Math.max(obsUncertainty, imm.uncertaintyRadiusMeters);
+      const minTextUncertainty = sourceFamily === "osint" ? 3_500 : sourceFamily === "manual" ? 2_500 : 0;
+      const effectiveUncertainty = Math.max(obsUncertainty, imm.uncertaintyRadiusMeters, minTextUncertainty);
 
       // Positional sources with transponder/radar or high-reliability OSINT start CONFIRMED; isolated indirect acoustic starts TENTATIVE
       const isHighConfidence =
@@ -537,12 +542,14 @@ export class TrackManager {
       updatedConfidence = Math.min(updatedConfidence, 0.25);
     }
 
-    const obsUncertainty = typeof observation.meta?.measurement_accuracy === "number"
+    const explicitObsUncertainty = typeof observation.meta?.measurement_accuracy === "number"
       ? (observation.meta.measurement_accuracy as number)
-      : (observation.uncertaintyRadius || imm.uncertaintyRadiusMeters);
+      : observation.uncertaintyRadius;
+    const obsUncertainty = explicitObsUncertainty || imm.uncertaintyRadiusMeters;
 
     // Multi-sensor uncertainty covariance intersection:
     // Independent sensor families cross-corroborating shrink the spatial uncertainty radius.
+    // Textual OSINT and citizen reports MUST NEVER collapse spatial uncertainty via repeated Kalman ticks.
     let updatedUncertainty: number;
     if (isMultiFamily) {
       const prevVar = Math.max(100 ** 2, (previous.uncertaintyRadius || 1000) ** 2);
@@ -552,6 +559,11 @@ export class TrackManager {
     } else if (sourceFamily === "acoustic") {
       // Single uncorroborated acoustic sensor maintains wide uncertainty area
       updatedUncertainty = Math.max(previous.uncertaintyRadius || 12_000, obsUncertainty);
+    } else if (sourceFamily === "osint" || sourceFamily === "manual") {
+      const minFloor = sourceFamily === "osint" ? 3_500 : 2_500;
+      updatedUncertainty = explicitObsUncertainty
+        ? Math.max(minFloor, explicitObsUncertainty)
+        : Math.max(minFloor, previous.uncertaintyRadius || minFloor);
     } else {
       updatedUncertainty = imm.uncertaintyRadiusMeters;
     }
@@ -601,11 +613,12 @@ export class TrackManager {
       isCorroborated: isMultiFamily || previous.isSynthetic || isSynthetic
     });
 
-    // Lifecycle promotion: independent multi-family corroboration confirms tentative tracks
+    // Lifecycle promotion: independent multi-family corroboration confirms tentative tracks.
+    // Uncorroborated acoustic & manual eyewitness reports remain TENTATIVE.
     const updatedLifecycle: TrackLifecycle =
-      isMultiFamily || (existing.hitsCount >= 2 && sourceFamily !== "acoustic")
+      isMultiFamily || (existing.hitsCount >= 2 && sourceFamily !== "acoustic" && sourceFamily !== "manual")
         ? "CONFIRMED"
-        : (sourceFamily === "acoustic" && !isMultiFamily ? "TENTATIVE" : (previous.lifecycle || "CONFIRMED"));
+        : ((sourceFamily === "acoustic" || sourceFamily === "manual") && !isMultiFamily ? "TENTATIVE" : (previous.lifecycle || "CONFIRMED"));
 
     // Update measured history ring buffer (keep last 5 measured points)
     const updatedHistory = previous.measuredHistory ? [...previous.measuredHistory] : [];
