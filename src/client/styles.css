@@ -3269,10 +3269,12 @@ body {
     font-size: 11px;
   }
   .top-bar-report-btn .report-text {
-    display: none;
+    display: inline;
+    font-size: 9.5px;
+    letter-spacing: 0.03em;
   }
   .top-bar-report-btn {
-    padding: 4px 6px;
+    padding: 4px 8px;
   }
   .top-bar-menu-btn .menu-text {
     display: none;
@@ -5166,13 +5168,13 @@ body {
   color: #fbbf24;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 768px) {
   .live-threat-dock {
-    bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(108px + env(safe-area-inset-bottom, 0px));
     left: 10px;
   }
   .floating-my-location-btn {
-    bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(108px + env(safe-area-inset-bottom, 0px));
     right: 10px;
     padding: 7px 11px;
   }
