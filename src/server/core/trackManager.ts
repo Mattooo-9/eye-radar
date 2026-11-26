@@ -647,10 +647,16 @@ export class TrackManager {
       const dt = Math.max(0, (now - entry.state.timestamp) / 1000);
       const timeSinceLastMeasurement = now - entry.lastMeasurementTime;
 
-      // Lifecycle status transitions
-      if (timeSinceLastMeasurement > 5_000 && entry.state.lifecycle === "CONFIRMED") {
+      // Lifecycle status transitions (source-aware so 10-12s polled OSINT/ADS-B feeds stay CONFIRMED between polls)
+      const isPolledFeed =
+        entry.state.evidenceFamilies?.includes("osint") ||
+        entry.state.evidenceFamilies?.includes("adsb") ||
+        entry.state.evidenceFamilies?.includes("manual");
+      const coastAfterMs = isPolledFeed ? 16_000 : 5_000;
+      const staleAfterMs = isPolledFeed ? 35_000 : 12_000;
+      if (timeSinceLastMeasurement > coastAfterMs && entry.state.lifecycle === "CONFIRMED") {
         entry.state.lifecycle = "COASTING";
-      } else if (timeSinceLastMeasurement > 12_000 && entry.state.lifecycle === "COASTING") {
+      } else if (timeSinceLastMeasurement > staleAfterMs && entry.state.lifecycle === "COASTING") {
         entry.state.lifecycle = "STALE";
       }
 

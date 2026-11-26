@@ -3382,11 +3382,15 @@ body {
 
 .tactical-menu-nav {
   display: flex;
+  align-items: center;
   gap: 6px;
-  padding: 8px 12px;
+  padding: 10px 12px;
+  min-height: 46px;
+  flex-shrink: 0;
   background: rgba(2, 6, 23, 0.95);
   border-bottom: 1px solid rgba(56, 189, 248, 0.15);
   overflow-x: auto;
+  overflow-y: hidden;
   white-space: nowrap;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;

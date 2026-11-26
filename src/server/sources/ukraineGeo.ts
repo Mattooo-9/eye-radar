@@ -249,6 +249,8 @@ export const UKRAINE_CITIES: Record<string, GeoPoint> = {
   tulchyn: { name: "Tulchyn", nameUk: "Тульчин", lat: 48.674, lon: 28.849, oblast: "Vinnytsia", aliases: ["тульчин", "тульчина"] },
   nemyriv: { name: "Nemyriv", nameUk: "Немирів", lat: 48.978, lon: 28.843, oblast: "Vinnytsia", aliases: ["немирів", "немирова", "немиров"] },
   bershad: { name: "Bershad", nameUk: "Бершадь", lat: 48.372, lon: 29.532, oblast: "Vinnytsia", aliases: ["бершадь"] },
+  chechelnyk: { name: "Chechelnyk", nameUk: "Чечельник", lat: 48.215, lon: 29.354, oblast: "Vinnytsia", aliases: ["чечельник", "чечельника"] },
+  tyshkivka: { name: "Tyshkivka", nameUk: "Тишківка", lat: 48.494, lon: 30.929, oblast: "Kirovohrad", aliases: ["тишківка", "тишківки", "тишківку"] },
   popilnia: { name: "Popilnia", nameUk: "Попільня", lat: 49.946, lon: 29.457, oblast: "Zhytomyr", aliases: ["попільня", "попільню"] },
   andrushivka: { name: "Andrushivka", nameUk: "Андрушівка", lat: 50.028, lon: 29.023, oblast: "Zhytomyr", aliases: ["андрушівка", "андрушівку"] },
   chudniv: { name: "Chudniv", nameUk: "Чуднів", lat: 50.052, lon: 28.097, oblast: "Zhytomyr", aliases: ["чуднів", "чуднова", "чуднов"] },

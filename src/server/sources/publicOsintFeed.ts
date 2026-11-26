@@ -32,6 +32,20 @@ const CHANNEL_META: Record<string, { label: string; reliability: number; default
   war_monitor: { label: "War Monitor (@war_monitor)", reliability: 0.89 }
 };
 
+function stripChannelPromo(text: string): string {
+  return text
+    .replace(/⚠️\s*TLK MAP ALERTS[\s\S]*/gi, "")
+    .replace(/📷\s*TlkInst[\s\S]*/gi, "")
+    .replace(/🎞\s*Канал со стримами[\s\S]*/gi, "")
+    .replace(/ℹ️\s*Alerts Live[\s\S]*/gi, "")
+    .replace(/➡\s*Підписатися[\s\S]*/gi, "")
+    .replace(/Підписатись\s*👉[\s\S]*/gi, "")
+    .replace(/✔\s*@[a-z0-9_]+/gi, "")
+    .replace(/«Наглядач[\s\S]*/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function decodeHtmlText(rawHtml: string): string {
   return rawHtml
     .replace(/<br\s*\/?>/gi, "\n")
@@ -107,6 +121,7 @@ export class PublicOsintFeedSource {
   getLiveFeed(limit = 25): Array<PersistedOsintBulletin & { channelLabel: string }> {
     return intelligenceStore.getLatestFeedItems(limit).map((b) => ({
       ...b,
+      text: stripChannelPromo(b.text),
       channelLabel: CHANNEL_META[b.channel]?.label ?? `@${b.channel}`
     }));
   }
@@ -260,7 +275,7 @@ export class PublicOsintFeedSource {
         toPersist.push({
           postRef: entry.postRef,
           channel: entry.channel,
-          text: entry.text,
+          text: stripChannelPromo(entry.text),
           publishedAt: entry.publishedAt,
           targetType: first.observation.type,
           oblast: first.oblast,
