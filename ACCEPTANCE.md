@@ -56,14 +56,14 @@
 - **6.3** Единый регламент изменений для Codex и Antigravity (`AGENTS.md`).
 - **6.4** Автоматические проверки перед публикацией (`npm run acceptance` в `.github/workflows/ci-keepalive.yml`).
 
-### 7. Финальная приёмка (Final Production Sign-Off)
+### 7. Финальная приёмка (Final Production Sign-Off — 2026-11-27)
 
-| # | Критерий | Статус | Доказательство (Evidence) |
+| # | Критерий | Статус | Проверяемое доказательство (Evidence) |
 |---|---|---|---|
-| 1 | Достоверность данных | PENDING LIVE VERIFY | Verified after live deploy via `npm run acceptance` + `npm run verify:prod` + browser check |
-| 2 | Архитектура | PENDING LIVE VERIFY | Single `adsbClassifier.ts`, dead files removed, single `/api/targets`, `npm run acceptance` |
-| 3 | Интерфейс (Desktop + Mobile) | PENDING LIVE VERIFY | Live browser verification at `1280×800` and `375×812` on `https://eye-radar.vercel.app/app` |
-| 4 | Производительность | PENDING LIVE VERIFY | `tsc` 0 errors, 100% tests, 0 console errors, Render RAM & payload checks |
-| 5 | Автономность | PENDING LIVE VERIFY | Neon Postgres hydration + retention + empty/404 failure resilience checks |
-| 6 | Синхронизация | PENDING LIVE VERIFY | Git clean, `AGENTS.md` + `ACCEPTANCE.md` + `PROJECT_STATE.md` synced, Render + Vercel live |
-| 7 | Финальная приёмка | PENDING LIVE VERIFY | End-to-end production sign-off |
+| 1 | **Достоверность данных** | **PASS** | `npm run verify:prod`: `synthetic=0`, `civilLeak=none`, `fakeAlt=0` (0 выдуманных высот на OSINT), `missingProvenance=0/17`, `missingCategory=0/17`, `categories={sensorObservations:2, osintMessages:15, officialAlertsActive:14}`, `/api/eo/change-detection` возвращает `{available:false}`. `src/test/acceptance.test.ts`: 9/9 PASS. В живом браузере `TargetCard` показывает `ТЕКСТОВЕ ПОВІДОМЛЕННЯ (OSINT)`, `Швидкість: Невідомо`, `Висота польоту: Невідомо`, оригинальную цитату `@raketa_trevoga` и 0 выдуманных баз/ТТХ. |
+| 2 | **Архитектура** | **PASS** | Единый классификатор ADS-B `src/server/sources/adsbClassifier.ts`, непересекающееся владение эндпоинтами (`adsb.lol`, `adsb.fi`+`adsb.one`, `opensky.live`), единый маршрут `/api/targets`, удалено 10 неиспользуемых файлов и 2 521+ строк дублей/шаблонов (`0440b9d`), `DataCategory` закреплён в `types.ts` и `TrackManager`. Все существующие интеграции сохранены (`HEALTHY`). |
+| 3 | **Интерфейс (Desktop + Mobile)** | **PASS** | Живая проверка `https://eye-radar.vercel.app/app` (`dpl_FhT1ZLV1LGAcNtWu3pRux2ZSaLiL`): **Desktop `1280×800`** — 0 ошибок консоли, `LIVE WS`, разделённый `LiveThreatDrawer` (`Повідомлення ППО / OSINT` и `Спостереження ADS-B`), минималистичный `TargetCard`, `TrackInspectorModal` по запросу (`Деталі (Provenance)`). **Mobile `375×812`** — 0 ошибок консоли, `overflowEls: []`, видимая кнопка `РАПОРТ`, **0 наложений** (`ЦІЛІ` и `◎ МОЯ ЛОКАЦІЯ` на 17.4 px выше таймлайна, шкала `100 km` на 26.2 px ниже). |
+| 4 | **Производительность** | **PASS** | `npm run acceptance`: `tsc --noEmit` — **0 ошибок**, `vitest run` — **30/30 файлов (127/127 тестов)**, `vite build` + `tsup` — чисто (клиент `index.js` сокращён до **53.27 kB gzip**). В production: Render RAM **83 MB** (<180 MB), `/api/targets` **78.6 KB** (<100 KB), `bloatedEvidence=0`, 0 ошибок консоли браузера, 0 зависших фоновых задач. |
+| 5 | **Автономность** | **PASS** | Neon PostgreSQL `connected=true (92 ms)`, 54 сохранённых бюллетеня и 110 снимков истории, автогидратация при старте (`hydrateFromDb`), санитизация чекпоинтов (`57261ec`), 14/14 каналов ППО онлайн, чистая обработка отсутствующего трека (`HTTP 404`) и пустых потоков (`acceptance.test.ts`), автоочистка БД (24 ч / 2 ч) и бота (6 ч), CI keepalive каждые 10 мин (`.github/workflows/ci-keepalive.yml`), регламент отката в `AGENTS.md`. |
+| 6 | **Синхронизация** | **PASS** | `AGENTS.md`, `ACCEPTANCE.md`, `PROJECT_STATE.md`, `package.json` (`acceptance` + `verify:prod`), GitHub `origin/main`, Render (`57261ec`/`04267fe`) и Vercel Production (`dpl_FhT1ZLV1LGAcNtWu3pRux2ZSaLiL`, `/assets/index-DA0Gu-xj.js`) полностью синхронизированы. Единый протокол для Codex и Antigravity закреплён в `AGENTS.md`. |
+| 7 | **Финальная приёмка** | **PASS** | `npm run acceptance` (30/30, 127/127) + `npm run verify:prod` (**15/15 PASS, 0 FAIL**) + живая браузерная проверка Desktop (`1280×800`) и Mobile (`375×812`) — **все 7 критериев: PASS (0 FAIL)**. |
