@@ -816,6 +816,11 @@ const server = createServer(async (req, res) => {
       const osintMessages = list.filter((t) => t.dataCategory === "osint_message" || t.evidenceFamilies?.includes("osint") || t.evidenceFamilies?.includes("manual")).length;
       const sensorObservations = list.length - osintMessages;
       const alertMeta = alertsSource.getMetadata();
+      const compactTracks = list.map((t) => ({
+        ...t,
+        provenanceChain: Array.isArray(t.provenanceChain) ? t.provenanceChain.slice(0, 2) : [],
+        measuredHistory: Array.isArray(t.measuredHistory) ? t.measuredHistory.slice(-3) : []
+      }));
       json(res, 200, {
         count: list.length,
         categories: {
@@ -825,7 +830,7 @@ const server = createServer(async (req, res) => {
           officialAlertsStatus: alertMeta.status,
           officialAlertsUpdatedAt: alertMeta.lastConfirmedAt
         },
-        tracks: list
+        tracks: compactTracks
       });
     } else {
       json(res, 200, list);

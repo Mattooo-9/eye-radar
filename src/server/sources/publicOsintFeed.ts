@@ -188,8 +188,8 @@ export class PublicOsintFeedSource {
             }
             if (!freshestAlert || freshestTs <= 0) continue;
 
-            // Only emit district/community threat sectors updated within the last 18 hours
-            if (now - freshestTs > 18 * 3600 * 1000) continue;
+            // Only emit active district/community threat sectors updated within the last 6 hours
+            if (now - freshestTs > 6 * 3600 * 1000) continue;
 
             const place = findCityInText(reg.regionName);
             if (!place || !isInsideUkraineGeo(place.lat, place.lon)) continue;
