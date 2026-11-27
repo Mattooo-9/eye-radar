@@ -10,7 +10,7 @@
 
 ## Data Separation, Truthfulness & Zero-False-Precision Guarantees
 
-1. **`official_alert` (`/api/alerts`)** — Official civil defense air-raid sirens (`alerts.in.ua` / `ubilling.net.ua` mirror) with explicit `dataCategory`, `source`, `updatedAt`, and `stale` flag; alerts expire automatically after 3 minutes of upstream outage so stale sirens are never shown as active.
+1. **`official_alert` (`/api/alerts`)** — Official civil defense air-raid sirens (`alerts.in.ua` / `ubilling.net.ua` mirror) with explicit `dataCategory`, `status` (`"fresh" | "stale" | "unavailable"`), `source`, `sourceAvailable`, `lastConfirmedAt`, and `stale` flag. Loss of connection to the official source NEVER triggers a false all-clear ("відбій"): the backend (`AlertsInUaSource`) and client (`localStorage` cache + amber map/UI state) preserve the last confirmed alert state and exact confirmation timestamp while clearly indicating unknown/unupdated status.
 2. **`osint_message` (`/api/osint/feed` & `/api/targets` where `dataCategory="osint_message"`)** — 14 live Ukrainian air-defense OSINT channels (`@kpszsu`, `@radar_raketaa`, `@mon1tor_ua`, `@monitor_ukr`, `@bpla_radar`, `@radar_zp`, `@monitor1654`, `@tlknewsua`, `@raketa_trevoga`, `@dnipro_alerts`, `@monitoringwar`, `@monitorwarr`, `@vanek_nikolaev`, `@war_monitor`).
    - Unknown altitude, speed, and heading remain `undefined` / `"Невідомо"`.
    - Coordinates display at ~2-decimal precision (`~49.99°N, ~36.23°E`) and spatial uncertainty never collapses below truthful settlement/corridor bounds (`≥3.5 km` OSINT, `≥2.5 km` eyewitness) across repeated Kalman cycles or checkpoint restores.
