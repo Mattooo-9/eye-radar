@@ -64,6 +64,10 @@ const OCCUPIED_STANDING_ALERT_REGIONS = new Set([
   "51",   // Horlivskyi
   "52",   // Mariupolskyi
   "53",   // Donetskyi
+  "54",   // Bakhmutskyi
+  "55",   // Volnovaskyi
+  "145",  // Polohivskyi
+  "146",  // Vasylivskyi
   "147",  // Berdianskyi
   "148"   // Melitopolskyi
 ]);
@@ -386,7 +390,10 @@ export class PublicOsintFeedSource {
                           msgLine.length <= 220 &&
                           /бпла|шахед|ракет|каб|швидкісн|ціль|курсом|напрямку/i.test(msgLine)
                         ) {
-                          freshDispatches.push({ text: msgLine, publishedAt: now - idx * 15_000 });
+                          freshDispatches.push({
+                            text: msgLine,
+                            publishedAt: now - freshDispatches.length * 30_000
+                          });
                         }
                       }
                     }
