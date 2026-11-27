@@ -40,6 +40,22 @@ import { intelligenceStore } from "./db/intelligenceStore.js";
 import { watchdogService } from "./db/watchdogService.js";
 import { productionObservability } from "./core/observability.js";
 import { uncertaintyEventManager } from "./core/uncertaintyEventManager.js";
+import { createLogger } from "./observability/logger.js";
+import { failureMonitor } from "./observability/failureMonitor.js";
+import {
+  AlertSubscribeSchema,
+  CitizenReportSchema,
+  ClientDiagnosticsSchema,
+  LocationSaveSchema,
+  OsintFeedQuerySchema,
+  OsintIngestSchema,
+  ReplayQuerySchema,
+  SdrIngestSchema,
+  parseJsonWithSchema,
+  parseWithSchema
+} from "./validation/schemas.js";
+
+const log = createLogger("server");
 
 const DIST_CLIENT = resolve(process.cwd(), "dist/client");
 const MIME_TYPES: Record<string, string> = {
@@ -496,6 +512,20 @@ const server = createServer(async (req, res) => {
     const dbHealth = await pingDb();
     const watchdogHealth = watchdogService.getHealthStatus();
     const intelDbStats = await intelligenceStore.getStats();
+    const osintSummary = publicOsintSource.getChannelSummary();
+    const alertMeta = alertsSource.getMetadata();
+    const monitoringSnapshot = failureMonitor.evaluate({
+      uptimeSeconds: process.uptime(),
+      memoryMb: watchdogHealth.memoryMb ?? Math.round(process.memoryUsage().rss / 1024 / 1024),
+      dbOk: dbHealth.ok,
+      dbLatencyMs: dbHealth.latencyMs,
+      dbError: dbHealth.error,
+      alertStatus: alertMeta.status,
+      alertConsecutiveFailures: alertMeta.consecutiveFailures,
+      alertError: alertMeta.lastError,
+      osintTotalChannels: osintSummary.totalChannels,
+      osintRespondingChannels: osintSummary.respondingChannels
+    });
 
     json(res, 200, {
       ok: true,
@@ -503,8 +533,9 @@ const server = createServer(async (req, res) => {
       startedAt: SERVER_STARTED_AT,
       database: dbHealth,
       intelligenceDb: intelDbStats,
-      osintChannels: publicOsintSource.getChannelSummary(),
+      osintChannels: osintSummary,
       watchdog: watchdogHealth,
+      monitoring: monitoringSnapshot,
       sequenceId: trackManager.getSequence(),
       uptime: process.uptime(),
       tracks: trackManager.snapshot(false).length,
@@ -552,11 +583,27 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && url.pathname === "/api/monitoring/incidents") {
+    if (!isAuthorizedAdminOrIngest(req)) {
+      json(res, 401, { error: "Unauthorized: admin API key required" });
+      return;
+    }
+    json(res, 200, {
+      snapshot: failureMonitor.getSnapshot(),
+      history: failureMonitor.getRecentHistory(30)
+    });
+    return;
+  }
+
   if (req.method === "POST" && url.pathname === "/api/diagnostics/client") {
     try {
       const raw = await readBody(req);
-      const data = JSON.parse(raw);
-      productionObservability.recordClientTelemetry(data);
+      const parsed = parseJsonWithSchema(raw, ClientDiagnosticsSchema);
+      if (!parsed.ok) {
+        json(res, 400, { error: "Invalid client telemetry payload", issues: parsed.issues });
+        return;
+      }
+      productionObservability.recordClientTelemetry(parsed.data as any);
       json(res, 200, { ok: true });
     } catch {
       json(res, 400, { error: "Invalid client telemetry payload" });
@@ -778,8 +825,8 @@ const server = createServer(async (req, res) => {
   }
 
   if (req.method === "GET" && url.pathname === "/api/osint/feed") {
-    const limitParam = Number(url.searchParams.get("limit") || "25");
-    const limit = Number.isFinite(limitParam) ? Math.min(60, Math.max(1, limitParam)) : 25;
+    const q = parseWithSchema({ limit: url.searchParams.get("limit") ?? 25 }, OsintFeedQuerySchema);
+    const limit = q.ok ? q.data.limit : 25;
     const items = publicOsintSource.getLiveFeed(limit);
     json(res, 200, {
       count: items.length,
@@ -790,7 +837,8 @@ const server = createServer(async (req, res) => {
   }
 
   if (req.method === "GET" && url.pathname === "/api/replay") {
-    const offsetSec = Math.max(0, Math.min(7200, Number(url.searchParams.get("offsetSec") || "0")));
+    const q = parseWithSchema({ offsetSec: url.searchParams.get("offsetSec") ?? 0 }, ReplayQuerySchema);
+    const offsetSec = q.ok ? q.data.offsetSec : 0;
     const targetTs = Date.now() - offsetSec * 1000;
     const historical = offsetSec >= 30 ? await intelligenceStore.getHistoricalSnapshotNear(targetTs) : null;
     json(res, 200, {
@@ -948,37 +996,27 @@ const server = createServer(async (req, res) => {
   if (req.method === "POST" && url.pathname === "/api/location") {
     try {
       const raw = await readBody(req);
-      const parsed = JSON.parse(raw) as {
-        userId?: string | number;
-        lat: number;
-        lon: number;
-        name?: string;
-        cityName?: string;
-        accuracy?: number;
-        source?: string;
-        trusted?: boolean;
-        radiusKm?: number;
-      };
-      const chatId = typeof parsed.userId === "number" ? parsed.userId : parseInt(String(parsed.userId || ""), 10);
-      if (!isNaN(chatId) && chatId > 0) {
-        const city = parsed.cityName || parsed.name || "Власна геопозиція";
-        await botManager.subscribeUserLocation(chatId, parsed.lat, parsed.lon, city, parsed.radiusKm || 35);
-        json(res, 200, {
-          ok: true,
-          saved: true,
-          location: {
-            lat: parsed.lat,
-            lon: parsed.lon,
-            name: city,
-            accuracy: parsed.accuracy ?? 15,
-            source: parsed.source ?? "manual",
-            trusted: parsed.trusted ?? true,
-            updatedAt: Date.now()
-          }
-        });
-      } else {
-        json(res, 400, { error: "Invalid user/chat ID" });
+      const result = parseJsonWithSchema(raw, LocationSaveSchema);
+      if (!result.ok) {
+        json(res, 400, { error: result.error, issues: result.issues });
+        return;
       }
+      const parsed = result.data;
+      const city = parsed.cityName || parsed.name || "Власна геопозиція";
+      await botManager.subscribeUserLocation(parsed.userId, parsed.lat, parsed.lon, city, parsed.radiusKm ?? 35);
+      json(res, 200, {
+        ok: true,
+        saved: true,
+        location: {
+          lat: parsed.lat,
+          lon: parsed.lon,
+          name: city,
+          accuracy: parsed.accuracy ?? 15,
+          source: parsed.source ?? "manual",
+          trusted: parsed.trusted ?? true,
+          updatedAt: Date.now()
+        }
+      });
     } catch {
       json(res, 400, { error: "Invalid payload" });
     }
@@ -988,24 +1026,14 @@ const server = createServer(async (req, res) => {
   if (req.method === "POST" && url.pathname === "/api/alerts/subscribe") {
     try {
       const raw = await readBody(req);
-      const parsed = JSON.parse(raw) as {
-        userId?: string | number;
-        lat?: number;
-        lon?: number;
-        cityName?: string;
-        radiusKm?: number;
-      };
-      const chatId = typeof parsed.userId === "number" ? parsed.userId : parseInt(String(parsed.userId || ""), 10);
-      const lat = typeof parsed.lat === "number" && !isNaN(parsed.lat) ? parsed.lat : 50.45;
-      const lon = typeof parsed.lon === "number" && !isNaN(parsed.lon) ? parsed.lon : 30.52;
-      const radiusKm = typeof parsed.radiusKm === "number" && !isNaN(parsed.radiusKm) ? Math.min(150, Math.max(5, parsed.radiusKm)) : 30;
-
-      if (!isNaN(chatId) && chatId > 0) {
-        await botManager.subscribeUserLocation(chatId, lat, lon, parsed.cityName, radiusKm);
-        json(res, 200, { ok: true, subscribed: true, chatId, lat, lon, radiusKm });
-      } else {
-        json(res, 400, { error: "Invalid Telegram user ID or chat ID" });
+      const result = parseJsonWithSchema(raw, AlertSubscribeSchema);
+      if (!result.ok) {
+        json(res, 400, { error: result.error, issues: result.issues });
+        return;
       }
+      const { userId: chatId, lat, lon, cityName, radiusKm } = result.data;
+      await botManager.subscribeUserLocation(chatId, lat, lon, cityName, radiusKm);
+      json(res, 200, { ok: true, subscribed: true, chatId, lat, lon, radiusKm });
     } catch {
       json(res, 400, { error: "Invalid payload" });
     }
@@ -1019,8 +1047,14 @@ const server = createServer(async (req, res) => {
     }
     try {
       const raw = await readBody(req);
-      const parsed = JSON.parse(raw) as { text?: string; observations?: Observation[] };
-      const observations = parsed.text ? parseOsintText(parsed.text) : parsed.observations ?? [];
+      const result = parseJsonWithSchema(raw, OsintIngestSchema);
+      if (!result.ok) {
+        json(res, 400, { error: result.error, issues: result.issues });
+        return;
+      }
+      const observations = result.data.text
+        ? parseOsintText(result.data.text)
+        : ((result.data.observations ?? []) as Observation[]);
       ingestBatch(observations, hub);
       json(res, 200, { accepted: observations.length });
     } catch {
@@ -1036,8 +1070,12 @@ const server = createServer(async (req, res) => {
     }
     try {
       const raw = await readBody(req);
-      const parsed = JSON.parse(raw) as { observations: SdrPayload[] };
-      const observations = (parsed.observations ?? []).map(normalizeSdrPayload);
+      const result = parseJsonWithSchema(raw, SdrIngestSchema);
+      if (!result.ok) {
+        json(res, 400, { error: result.error, issues: result.issues });
+        return;
+      }
+      const observations = result.data.observations.map((item) => normalizeSdrPayload(item as SdrPayload));
       ingestBatch(observations, hub);
       json(res, 200, { accepted: observations.length });
     } catch {
@@ -1054,28 +1092,15 @@ const server = createServer(async (req, res) => {
     }
     try {
       const raw = await readBody(req);
-      const parsed = JSON.parse(raw) as {
-        type?: string;
-        lat?: number;
-        lon?: number;
-        direction?: string;
-        comment?: string;
-      };
-
-      const lat = typeof parsed.lat === "number" && Number.isFinite(parsed.lat) ? parsed.lat : NaN;
-      const lon = typeof parsed.lon === "number" && Number.isFinite(parsed.lon) ? parsed.lon : NaN;
-      if (Number.isNaN(lat) || Number.isNaN(lon) || lat < 44.0 || lat > 52.6 || lon < 22.0 || lon > 40.5) {
-        json(res, 400, { error: "Потрібні коректні координати в межах України." });
+      const result = parseJsonWithSchema(raw, CitizenReportSchema);
+      if (!result.ok) {
+        json(res, 400, { error: "Потрібні коректні координати в межах України.", issues: result.issues });
         return;
       }
-
-      const reportType = typeof parsed.type === "string" ? parsed.type.slice(0, 40) : "uav_sound";
-      const safeComment = typeof parsed.comment === "string"
-        ? parsed.comment.replace(/[<>\r\n]+/g, " ").trim().slice(0, 240)
-        : "";
+      const { lat, lon, type: reportType, direction, comment: safeComment } = result.data;
 
       let headingDeg: number | undefined;
-      switch (parsed.direction) {
+      switch (direction) {
         case "N": headingDeg = 0; break;
         case "NE": headingDeg = 45; break;
         case "E": headingDeg = 90; break;
@@ -1144,10 +1169,10 @@ const server = createServer(async (req, res) => {
           "intercept",
           lat,
           lon,
-          isMunition ? "Крилата ракета" : "БПЛА-камікадзе",
+          isMunition ? "Повітряна ціль (непідтверджено)" : "БпЛА (непідтверджено)",
           isMunition ? "munition" : "uav",
-          "За рапортом очевидця",
-          parsed.comment || "Успішне перехоплення мобільною вогневою групою / підрозділом ППО"
+          "За повідомленням очевидця",
+          safeComment || "Повідомлення очевидця про роботу ППО (потребує підтвердження)"
         );
         hub.broadcastImpacts(impactManager.getRecentEvents());
       } else if (isImpact) {
@@ -1155,10 +1180,10 @@ const server = createServer(async (req, res) => {
           "impact",
           lat,
           lon,
-          isMunition ? "Крилата/Балістична ракета" : "БПЛА-камікадзе",
+          isMunition ? "Повітряна ціль (непідтверджено)" : "БпЛА (непідтверджено)",
           isMunition ? "munition" : "uav",
-          "За рапортом очевидця",
-          parsed.comment || "Зафіксовано вибух / влучання на місцевості"
+          "За повідомленням очевидця",
+          safeComment || "Повідомлення очевидця про вибух на місцевості (потребує підтвердження)"
         );
         hub.broadcastImpacts(impactManager.getRecentEvents());
       }
@@ -1469,10 +1494,10 @@ const main = async (): Promise<void> => {
   try {
     const hydratedCount = await publicOsintSource.hydrateFromDb();
     if (hydratedCount > 0) {
-      console.log(`📡 OSINT Feed: hydrated ${hydratedCount} live bulletins from Neon Postgres`);
+      log.info({ hydratedCount }, "Hydrated live OSINT bulletins from Neon Postgres");
     }
   } catch (err) {
-    console.warn("⚠️ Could not hydrate OSINT bulletins from DB:", err);
+    failureMonitor.recordRuntimeError("osint_hydrate", err);
   }
 
   // 2. Restore latest track checkpoint from Neon Postgres / local backup
@@ -1482,7 +1507,7 @@ const main = async (): Promise<void> => {
       trackManager.restoreFromCheckpoint(checkpoint);
     }
   } catch (err) {
-    console.warn("⚠️ Could not load initial checkpoint:", err);
+    failureMonitor.recordRuntimeError("checkpoint_restore", err);
   }
 
   // 3. Start distributed watchdog service
@@ -1504,8 +1529,31 @@ const main = async (): Promise<void> => {
     void messageDeletionService.processPendingDeletions(botManager.getBotInstance()?.telegram);
   }, 10_000).unref();
 
+  // 6. Autonomous technical failure monitoring sweep every 30 seconds
+  setInterval(async () => {
+    try {
+      const dbHealth = await pingDb();
+      const osintSummary = publicOsintSource.getChannelSummary();
+      const alertMeta = alertsSource.getMetadata();
+      failureMonitor.evaluate({
+        uptimeSeconds: process.uptime(),
+        memoryMb: Math.round(process.memoryUsage().rss / 1024 / 1024),
+        dbOk: dbHealth.ok,
+        dbLatencyMs: dbHealth.latencyMs,
+        dbError: dbHealth.error,
+        alertStatus: alertMeta.status,
+        alertConsecutiveFailures: alertMeta.consecutiveFailures,
+        alertError: alertMeta.lastError,
+        osintTotalChannels: osintSummary.totalChannels,
+        osintRespondingChannels: osintSummary.respondingChannels
+      });
+    } catch (err) {
+      failureMonitor.recordRuntimeError("monitoring_sweep", err);
+    }
+  }, 30_000).unref();
+
   server.listen(env.port, env.host, async () => {
-    console.log(`📡 Eye Radar HTTP/WS listening on http://${env.host}:${env.port}`);
+    log.info({ host: env.host, port: env.port, releaseSha: RELEASE_SHA }, "Eye Radar HTTP/WS server listening");
   });
 
   if (existsSync(join(DIST_CLIENT, "index.html"))) {
@@ -1516,28 +1564,34 @@ const main = async (): Promise<void> => {
 };
 
 const handleGracefulShutdown = async (signal: string) => {
-  console.log(`🛑 Received ${signal}, initiating graceful shutdown...`);
+  log.info({ signal }, "Received shutdown signal, saving final checkpoint");
   try {
     await checkpointService.saveCheckpoint(
       trackManager.getSequence(),
       trackManager.snapshot(false)
     );
-    console.log("💾 Final checkpoint successfully saved to Neon Postgres.");
+    log.info("Final checkpoint saved to Neon Postgres");
   } catch (err) {
-    console.warn("Could not save final checkpoint on shutdown:", err);
+    failureMonitor.recordRuntimeError("shutdown_checkpoint", err);
   }
   watchdogService.stop();
   server.close(() => {
-    console.log("Server stopped cleanly.");
+    log.info("Server stopped cleanly");
     process.exit(0);
   });
   setTimeout(() => process.exit(0), 4000).unref();
 };
 
+process.on("unhandledRejection", (reason) => {
+  failureMonitor.recordRuntimeError("unhandledRejection", reason);
+});
+process.on("uncaughtExceptionMonitor", (err) => {
+  failureMonitor.recordRuntimeError("uncaughtException", err);
+});
 process.on("SIGTERM", () => void handleGracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => void handleGracefulShutdown("SIGINT"));
 
 main().catch((error) => {
-  console.error("Fatal error:", error);
+  log.fatal({ error: error instanceof Error ? error.message : String(error) }, "Fatal startup error");
   process.exit(1);
 });

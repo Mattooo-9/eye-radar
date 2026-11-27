@@ -1,6 +1,10 @@
 import { config } from "dotenv";
+import { ServerEnvSchema } from "../validation/schemas.js";
+import { createLogger } from "../observability/logger.js";
 
 config();
+
+const log = createLogger("env");
 
 const required = (name: string, fallback = ""): string => {
   const value = process.env[name] ?? fallback;
@@ -10,34 +14,33 @@ const required = (name: string, fallback = ""): string => {
     }
     throw new Error(`Missing required env variable: ${name}`);
   }
-
   return value;
 };
 
-const numberValue = (name: string, fallback: number): number => {
-  const raw = process.env[name];
-  if (!raw) {
-    return fallback;
-  }
-
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) ? parsed : fallback;
-};
-
-export const env = {
+const rawParsed = ServerEnvSchema.safeParse({
   nodeEnv: process.env.NODE_ENV ?? "development",
   host: process.env.HOST ?? "0.0.0.0",
-  port: numberValue("PORT", 3000),
-  clientPort: numberValue("CLIENT_PORT", 5173),
-  botToken: required("BOT_TOKEN"),
-  adminId: required("ADMIN_ID"),
+  port: process.env.PORT ?? 3000,
+  clientPort: process.env.CLIENT_PORT ?? 5173,
   publicBaseUrl: process.env.PUBLIC_BASE_URL ?? "http://localhost:3000",
   webAppPath: process.env.WEB_APP_PATH ?? "/app",
   wsPath: process.env.WS_PATH ?? "/ws",
   mapStyleUrl:
     process.env.MAP_STYLE_URL ?? "https://basemaps.cartocdn.com/gl/dark-matter-nolabels-gl-style/style.json",
-  jitterRadiusKm: numberValue("JITTER_RADIUS_KM", 15),
-  trustMinScore: numberValue("TRUST_MIN_SCORE", 55),
+  jitterRadiusKm: process.env.JITTER_RADIUS_KM ?? 15,
+  trustMinScore: process.env.TRUST_MIN_SCORE ?? 55
+});
+
+if (!rawParsed.success) {
+  log.warn({ issues: rawParsed.error.issues }, "Environment variable validation fell back to defaults");
+}
+
+const validated = rawParsed.success ? rawParsed.data : ServerEnvSchema.parse({});
+
+export const env = {
+  ...validated,
+  botToken: required("BOT_TOKEN"),
+  adminId: required("ADMIN_ID"),
   upstashRedisRestUrl: process.env.UPSTASH_REDIS_REST_URL,
   upstashRedisRestToken: process.env.UPSTASH_REDIS_REST_TOKEN,
   openrouterApiKey: process.env.OPENROUTER_API_KEY,

@@ -119,6 +119,13 @@ async function main() {
     Boolean(health.json?.intelligenceDb?.connected),
     `connected=${health.json?.intelligenceDb?.connected}, bulletins=${health.json?.intelligenceDb?.bulletinsStored}, snapshots=${health.json?.intelligenceDb?.snapshotsStored}`
   );
+  check(
+    "Automated technical failure monitor active in /health",
+    Boolean(health.json?.monitoring) &&
+      ["OK", "DEGRADED", "CRITICAL"].includes(health.json?.monitoring?.status) &&
+      health.json?.monitoring?.status !== "CRITICAL",
+    `status=${health.json?.monitoring?.status}, activeIncidents=${health.json?.monitoring?.activeIncidentsCount ?? "n/a"}, runtimeErrors=${health.json?.monitoring?.runtimeErrorsCount ?? "n/a"}`
+  );
 
   // 2. Render /api/targets truthfulness & separation
   const targets = await fetchJson(`${RENDER_BASE}/api/targets`);
@@ -173,6 +180,9 @@ async function main() {
 
   const botDiagUnauth = await fetchJson(`${RENDER_BASE}/api/bot/diagnostic-lifecycle`);
   check("Admin diagnostic endpoint rejects unauthenticated requests (HTTP 401)", botDiagUnauth.status === 401, `HTTP ${botDiagUnauth.status}`);
+
+  const monitoringUnauth = await fetchJson(`${RENDER_BASE}/api/monitoring/incidents`);
+  check("Monitoring incidents endpoint rejects unauthenticated requests (HTTP 401)", monitoringUnauth.status === 401, `HTTP ${monitoringUnauth.status}`);
 
   const ingestUnauthRes = await fetchWithRetry(`${RENDER_BASE}/api/ingest/osint`, {
     method: "POST",

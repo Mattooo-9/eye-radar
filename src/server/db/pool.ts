@@ -1,6 +1,8 @@
 // src/server/db/pool.ts
 import pg from "pg";
+import { createLogger } from "../observability/logger.js";
 
+const log = createLogger("db-pool");
 const { Pool } = pg;
 
 let pool: pg.Pool | null = null;
@@ -30,14 +32,14 @@ export function getPool(): pg.Pool | null {
     });
 
     pool.on("error", (err) => {
-      console.warn("⚠️ Postgres Pool error:", err.message);
+      log.warn({ error: err.message }, "Postgres Pool error");
       isConnected = false;
       lastError = err.message;
     });
 
     return pool;
   } catch (err: any) {
-    console.warn("⚠️ Could not create Postgres Pool:", err?.message || err);
+    log.warn({ error: err?.message || String(err) }, "Could not create Postgres Pool");
     lastError = err?.message || String(err);
     return null;
   }
