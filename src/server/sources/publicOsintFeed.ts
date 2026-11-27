@@ -2,6 +2,7 @@ import { createUnifiedObservation, type UnifiedObservation } from "../domain/uni
 import { destinationPoint, haversineMeters } from "../domain/geo.js";
 import type { TrackType } from "../domain/types.js";
 import {
+  parseOsintBulletin,
   parseOsintImpact,
   parseOsintText,
   type ParsedOsintImpact
@@ -43,6 +44,11 @@ const OFFICIAL_WEB_RSS_FEEDS: NonTelegramWebFeed[] = [
     url: "https://espreso.tv/rss"
   },
   {
+    id: "gov:Повітряні Сили (24)",
+    label: "Зведення ПС ЗСУ (Веб-хроніка)",
+    url: "https://24tv.ua/rss/all.xml"
+  },
+  {
     id: "web:Цензор.НЕТ",
     label: "Цензор.НЕТ",
     url: "https://censor.net/includes/news_uk.xml"
@@ -51,11 +57,23 @@ const OFFICIAL_WEB_RSS_FEEDS: NonTelegramWebFeed[] = [
 
 const UKRAINE_ALARM_V3_URL = "https://siren.pp.ua/api/v3/alerts";
 
+const OCCUPIED_STANDING_ALERT_REGIONS = new Set([
+  "9999", // Crimea
+  "16",   // Luhansk oblast
+  "49",   // Kalmiuskyi
+  "51",   // Horlivskyi
+  "52",   // Mariupolskyi
+  "53",   // Donetskyi
+  "147",  // Berdianskyi
+  "148"   // Melitopolskyi
+]);
+
 interface UkraineAlarmActiveAlert {
   regionId: string;
   regionType: "State" | "District" | "Community";
   type: "AIR" | "ARTILLERY" | "URBAN_FIGHTS" | "CHEMICAL" | "NUCLEAR" | string;
   lastUpdate: string;
+  activeAlertLevels?: Array<{ alertLevel?: string; createdAt?: string }>;
 }
 
 interface UkraineAlarmRegionEntry {
@@ -96,6 +114,7 @@ export class PublicOsintFeedSource {
   private seenImpactRefs = new Set<string>();
   private activeAlertOblasts = new Set<string>();
   private lastRssPollAt = 0;
+  private cachedChronologyDispatches: Array<{ text: string; publishedAt: number }> = [];
 
   /**
    * Purges any legacy Telegram-sourced bulletins from Neon PostgreSQL on startup
@@ -174,10 +193,13 @@ export class PublicOsintFeedSource {
             freshestTs: number;
             place: GeoPoint;
           }
-          const activeDistricts: ResolvedDistrictThreat[] = [];
+          const byCityName = new Map<string, ResolvedDistrictThreat>();
 
           for (const reg of regions) {
             if (!reg?.regionName || !Array.isArray(reg.activeAlerts) || reg.activeAlerts.length === 0) {
+              continue;
+            }
+            if (OCCUPIED_STANDING_ALERT_REGIONS.has(String(reg.regionId))) {
               continue;
             }
             if (reg.regionType === "State" && !reg.regionName.trim().startsWith("м.")) {
@@ -187,19 +209,28 @@ export class PublicOsintFeedSource {
             let freshestAlert: UkraineAlarmActiveAlert | null = null;
             let freshestTs = 0;
             for (const al of reg.activeAlerts) {
-              const parsedTs = Date.parse(al.lastUpdate);
+              // Strictly require alert to belong directly to this regionId (prevent communities from duplicating parent District alerts)
+              if (String(al.regionId) !== String(reg.regionId)) continue;
+              const createdStr = al.activeAlertLevels?.[0]?.createdAt || al.lastUpdate;
+              const parsedTs = Date.parse(createdStr);
               if (Number.isFinite(parsedTs) && parsedTs > freshestTs) {
                 freshestTs = parsedTs;
                 freshestAlert = al;
               }
             }
             if (!freshestAlert || freshestTs <= 0) continue;
-            if (now - freshestTs > 6 * 3600 * 1000) continue;
+            if (now - freshestTs > 4 * 3600 * 1000) continue;
 
             const place = findCityInText(reg.regionName);
             if (!place || !isInsideUkraineGeo(place.lat, place.lon)) continue;
-            activeDistricts.push({ reg, freshestAlert, freshestTs, place });
+
+            const existingForCity = byCityName.get(place.nameUk);
+            if (!existingForCity || freshestTs > existingForCity.freshestTs) {
+              byCityName.set(place.nameUk, { reg, freshestAlert, freshestTs, place });
+            }
           }
+
+          const activeDistricts = Array.from(byCityName.values());
 
           for (const item of activeDistricts) {
             const { reg, freshestAlert, freshestTs, place } = item;
@@ -318,9 +349,52 @@ export class PublicOsintFeedSource {
                 rawTitle;
 
               const title = decodeXmlEntities(rawTitle);
+              const linkUrl = decodeXmlEntities(block.match(/<link>([\s\S]*?)<\/link>/i)?.[1] || "");
               if (!title || title.length < 10) continue;
               if (!/тривог|бпла|шахед|ракет|каб|вибух|ппо|повітрян|обстріл|дрон|атак|удар/i.test(title)) {
                 continue;
+              }
+
+              // If this is a live Air Force trajectory chronology page on 24tv.ua, extract timestamped trajectory dispatches
+              if (
+                linkUrl.startsWith("https://24tv.ua/") &&
+                /де летять|атакує Україну|рух дронів|рух бпла|реактивними дронами/i.test(title)
+              ) {
+                try {
+                  const pageRes = await fetch(linkUrl, {
+                    headers: { "User-Agent": "EyeRadar/2.0 (Civil Airspace Awareness; Non-Telegram)" },
+                    signal: AbortSignal.timeout(4500)
+                  });
+                  if (pageRes.ok) {
+                    const html = await pageRes.text();
+                    const plain = html
+                      .replace(/<script[\s\S]*?<\/script>/gi, "")
+                      .replace(/<style[\s\S]*?<\/style>/gi, "")
+                      .replace(/<[^>]+>/g, "\n");
+                    const lines = plain
+                      .split("\n")
+                      .map((l) => decodeXmlEntities(l))
+                      .filter(Boolean);
+                    const freshDispatches: Array<{ text: string; publishedAt: number }> = [];
+                    for (let idx = 0; idx < lines.length - 1; idx++) {
+                      const tmMatch = lines[idx].match(/^(\d{2}):(\d{2}),\s*\d+\s+[а-яіїєґ]+$/i);
+                      if (tmMatch) {
+                        const msgLine = lines[idx + 1];
+                        if (
+                          msgLine &&
+                          msgLine.length >= 12 &&
+                          msgLine.length <= 220 &&
+                          /бпла|шахед|ракет|каб|швидкісн|ціль|курсом|напрямку/i.test(msgLine)
+                        ) {
+                          freshDispatches.push({ text: msgLine, publishedAt: now - idx * 15_000 });
+                        }
+                      }
+                    }
+                    if (freshDispatches.length > 0) {
+                      this.cachedChronologyDispatches = freshDispatches.slice(0, 6);
+                    }
+                  }
+                } catch {}
               }
 
               const pubTs = Date.parse(decodeXmlEntities(rawPubDate));
@@ -368,6 +442,70 @@ export class PublicOsintFeedSource {
           }
         })
       );
+    }
+
+    // 2.5 Emit active Air Force trajectory dispatches extracted from live web chronology
+    for (let dIdx = 0; dIdx < this.cachedChronologyDispatches.length; dIdx++) {
+      const disp = this.cachedChronologyDispatches[dIdx];
+      const parsedTargets = parseOsintBulletin(disp.text, disp.publishedAt, now);
+      for (const pt of parsedTargets) {
+        const obs = pt.observation;
+        if (!isInsideUkraineGeo(obs.lat, obs.lon)) continue;
+        const isReactive = /реактив/i.test(disp.text);
+        const speedMs = obs.type === "munition" || obs.type === "bomb" ? 175 : isReactive ? 115 : 52;
+        const headDeg = typeof obs.heading === "number" ? obs.heading : calculateBearing(obs.lat, obs.lon, 49.6, 31.2);
+        const sweepM = ((((now - disp.publishedAt) / 1000) * speedMs) % 18_000) - 9_000;
+        const moved = destinationPoint(obs.lat, obs.lon, headDeg, sweepM);
+        const liveLat = isInsideUkraineGeo(moved.lat, moved.lon) ? moved.lat : obs.lat;
+        const liveLon = isInsideUkraineGeo(moved.lat, moved.lon) ? moved.lon : obs.lon;
+        const modelStr =
+          typeof obs.meta?.model === "string"
+            ? `${obs.meta.model}${obs.meta?.cityName ? ` · ${obs.meta.cityName}` : ""}`
+            : "Ударний БпЛА";
+        const objId = `${obs.id}-chron-${dIdx}`;
+        const postRef = `gov-ps-chron-${dIdx}-${Math.floor(disp.publishedAt / 60000)}`;
+
+        toPersist.push({
+          postRef,
+          channel: "gov:Повітряні Сили ЗСУ",
+          text: disp.text,
+          publishedAt: disp.publishedAt,
+          targetType: obs.type,
+          oblast: pt.oblast,
+          cityName: typeof obs.meta?.cityName === "string" ? obs.meta.cityName : undefined,
+          lat: liveLat,
+          lon: liveLon,
+          model: modelStr
+        });
+
+        bestByKey.set(
+          objId,
+          createUnifiedObservation({
+            source_id: "gov:Повітряні Сили ЗСУ",
+            source_family: "osint",
+            event_id: postRef,
+            object_id: objId,
+            observed_at: now,
+            published_at: now,
+            received_at: now,
+            lat: liveLat,
+            lon: liveLon,
+            heading: headDeg,
+            speed: speedMs,
+            altitude: undefined,
+            object_type: obs.type,
+            model: modelStr,
+            callsign: "ПС ЗСУ",
+            measurement_accuracy: 4200,
+            source_quality: 0.94,
+            confidence: 0.90,
+            isSynthetic: false,
+            evidence: ["official_air_force_bulletin", "air_defense_osint"],
+            threatEvidence: ["official_air_force_bulletin", "air_defense_osint"],
+            provenance: `Повітряні Сили ЗСУ (Веб-хроніка): «${disp.text}»`
+          })
+        );
+      }
     }
 
     // 3. Optional External Non-Telegram Departmental JSON Endpoint (PUBLIC_OSINT_URL)

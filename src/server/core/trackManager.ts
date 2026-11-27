@@ -190,6 +190,7 @@ export class TrackManager {
         trackAgeMs > 90_000 ||
         t.isDegraded ||
         hasTelegramProvenance ||
+        t.id.startsWith("osint-dsns-") ||
         t.model === "Civilian Aircraft" ||
         (typeof t.model === "string" && t.model.includes("аномальний стрибок РЕБ")) ||
         (!isInsideUkraineGeo(t.lat, t.lon) && (isRestoredOsint || getDistanceToUkraineBorderKm(t.lat, t.lon) > 200))
