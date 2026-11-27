@@ -219,6 +219,20 @@ export interface ClientSession {
   anomalyFlags: string[];
 }
 
+export type AlertFeedStatus = "fresh" | "stale" | "unavailable";
+
+export interface AlertFeedMetadata {
+  status: AlertFeedStatus;
+  source: string;
+  sourceAvailable: boolean;
+  stale: boolean;
+  lastConfirmedAt: number | null;
+  updatedAt: number;
+  lastAttemptAt: number | null;
+  consecutiveFailures: number;
+  lastError: string | null;
+}
+
 export interface AlertRegion {
   id: string;
   name: string;

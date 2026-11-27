@@ -59,6 +59,8 @@ interface TacticalMenuModalProps {
   onOpenBriefing: () => void;
   onOpenReport: () => void;
   activeAlerts: string[];
+  alertStatus?: "fresh" | "stale" | "unavailable";
+  alertsUpdatedAt?: number | null;
 }
 
 export const TacticalMenuModal: React.FC<TacticalMenuModalProps> = ({
@@ -108,7 +110,9 @@ export const TacticalMenuModal: React.FC<TacticalMenuModalProps> = ({
   onFlyToCoord,
   onOpenBriefing,
   onOpenReport,
-  activeAlerts
+  activeAlerts,
+  alertStatus = "unavailable",
+  alertsUpdatedAt = null
 }) => {
   const [activeTab, setActiveTab] = useState<"targets" | "vision" | "layers" | "cities" | "impacts" | "intel">("targets");
   const [liveHealth, setLiveHealth] = useState<{
@@ -690,7 +694,31 @@ export const TacticalMenuModal: React.FC<TacticalMenuModalProps> = ({
                 </div>
                 <div className="sensor-card">
                   <div className="sensor-name">alerts.in.ua (Офіційні сирени)</div>
-                  <div className="sensor-status online">🟢 ОНЛАЙН ({activeAlerts.length} обл.)</div>
+                  <div
+                    className={`sensor-status ${
+                      alertStatus === "fresh" ? "online" : alertStatus === "stale" ? "degraded" : "offline"
+                    }`}
+                  >
+                    {alertStatus === "fresh"
+                      ? `🟢 ОНЛАЙН (${activeAlerts.length} обл.${
+                          alertsUpdatedAt
+                            ? ` · ${new Date(alertsUpdatedAt).toLocaleTimeString("uk-UA", {
+                                hour: "2-digit",
+                                minute: "2-digit"
+                              })}`
+                            : ""
+                        })`
+                      : alertStatus === "stale"
+                      ? `🟠 НЕ ОНОВЛЕНО (${activeAlerts.length} обл.${
+                          alertsUpdatedAt
+                            ? ` від ${new Date(alertsUpdatedAt).toLocaleTimeString("uk-UA", {
+                                hour: "2-digit",
+                                minute: "2-digit"
+                              })}`
+                            : ""
+                        })`
+                      : "🔴 НЕМАЄ ЗВ'ЯЗКУ (НЕВІДОМО)"}
+                  </div>
                 </div>
                 <div className="sensor-card">
                   <div className="sensor-name">Neon PostgreSQL (БД та історія)</div>

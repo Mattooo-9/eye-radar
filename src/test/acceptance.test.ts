@@ -108,25 +108,59 @@ describe("EYE RADAR — Mandatory Automated Acceptance Criteria (ACCEPTANCE.md)"
       expect(formatTruthfulCoords(47.1234, 22.4567, "sensor_observation")).toBe("47.1234°N, 22.4567°E");
     });
 
-    it("expires stale official air-raid alerts after 3 minutes of upstream outage (no stale alarms shown as active)", () => {
+    it("treats alert source outage as unknown/stale state (NOT all-clear) and preserves last confirmed state + timestamp", async () => {
       const src = new AlertsInUaSource();
       const t0 = 1_795_520_000_000;
-      (src as any).activeAlerts.set("київська область", {
-        id: "київська область",
-        name: "Київська область",
-        active: true,
-        type: "oblast",
-        updatedAt: t0
-      });
-      (src as any).lastSuccessfulFetch = t0;
+      const origFetch = globalThis.fetch;
 
-      // Fresh within 3 min -> active & not stale
-      expect(src.isStale(t0 + 60_000)).toBe(false);
-      expect(src.getActiveAlertOblastNames(t0 + 60_000)).toContain("Київська область");
+      try {
+        // 1. Initial boot while upstream is unreachable -> unavailable/unknown (NOT fresh all-clear)
+        globalThis.fetch = (async () => {
+          throw new Error("network down");
+        }) as typeof fetch;
+        await src.fetchAlerts(t0);
+        const initialMeta = src.getMetadata(t0);
+        expect(initialMeta.status).toBe("unavailable");
+        expect(initialMeta.stale).toBe(true);
+        expect(initialMeta.sourceAvailable).toBe(false);
+        expect(initialMeta.lastConfirmedAt).toBeNull();
 
-      // Past 3 min without fresh official update -> marked stale and active list cleared
-      expect(src.isStale(t0 + 200_000)).toBe(true);
-      expect(src.getActiveAlertOblastNames(t0 + 200_000)).toHaveLength(0);
+        // 2. Official source comes online with an active alert
+        const t1 = t0 + 10_000;
+        globalThis.fetch = (async () =>
+          new Response(
+            JSON.stringify({
+              states: {
+                "Київська область": { alertnow: true },
+                "Львівська область": { alertnow: false }
+              }
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )) as typeof fetch;
+        const confirmed = await src.fetchAlerts(t1);
+        expect(confirmed.map((a) => a.name)).toEqual(["Київська область"]);
+        const freshMeta = src.getMetadata(t1 + 60_000);
+        expect(freshMeta.status).toBe("fresh");
+        expect(freshMeta.stale).toBe(false);
+        expect(freshMeta.sourceAvailable).toBe(true);
+        expect(freshMeta.lastConfirmedAt).toBe(t1);
+
+        // 3. Upstream goes down for >3 minutes -> status="stale" (unknown current state, NOT all-clear!)
+        // Crucially, last confirmed oblasts and lastConfirmedAt timestamp MUST remain preserved!
+        const t2 = t1 + 210_000;
+        globalThis.fetch = (async () => new Response("Service Unavailable", { status: 503 })) as typeof fetch;
+        const duringOutage = await src.fetchAlerts(t2);
+        expect(duringOutage.map((a) => a.name)).toEqual(["Київська область"]);
+        const staleMeta = src.getMetadata(t2);
+        expect(staleMeta.status).toBe("stale");
+        expect(staleMeta.stale).toBe(true);
+        expect(staleMeta.sourceAvailable).toBe(false);
+        expect(staleMeta.lastConfirmedAt).toBe(t1);
+        expect(staleMeta.consecutiveFailures).toBeGreaterThanOrEqual(1);
+        expect(src.getActiveAlertOblastNames()).toEqual(["Київська область"]);
+      } finally {
+        globalThis.fetch = origFetch;
+      }
     });
 
     it("strictly separates sensor_observation from osint_message and rejects stale observations (>25s)", () => {

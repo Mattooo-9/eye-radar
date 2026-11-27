@@ -1,41 +1,63 @@
-import type { AlertRegion } from "../domain/types.js";
+import type { AlertFeedMetadata, AlertFeedStatus, AlertRegion } from "../domain/types.js";
 
-const ALERT_STALE_TTL_MS = 3 * 60 * 1000; // 3 minutes without fresh official update = alerts marked stale & cleared
+/**
+ * After 3 minutes without a fresh confirmed response from an official alert source,
+ * the feed transitions to status="stale" (unknown current state — NEVER an all-clear!).
+ * The last confirmed alert set and its timestamp are strictly preserved until a new
+ * official response supersedes them.
+ */
+export const ALERT_STALE_TTL_MS = 3 * 60 * 1000;
 
 export class AlertsInUaSource {
-  private activeAlerts = new Map<string, AlertRegion>();
-  private lastAttempt = 0;
-  private lastSuccessfulFetch = 0;
+  private lastConfirmedAlerts = new Map<string, AlertRegion>();
+  private lastAttemptAt = 0;
+  private lastConfirmedAt = 0;
   private lastSource = "alerts.in.ua / ubilling";
+  private consecutiveFailures = 0;
+  private lastError: string | null = null;
   private readonly apiKey?: string;
 
   constructor(apiKey?: string) {
     this.apiKey = apiKey;
   }
 
-  isStale(now = Date.now()): boolean {
-    if (this.lastSuccessfulFetch === 0) return false;
-    return now - this.lastSuccessfulFetch > ALERT_STALE_TTL_MS;
+  getStatus(now = Date.now()): AlertFeedStatus {
+    if (this.lastConfirmedAt === 0) return "unavailable";
+    if (now - this.lastConfirmedAt > ALERT_STALE_TTL_MS) return "stale";
+    return "fresh";
   }
 
-  getMetadata(now = Date.now()): { source: string; updatedAt: number; stale: boolean } {
+  isStale(now = Date.now()): boolean {
+    return this.getStatus(now) !== "fresh";
+  }
+
+  getMetadata(now = Date.now()): AlertFeedMetadata {
+    const status = this.getStatus(now);
     return {
+      status,
       source: this.lastSource,
-      updatedAt: this.lastSuccessfulFetch,
-      stale: this.isStale(now)
+      sourceAvailable: this.lastConfirmedAt > 0 && this.consecutiveFailures === 0,
+      stale: status !== "fresh",
+      lastConfirmedAt: this.lastConfirmedAt > 0 ? this.lastConfirmedAt : null,
+      updatedAt: this.lastConfirmedAt,
+      lastAttemptAt: this.lastAttemptAt > 0 ? this.lastAttemptAt : null,
+      consecutiveFailures: this.consecutiveFailures,
+      lastError: this.lastError
     };
   }
 
   async fetchAlerts(now = Date.now()): Promise<AlertRegion[]> {
-    // Cache successful fetch for 15 seconds to respect upstream rate limits
-    if (this.lastSuccessfulFetch > 0 && now - this.lastSuccessfulFetch < 15_000) {
-      return [...this.activeAlerts.values()];
+    // Cache confirmed response for 15 seconds to respect upstream rate limits
+    if (this.lastConfirmedAt > 0 && now - this.lastConfirmedAt < 15_000) {
+      return [...this.lastConfirmedAlerts.values()];
     }
-    // Brief retry backoff on transient errors (5s) without masking staleness
-    if (this.lastAttempt > 0 && now - this.lastAttempt < 5_000 && this.lastSuccessfulFetch < this.lastAttempt) {
-      return this.pruneIfStale(now);
+    // Brief retry backoff on transient errors (5s) without clearing last confirmed state
+    if (this.lastAttemptAt > 0 && now - this.lastAttemptAt < 5_000 && this.lastConfirmedAt < this.lastAttemptAt) {
+      return [...this.lastConfirmedAlerts.values()];
     }
-    this.lastAttempt = now;
+    this.lastAttemptAt = now;
+
+    const errors: string[] = [];
 
     // 1. Try official API key if configured
     if (this.apiKey) {
@@ -49,11 +71,11 @@ export class AlertsInUaSource {
           const data = (await response.json()) as {
             alerts?: Array<{ location_title: string; location_type: string; finished_at: string | null }>;
           };
-          this.activeAlerts.clear();
+          const next = new Map<string, AlertRegion>();
           for (const item of data.alerts ?? []) {
             if (!item.finished_at) {
               const id = item.location_title.toLowerCase();
-              this.activeAlerts.set(id, {
+              next.set(id, {
                 id,
                 name: item.location_title,
                 active: true,
@@ -62,12 +84,16 @@ export class AlertsInUaSource {
               });
             }
           }
-          this.lastSuccessfulFetch = now;
+          this.lastConfirmedAlerts = next;
+          this.lastConfirmedAt = now;
           this.lastSource = "api.alerts.in.ua";
-          return [...this.activeAlerts.values()];
+          this.consecutiveFailures = 0;
+          this.lastError = null;
+          return [...this.lastConfirmedAlerts.values()];
         }
-      } catch {
-        // Fall through to public official mirror
+        errors.push(`alerts.in.ua HTTP ${response.status}`);
+      } catch (err) {
+        errors.push(`alerts.in.ua ${err instanceof Error ? err.message : "network error"}`);
       }
     }
 
@@ -79,12 +105,12 @@ export class AlertsInUaSource {
       });
       if (response.ok) {
         const data = (await response.json()) as { states?: Record<string, { alertnow: boolean; changed?: string }> };
-        if (data.states) {
-          this.activeAlerts.clear();
+        if (data.states && typeof data.states === "object") {
+          const next = new Map<string, AlertRegion>();
           for (const [regionName, info] of Object.entries(data.states)) {
             if (info.alertnow) {
               const id = regionName.toLowerCase();
-              this.activeAlerts.set(id, {
+              next.set(id, {
                 id,
                 name: regionName,
                 active: true,
@@ -93,32 +119,34 @@ export class AlertsInUaSource {
               });
             }
           }
-          this.lastSuccessfulFetch = now;
+          this.lastConfirmedAlerts = next;
+          this.lastConfirmedAt = now;
           this.lastSource = "ubilling.net.ua/aerialalerts";
-          return [...this.activeAlerts.values()];
+          this.consecutiveFailures = 0;
+          this.lastError = null;
+          return [...this.lastConfirmedAlerts.values()];
         }
+        errors.push("ubilling invalid payload");
+      } else {
+        errors.push(`ubilling HTTP ${response.status}`);
       }
-    } catch {
-      // Upstream unavailable: retain briefly, expire strictly past ALERT_STALE_TTL_MS
+    } catch (err) {
+      errors.push(`ubilling ${err instanceof Error ? err.message : "network error"}`);
     }
 
-    return this.pruneIfStale(now);
+    // Upstream failure: NEVER wipe lastConfirmedAlerts (loss of connection != all-clear!).
+    // Preserve last confirmed state & timestamp; getMetadata(now) explicitly surfaces status="stale"|"unavailable".
+    this.consecutiveFailures += 1;
+    this.lastError = errors.join("; ") || "Official alert source unreachable";
+    return [...this.lastConfirmedAlerts.values()];
   }
 
-  private pruneIfStale(now: number): AlertRegion[] {
-    if (this.lastSuccessfulFetch > 0 && now - this.lastSuccessfulFetch > ALERT_STALE_TTL_MS) {
-      this.activeAlerts.clear();
-      return [];
-    }
-    return [...this.activeAlerts.values()];
+  getActiveAlerts(): AlertRegion[] {
+    return [...this.lastConfirmedAlerts.values()];
   }
 
-  getActiveAlerts(now = Date.now()): AlertRegion[] {
-    return this.pruneIfStale(now);
-  }
-
-  getActiveAlertOblastNames(now = Date.now()): string[] {
-    return this.pruneIfStale(now)
+  getActiveAlertOblastNames(): string[] {
+    return [...this.lastConfirmedAlerts.values()]
       .filter((a) => a.active)
       .map((a) => a.name);
   }

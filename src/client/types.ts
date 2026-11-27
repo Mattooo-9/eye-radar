@@ -9,6 +9,16 @@ export interface FilterState {
   sound: boolean;
 }
 
+export type AlertFeedStatus = "fresh" | "stale" | "unavailable";
+
+export interface ClientAlertState {
+  activeAlerts: string[];
+  status: AlertFeedStatus;
+  source: string;
+  sourceAvailable: boolean;
+  lastConfirmedAt: number | null;
+}
+
 export interface TacticalFilters {
   autoTracking: boolean;
   minSpeedKmh: number;

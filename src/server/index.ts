@@ -721,12 +721,15 @@ const server = createServer(async (req, res) => {
     if (url.pathname === "/api/targets") {
       const osintMessages = list.filter((t) => t.dataCategory === "osint_message" || t.evidenceFamilies?.includes("osint") || t.evidenceFamilies?.includes("manual")).length;
       const sensorObservations = list.length - osintMessages;
+      const alertMeta = alertsSource.getMetadata();
       json(res, 200, {
         count: list.length,
         categories: {
           sensorObservations,
           osintMessages,
-          officialAlertsActive: trackManager.getActiveAlertOblasts().length
+          officialAlertsActive: trackManager.getActiveAlertOblasts().length,
+          officialAlertsStatus: alertMeta.status,
+          officialAlertsUpdatedAt: alertMeta.lastConfirmedAt
         },
         tracks: list
       });
@@ -749,9 +752,15 @@ const server = createServer(async (req, res) => {
     const meta = alertsSource.getMetadata();
     json(res, 200, {
       dataCategory: "official_alert",
+      status: meta.status,
       source: meta.source,
-      updatedAt: meta.updatedAt,
+      sourceAvailable: meta.sourceAvailable,
       stale: meta.stale,
+      lastConfirmedAt: meta.lastConfirmedAt,
+      updatedAt: meta.updatedAt,
+      lastAttemptAt: meta.lastAttemptAt,
+      consecutiveFailures: meta.consecutiveFailures,
+      lastError: meta.lastError,
       alerts,
       count: alerts.length
     });
@@ -1328,10 +1337,15 @@ setInterval(async () => {
     try {
       const activeAlerts = await alertsSource.fetchAlerts();
       const latency = Date.now() - t0;
+      const alertMeta = alertsSource.getMetadata();
       const oblastNames = alertsSource.getActiveAlertOblastNames();
       trackManager.setActiveAlertOblasts(oblastNames);
       publicOsintSource.setActiveAlertOblasts(oblastNames);
-      healthTracker.recordSuccess("alerts.in.ua", latency, activeAlerts.length);
+      if (alertMeta.sourceAvailable) {
+        healthTracker.recordSuccess("alerts.in.ua", latency, activeAlerts.length);
+      } else {
+        healthTracker.recordError("alerts.in.ua", alertMeta.lastError || "Official alert source unreachable");
+      }
     } catch (err) {
       healthTracker.recordError("alerts.in.ua", err instanceof Error ? err : String(err));
     }

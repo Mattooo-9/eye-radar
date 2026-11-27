@@ -5174,6 +5174,115 @@ body {
   color: #fbbf24;
 }
 
+/* Official Alert Stale / Unknown Source Semantics (NEVER misrepresented as all-clear) */
+.top-bar-alert-pill.alert-stale {
+  background: rgba(217, 119, 6, 0.24);
+  border-color: rgba(245, 158, 11, 0.72);
+  color: #fde68a;
+}
+
+.top-bar-alert-pill.alert-stale:hover {
+  background: rgba(217, 119, 6, 0.38);
+  border-color: #fbbf24;
+}
+
+button.top-bar-calm-pill {
+  cursor: pointer;
+}
+
+.alerts-modal-card.alerts-modal-stale {
+  border-color: rgba(245, 158, 11, 0.55);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.8), 0 0 24px rgba(245, 158, 11, 0.18);
+}
+
+.alerts-modal-card.alerts-modal-stale .alerts-modal-header {
+  background: rgba(217, 119, 6, 0.16);
+  border-bottom-color: rgba(245, 158, 11, 0.35);
+}
+
+.alerts-modal-card.alerts-modal-stale .alerts-modal-title {
+  color: #fde68a;
+}
+
+.alerts-modal-card.alerts-modal-calm {
+  border-color: rgba(56, 189, 248, 0.35);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.8);
+}
+
+.alerts-modal-card.alerts-modal-calm .alerts-modal-header {
+  background: rgba(15, 23, 42, 0.85);
+  border-bottom-color: rgba(56, 189, 248, 0.25);
+}
+
+.alerts-modal-card.alerts-modal-calm .alerts-modal-title {
+  color: #e2e8f0;
+}
+
+.alerts-stale-banner {
+  margin: 12px 16px 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(217, 119, 6, 0.16);
+  border: 1px solid rgba(245, 158, 11, 0.5);
+  color: #fef3c7;
+  font-size: 11.5px;
+  line-height: 1.42;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.alerts-stale-banner strong {
+  color: #fcd34d;
+  font-size: 12px;
+}
+
+.alert-region-chip.stale-chip {
+  background: rgba(217, 119, 6, 0.18);
+  border-color: rgba(245, 158, 11, 0.55);
+  color: #fef3c7;
+}
+
+.alert-region-chip.stale-chip .alert-beacon-dot {
+  background: #f59e0b;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.7);
+}
+
+.alerts-modal-empty {
+  padding: 16px;
+  font-size: 12px;
+  line-height: 1.48;
+  color: #cbd5e1;
+}
+
+.alerts-modal-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 16px;
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(15, 23, 42, 0.6);
+  font-size: 10.5px;
+  color: #94a3b8;
+}
+
+.alert-status-pill.alert-pill-unknown {
+  background: rgba(217, 119, 6, 0.22);
+  border: 1px solid rgba(245, 158, 11, 0.6);
+  color: #fde68a;
+}
+
+.location-alert-box.box-alert-unknown {
+  background: rgba(217, 119, 6, 0.14);
+  border: 1px solid rgba(245, 158, 11, 0.45);
+}
+
+.sensor-status.degraded {
+  color: #fbbf24;
+}
+
 @media (max-width: 768px) {
   .live-threat-dock {
     bottom: calc(108px + env(safe-area-inset-bottom, 0px));

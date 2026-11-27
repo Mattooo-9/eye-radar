@@ -9,7 +9,7 @@ import { findNearestLandmark } from "../lib/landmarks";
 import { getLiveWeatherRadarTileUrl } from "../lib/weatherRadar";
 import { calculateSatellitePositions, type SatelliteTrack } from "../lib/satelliteRecon";
 import { getFrontlineGeoJSON } from "../lib/ukraineBorders";
-import type { FilterState } from "../types";
+import type { AlertFeedStatus, FilterState } from "../types";
 import { SpatialIndex } from "../lib/spatialIndex.js";
 import { getTierConfig } from "../lib/hardwareBenchmark.js";
 import { trackStore, isCivilAviation, type ClientUncertaintyEvent } from "../lib/trackStore.js";
@@ -49,6 +49,7 @@ interface MapViewProps {
   timelineOffsetSec?: number;
   performanceTier?: "LOW" | "NORMAL" | "HIGH";
   activeAlerts?: string[];
+  alertStatus?: AlertFeedStatus;
 }
 
 const SATELLITE_STYLE = {
@@ -1445,7 +1446,8 @@ export function mapAlertToIso(alertName: string): string | null {
 export const syncUkraineAlerts = (
   map: maplibregl.Map,
   activeAlerts: string[] = [],
-  showAlerts = true
+  showAlerts = true,
+  isStale = false
 ) => {
   if (!map || !map.isStyleLoaded()) return;
 
@@ -1476,7 +1478,7 @@ export const syncUkraineAlerts = (
       );
     }
 
-    // 2. Resolve active alert oblast ISO codes
+    // 2. Resolve active alert oblast ISO codes (preserved last-confirmed alerts remain visible when stale!)
     const activeIsos =
       showAlerts && activeAlerts && activeAlerts.length > 0
         ? Array.from(
@@ -1489,7 +1491,9 @@ export const syncUkraineAlerts = (
         ? ["in", ["get", "shapeISO"], ["literal", activeIsos]]
         : ["==", ["get", "shapeISO"], "___NONE___"];
 
-    // 3. Tactical red ambient polygon fill for alarmed oblasts
+    const alertColor = isStale ? "#f59e0b" : "#ef4444";
+
+    // 3. Ambient polygon fill for alarmed oblasts (amber when stale/last-confirmed, red when live fresh)
     if (!map.getLayer("ukraine-alerts-fill")) {
       map.addLayer(
         {
@@ -1497,8 +1501,8 @@ export const syncUkraineAlerts = (
           type: "fill",
           source: "ukraine-oblasts",
           paint: {
-            "fill-color": "#ef4444",
-            "fill-opacity": 0.18
+            "fill-color": alertColor,
+            "fill-opacity": isStale ? 0.15 : 0.18
           },
           filter: alertFilter
         },
@@ -1506,10 +1510,12 @@ export const syncUkraineAlerts = (
       );
     } else {
       map.setFilter("ukraine-alerts-fill", alertFilter);
+      map.setPaintProperty("ukraine-alerts-fill", "fill-color", alertColor);
+      map.setPaintProperty("ukraine-alerts-fill", "fill-opacity", isStale ? 0.15 : 0.18);
       map.setLayoutProperty("ukraine-alerts-fill", "visibility", showAlerts ? "visible" : "none");
     }
 
-    // 4. Glowing red perimeter outline for alarmed oblasts
+    // 4. Glowing perimeter outline for alarmed oblasts
     if (!map.getLayer("ukraine-alerts-glow")) {
       map.addLayer(
         {
@@ -1517,10 +1523,10 @@ export const syncUkraineAlerts = (
           type: "line",
           source: "ukraine-oblasts",
           paint: {
-            "line-color": "#ef4444",
+            "line-color": alertColor,
             "line-width": ["interpolate", ["linear"], ["zoom"], 4, 4.0, 7, 6.0, 10, 8.0],
             "line-blur": ["interpolate", ["linear"], ["zoom"], 4, 2.5, 7, 4.0, 10, 6.0],
-            "line-opacity": 0.55
+            "line-opacity": isStale ? 0.45 : 0.55
           },
           filter: alertFilter
         },
@@ -1528,10 +1534,12 @@ export const syncUkraineAlerts = (
       );
     } else {
       map.setFilter("ukraine-alerts-glow", alertFilter);
+      map.setPaintProperty("ukraine-alerts-glow", "line-color", alertColor);
+      map.setPaintProperty("ukraine-alerts-glow", "line-opacity", isStale ? 0.45 : 0.55);
       map.setLayoutProperty("ukraine-alerts-glow", "visibility", showAlerts ? "visible" : "none");
     }
 
-    // 5. Crisp tactical red border for alarmed oblasts
+    // 5. Crisp border for alarmed oblasts
     if (!map.getLayer("ukraine-alerts-border")) {
       map.addLayer(
         {
@@ -1539,9 +1547,9 @@ export const syncUkraineAlerts = (
           type: "line",
           source: "ukraine-oblasts",
           paint: {
-            "line-color": "#ef4444",
+            "line-color": alertColor,
             "line-width": ["interpolate", ["linear"], ["zoom"], 4, 1.4, 7, 2.0, 10, 2.6],
-            "line-opacity": 0.85
+            "line-opacity": isStale ? 0.78 : 0.85
           },
           filter: alertFilter
         },
@@ -1549,6 +1557,8 @@ export const syncUkraineAlerts = (
       );
     } else {
       map.setFilter("ukraine-alerts-border", alertFilter);
+      map.setPaintProperty("ukraine-alerts-border", "line-color", alertColor);
+      map.setPaintProperty("ukraine-alerts-border", "line-opacity", isStale ? 0.78 : 0.85);
       map.setLayoutProperty("ukraine-alerts-border", "visibility", showAlerts ? "visible" : "none");
     }
   } catch {}
@@ -1831,7 +1841,8 @@ const drawAlertsLayer = (
   activeAlerts: string[],
   _now: number,
   width: number,
-  height: number
+  height: number,
+  isStale = false
 ) => {
   if (!activeAlerts || activeAlerts.length === 0) return;
   const zoom = map.getZoom();
@@ -1852,19 +1863,19 @@ const drawAlertsLayer = (
     }
 
     ctx.font = "bold 9px 'JetBrains Mono', monospace";
-    const text = "ТРИВОГА";
+    const text = isStale ? "ОСТАННЄ: ТРИВОГА" : "ТРИВОГА";
     const textWidth = ctx.measureText(text).width;
     const badgeW = textWidth + 14;
     const badgeH = 16;
     const rx = pt.x - badgeW / 2;
     const ry = pt.y - badgeH / 2;
 
-    ctx.fillStyle = "rgba(220, 38, 38, 0.85)";
+    ctx.fillStyle = isStale ? "rgba(217, 119, 6, 0.88)" : "rgba(220, 38, 38, 0.85)";
     ctx.beginPath();
     ctx.roundRect(rx, ry, badgeW, badgeH, 4);
     ctx.fill();
 
-    ctx.strokeStyle = "rgba(254, 202, 202, 0.6)";
+    ctx.strokeStyle = isStale ? "rgba(253, 230, 138, 0.7)" : "rgba(254, 202, 202, 0.6)";
     ctx.lineWidth = 1;
     ctx.stroke();
 
@@ -2059,7 +2070,8 @@ export const MapView = ({
   onSelectImpact,
   timelineOffsetSec = 0,
   performanceTier = "NORMAL",
-  activeAlerts = []
+  activeAlerts = [],
+  alertStatus = "fresh"
 }: MapViewProps) => {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -2072,6 +2084,9 @@ export const MapView = ({
 
   const activeAlertsRef = useRef(activeAlerts);
   activeAlertsRef.current = activeAlerts;
+
+  const alertStatusRef = useRef(alertStatus);
+  alertStatusRef.current = alertStatus;
 
   const spatialIndexRef = useRef<SpatialIndex<TrackPacket>>(new SpatialIndex<TrackPacket>(16));
 
@@ -2091,10 +2106,10 @@ export const MapView = ({
   useEffect(() => {
     const map = mapRef.current;
     if (map && map.isStyleLoaded()) {
-      syncUkraineAlerts(map, activeAlerts, showAlerts !== false);
+      syncUkraineAlerts(map, activeAlerts, showAlerts !== false, alertStatus !== "fresh");
     }
     renderRef.current?.();
-  }, [activeAlerts, showAlerts]);
+  }, [activeAlerts, showAlerts, alertStatus]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -2418,7 +2433,7 @@ export const MapView = ({
       applyImmediateSolarLighting(map);
       if (performanceTierRef.current !== "LOW") { syncWeatherLayer(map, showWeatherRef.current !== false); }
       syncUkraineBorders(map, showFrontlineRef.current !== false);
-      syncUkraineAlerts(map, activeAlertsRef.current, showAlertsRef.current !== false);
+      syncUkraineAlerts(map, activeAlertsRef.current, showAlertsRef.current !== false, alertStatusRef.current !== "fresh");
       const scaleControl = new maplibregl.ScaleControl({ maxWidth: 110, unit: "metric" });
       map.addControl(scaleControl, "bottom-right");
       triggerInstantRedraw();
@@ -2426,7 +2441,7 @@ export const MapView = ({
     map.on("styledata", () => {
       applyImmediateSolarLighting(map);
       syncUkraineBorders(map, showFrontlineRef.current !== false);
-      syncUkraineAlerts(map, activeAlertsRef.current, showAlertsRef.current !== false);
+      syncUkraineAlerts(map, activeAlertsRef.current, showAlertsRef.current !== false, alertStatusRef.current !== "fresh");
       triggerInstantRedraw();
     });
     map.on("resize", () => {
@@ -2478,7 +2493,7 @@ export const MapView = ({
       map.setStyle(targetStyle);
       map.once("styledata", () => {
         syncUkraineBorders(map, showFrontlineRef.current !== false);
-        syncUkraineAlerts(map, activeAlertsRef.current, showAlertsRef.current !== false);
+        syncUkraineAlerts(map, activeAlertsRef.current, showAlertsRef.current !== false, alertStatusRef.current !== "fresh");
         if (performanceTierRef.current !== "LOW") {
           syncWeatherLayer(map, showWeatherRef.current !== false);
         }
@@ -2707,7 +2722,7 @@ export const MapView = ({
 
         // 2.0 Draw Background Alerts Layer (sirens) under all tactical tracks
         if (showAlertsRef.current !== false) {
-          drawAlertsLayer(ctx, map, activeAlertsRef.current, now, width, height);
+          drawAlertsLayer(ctx, map, activeAlertsRef.current, now, width, height, alertStatusRef.current !== "fresh");
         }
 
         // 2.1 Draw Context Layer: NASA FIRMS / EO thermal hotspots

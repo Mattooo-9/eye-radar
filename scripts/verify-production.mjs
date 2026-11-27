@@ -135,13 +135,17 @@ async function main() {
     `HTTP ${vercelApp.status}, bundle=${scriptMatch?.[0] ?? "none"}`
   );
   check(
-    "Vercel /api/osint/feed & /api/alerts carry official metadata & freshness",
+    "Vercel /api/osint/feed & /api/alerts carry official status, timestamp & freshness",
     vercelFeed.status === 200 &&
       vercelAlerts.status === 200 &&
       vercelAlerts.json?.dataCategory === "official_alert" &&
+      vercelAlerts.json?.status === "fresh" &&
+      vercelAlerts.json?.sourceAvailable === true &&
+      typeof vercelAlerts.json?.lastConfirmedAt === "number" &&
+      vercelAlerts.json.lastConfirmedAt > 0 &&
       typeof vercelAlerts.json?.source === "string" &&
       vercelAlerts.json?.stale === false,
-    `feed=${vercelFeed.json?.count ?? 0}, alerts=${vercelAlerts.json?.count ?? 0}, src=${vercelAlerts.json?.source}, stale=${vercelAlerts.json?.stale}`
+    `feed=${vercelFeed.json?.count ?? 0}, alerts=${vercelAlerts.json?.count ?? 0}, status=${vercelAlerts.json?.status}, src=${vercelAlerts.json?.source}, lastConfirmedAt=${vercelAlerts.json?.lastConfirmedAt}`
   );
 
   const failed = results.filter((r) => !r.ok);

@@ -213,9 +213,10 @@ export class EyeRadarBotManager {
     });
     bot.hears("📊 AI-Зведення", handleBriefing);
     bot.hears("🔔 Тривоги", async (ctx) => {
-      await replyAndSchedule(ctx, "🔔 Актуальні зони повітряних тривог відображаються на карті в реальному часі.", {
+      await replyAndSchedule(ctx, formatAlertsReport(), {
+        parse_mode: "Markdown",
         reply_markup: {
-          inline_keyboard: [[getRadarButton("🛰️ Відкрити радар")]]
+          inline_keyboard: [[getRadarButton("🗺️ Відкрити радар")]]
         }
       });
     });
@@ -356,23 +357,55 @@ export class EyeRadarBotManager {
 
     const formatAlertsReport = (): string => {
       if (!this.alertsSource) {
-        return "🔔 *Статус тривог*: відкрийте карту для перегляду активних секторів.";
+        return "⚠️ *Стан офіційних тривог невідомий* — джерело не підключено. Перевірте офіційні канали ДСНС / обласної ОВА.";
       }
-      const meta = this.alertsSource.getMetadata();
-      if (meta.stale) {
-        return "⚠️ *Офіційне джерело тривог тимчасово недоступне.* Перевірте офіційні канали ДСНС / обласної ОВА.";
-      }
+      const now = Date.now();
+      const meta = this.alertsSource.getMetadata(now);
       const names = this.alertsSource.getActiveAlertOblastNames();
-      const updatedLabel = meta.updatedAt
-        ? `${Math.max(0, Math.round((Date.now() - meta.updatedAt) / 1000))} сек тому`
-        : "невідомо";
+
+      const formatTimeUk = (ts: number): string =>
+        new Date(ts).toLocaleTimeString("uk-UA", {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          timeZone: "Europe/Kyiv"
+        });
+
+      const formatAgeUk = (ts: number): string => {
+        const ageSec = Math.max(0, Math.round((now - ts) / 1000));
+        if (ageSec < 60) return `${ageSec} сек тому`;
+        return `${Math.round(ageSec / 60)} хв тому`;
+      };
+
+      if (meta.status === "unavailable") {
+        return (
+          "⚠️ *Стан офіційних тривог невідомий* (немає зв'язку з джерелом).\n" +
+          "Це *НЕ* відбій тривоги. Орієнтуйтесь на сирени та офіційні канали ДСНС / обласної ОВА."
+        );
+      }
+
+      const confirmedTime = meta.lastConfirmedAt ? `${formatTimeUk(meta.lastConfirmedAt)} (${formatAgeUk(meta.lastConfirmedAt)})` : "невідомо";
+
+      if (meta.status === "stale") {
+        const lastStateBlock = names.length > 0
+          ? `Останній підтверджений стан — активна тривога (${names.length}):\n` +
+            names.slice(0, 20).map((n) => `• ${n}`).join("\n")
+          : "Останній підтверджений стан — тривог не зафіксовано (але дані застарілі).";
+        return (
+          "⚠️ *Втрачено зв'язок із джерелом тривог — поточний стан невідомий (це НЕ відбій!).*\n\n" +
+          `${lastStateBlock}\n\n` +
+          `_Джерело: ${meta.source} · останнє підтвердження: ${confirmedTime}_\n` +
+          "Перевірте офіційні канали ДСНС / обласної ОВА."
+        );
+      }
+
       if (names.length === 0) {
-        return `🟢 *Офіційні повітряні тривоги відсутні*\nДжерело: ${meta.source} (оновлено ${updatedLabel})`;
+        return `🟢 *Офіційні повітряні тривоги відсутні*\n_Джерело: ${meta.source} · підтверджено ${confirmedTime}_`;
       }
       return (
         `🚨 *Офіційні повітряні тривоги (${names.length}):*\n` +
         names.slice(0, 20).map((n) => `• ${n}`).join("\n") +
-        `\n\n_Джерело: ${meta.source} · оновлено ${updatedLabel}_`
+        `\n\n_Джерело: ${meta.source} · підтверджено ${confirmedTime}_`
       );
     };
 

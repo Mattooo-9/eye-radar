@@ -6,7 +6,7 @@ import { CitizenReportModal } from "./components/CitizenReportModal";
 import { LOCATIONS } from "./components/CitySelector";
 import { LiveTimelineBar, type PerformanceTier } from "./components/LiveTimelineBar";
 import { MapView, type VisionMode } from "./components/MapView";
-import { type FilterState, type TacticalFilters } from "./types";
+import { type AlertFeedStatus, type ClientAlertState, type FilterState, type TacticalFilters } from "./types";
 import { TacticalTopBar } from "./components/TacticalTopBar";
 import { TacticalMenuModal } from "./components/TacticalMenuModal";
 import { ImpactCard } from "./components/ImpactCard";
@@ -35,6 +35,43 @@ const getUserId = (): string => {
   const generated = crypto.randomUUID();
   localStorage.setItem("eye-radar-user-id", generated);
   return generated;
+};
+
+const ALERTS_CACHE_KEY = "eye-radar-last-alerts-v1";
+const ALERTS_STALE_MS = 3 * 60 * 1000;
+const CLOUD_ALERTS_FALLBACK_URL = "https://eye-radar.onrender.com/api/alerts";
+
+const loadCachedAlertState = (): ClientAlertState => {
+  try {
+    const raw = localStorage.getItem(ALERTS_CACHE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<ClientAlertState>;
+      if (Array.isArray(parsed.activeAlerts) && typeof parsed.lastConfirmedAt === "number" && parsed.lastConfirmedAt > 0) {
+        return {
+          activeAlerts: parsed.activeAlerts.filter((v): v is string => typeof v === "string"),
+          status: "stale",
+          source: typeof parsed.source === "string" ? parsed.source : "alerts.in.ua",
+          sourceAvailable: false,
+          lastConfirmedAt: parsed.lastConfirmedAt
+        };
+      }
+    }
+  } catch {}
+  return {
+    activeAlerts: [],
+    status: "unavailable",
+    source: "alerts.in.ua",
+    sourceAvailable: false,
+    lastConfirmedAt: null
+  };
+};
+
+const formatAlertConfirmedTime = (ts: number | null): string => {
+  if (!ts) return "невідомо";
+  const time = new Date(ts).toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const ageSec = Math.max(0, Math.round((Date.now() - ts) / 1000));
+  const ageStr = ageSec < 60 ? `${ageSec} с тому` : `${Math.round(ageSec / 60)} хв тому`;
+  return `${time} (${ageStr})`;
 };
 
 export const App = () => {
@@ -70,7 +107,8 @@ export const App = () => {
   const [threatOnly, setThreatOnly] = useState(false);
   const [briefingOpen, setBriefingOpen] = useState(false);
   const [selectedCityName, setSelectedCityName] = useState<string>("");
-  const [activeAlerts, setActiveAlerts] = useState<string[]>([]);
+  const [alertState, setAlertState] = useState<ClientAlertState>(loadCachedAlertState);
+  const activeAlerts = alertState.activeAlerts;
   const [showWeather, setShowWeather] = useState(false);
   const [showSatellites, setShowSatellites] = useState(false);
   const [followedTargetId, setFollowedTargetId] = useState<string | null>(null);
@@ -151,24 +189,83 @@ export const App = () => {
     } catch {}
   }, []);
 
-  // Fetch real-time air raid alerts from alerts.in.ua
+  // Fetch official air raid alerts; loss of source connection NEVER wipes last confirmed state (unknown != all-clear!)
   useEffect(() => {
     let unmounted = false;
+
     const fetchAlerts = async () => {
       try {
-        const res = await fetch("/api/alerts");
-        if (res.ok) {
-          const data = (await res.json()) as { alerts?: Array<{ active: boolean; name: string }> };
-          if (Array.isArray(data.alerts)) {
-            const active = data.alerts
-              .filter((a) => a.active)
-              .map((a) => a.name);
-            if (!unmounted) {
-              setActiveAlerts(active);
-            }
-          }
+        const res = await fetch("/api/alerts", { signal: AbortSignal.timeout(5000) }).catch(() =>
+          fetch(CLOUD_ALERTS_FALLBACK_URL, { signal: AbortSignal.timeout(5000) })
+        );
+        if (!res || !res.ok) {
+          throw new Error(`HTTP ${res?.status ?? 0}`);
         }
-      } catch {}
+        const data = (await res.json()) as {
+          status?: AlertFeedStatus;
+          source?: string;
+          sourceAvailable?: boolean;
+          stale?: boolean;
+          lastConfirmedAt?: number | null;
+          updatedAt?: number;
+          alerts?: Array<{ active: boolean; name: string }>;
+        };
+        if (unmounted) return;
+
+        const serverConfirmedAt =
+          typeof data.lastConfirmedAt === "number" && data.lastConfirmedAt > 0
+            ? data.lastConfirmedAt
+            : typeof data.updatedAt === "number" && data.updatedAt > 0
+            ? data.updatedAt
+            : null;
+        const serverAlerts = Array.isArray(data.alerts)
+          ? data.alerts.filter((a) => a.active).map((a) => a.name)
+          : [];
+        const serverStatus: AlertFeedStatus =
+          data.status === "fresh" || data.status === "stale" || data.status === "unavailable"
+            ? data.status
+            : serverConfirmedAt
+            ? Date.now() - serverConfirmedAt > ALERTS_STALE_MS || data.stale
+              ? "stale"
+              : "fresh"
+            : "unavailable";
+
+        setAlertState((prev) => {
+          // If server has no confirmed state yet ("unavailable"), retain any previously confirmed local state as "stale"
+          if (serverStatus === "unavailable" && prev.lastConfirmedAt) {
+            return {
+              ...prev,
+              status: "stale",
+              sourceAvailable: false
+            };
+          }
+          const next: ClientAlertState = {
+            activeAlerts: serverAlerts,
+            status: serverStatus,
+            source: data.source || prev.source || "alerts.in.ua",
+            sourceAvailable: data.sourceAvailable ?? serverStatus === "fresh",
+            lastConfirmedAt: serverConfirmedAt
+          };
+          if (serverConfirmedAt) {
+            try {
+              localStorage.setItem(ALERTS_CACHE_KEY, JSON.stringify(next));
+            } catch {}
+          }
+          return next;
+        });
+      } catch {
+        if (unmounted) return;
+        // Network/API outage: preserve last confirmed alerts & mark state stale/unknown (NEVER clear to all-clear!)
+        setAlertState((prev) => {
+          const hasConfirmed = prev.lastConfirmedAt !== null && prev.lastConfirmedAt > 0;
+          const isOld = hasConfirmed && Date.now() - (prev.lastConfirmedAt ?? 0) > ALERTS_STALE_MS;
+          return {
+            ...prev,
+            sourceAvailable: false,
+            status: hasConfirmed ? (isOld || prev.status !== "fresh" ? "stale" : "stale") : "unavailable"
+          };
+        });
+      }
     };
 
     void fetchAlerts();
@@ -370,6 +467,8 @@ export const App = () => {
         threatCount={threatCount}
         totalTracksCount={filteredPackets.length}
         activeAlertsCount={activeAlerts.length}
+        alertStatus={alertState.status}
+        alertsUpdatedAt={alertState.lastConfirmedAt}
         uncertaintyCount={uncertaintyEvents.length}
         connectionState={connectionState}
         onOpenMenu={() => setTacticalMenuOpen(true)}
@@ -413,6 +512,7 @@ export const App = () => {
           timelineOffsetSec={timelineOffsetSec}
           performanceTier={performanceTier}
           activeAlerts={activeAlerts}
+          alertStatus={alertState.status}
           onStopFollow={() => setFollowedTargetId(null)}
           onMapReady={(m) => {
             setMapInstance(m);
@@ -528,6 +628,8 @@ export const App = () => {
         onOpenBriefing={() => setBriefingOpen(true)}
         onOpenReport={() => setReportOpen(true)}
         activeAlerts={activeAlerts}
+        alertStatus={alertState.status}
+        alertsUpdatedAt={alertState.lastConfirmedAt}
       />
 
       {/* 4. Active Target Flyout Card (dynamically updated with live telemetry) */}
@@ -579,6 +681,8 @@ export const App = () => {
           lat={selectedLocation.lat}
           lon={selectedLocation.lon}
           activeAlerts={activeAlerts}
+          alertStatus={alertState.status}
+          alertsUpdatedAt={alertState.lastConfirmedAt}
           packets={filteredPackets}
           onClose={() => setSelectedLocation(null)}
           onCenterLocation={(lat, lon) => {
@@ -593,14 +697,29 @@ export const App = () => {
         />
       )}
 
-      {/* 7. Active Alerts Modal (when clicking alarm pill) */}
+      {/* 7. Official Alerts Modal (fresh, stale last-confirmed, or unavailable — never misrepresents outage as all-clear) */}
       {alertsModalOpen && (
         <div className="alerts-modal-overlay" onClick={() => setAlertsModalOpen(false)}>
-          <div className="alerts-modal-card" onClick={(e) => e.stopPropagation()}>
+          <div
+            className={`alerts-modal-card ${
+              alertState.status !== "fresh" ? "alerts-modal-stale" : activeAlerts.length === 0 ? "alerts-modal-calm" : ""
+            }`}
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="alerts-modal-header">
               <div className="alerts-modal-title">
-                <span className="ticker-icon">🚨</span>
-                <strong>ПОВІТРЯНІ ТРИВОГИ В УКРАЇНІ ({activeAlerts.length})</strong>
+                <span className="ticker-icon">
+                  {alertState.status !== "fresh" ? "⚠️" : activeAlerts.length > 0 ? "🚨" : "🛡️"}
+                </span>
+                <strong>
+                  {alertState.status === "unavailable"
+                    ? "СТАН ТРИВОГ НЕВІДОМИЙ"
+                    : alertState.status === "stale"
+                    ? `ОСТАННІЙ ПІДТВЕРДЖЕНИЙ СТАН (${activeAlerts.length})`
+                    : activeAlerts.length > 0
+                    ? `ПОВІТРЯНІ ТРИВОГИ В УКРАЇНІ (${activeAlerts.length})`
+                    : "ОФІЦІЙНИХ ТРИВОГ НЕ ОГОЛОШЕНО"}
+                </strong>
               </div>
               <button
                 type="button"
@@ -610,25 +729,56 @@ export const App = () => {
                 ✕
               </button>
             </div>
-            <div className="alerts-modal-sub">
-              Натисніть на область для миттєвого переходу камери:
-            </div>
-            <div className="alerts-regions-grid">
-              {activeAlerts.map((regionName) => (
-                <button
-                  key={regionName}
-                  type="button"
-                  className="alert-region-chip"
-                  onClick={() => {
-                    window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.("light");
-                    handleSelectOblastFromAlert(regionName);
-                    setAlertsModalOpen(false);
-                  }}
-                >
-                  <span className="alert-beacon-dot" />
-                  <span className="alert-region-text">{regionName}</span>
-                </button>
-              ))}
+
+            {alertState.status !== "fresh" && (
+              <div className="alerts-stale-banner">
+                <strong>Втрачено зв'язок із джерелом тривог — це НЕ відбій!</strong>
+                <span>
+                  {alertState.status === "stale" && alertState.lastConfirmedAt
+                    ? `Поточний стан невідомий. Показано останній підтверджений стан від ${formatAlertConfirmedTime(alertState.lastConfirmedAt)}. Перевірте офіційні канали ДСНС / обласної ОВА.`
+                    : "Поточний стан офіційних тривог невідомий. Орієнтуйтесь на сирени та офіційні канали ДСНС / обласної ОВА."}
+                </span>
+              </div>
+            )}
+
+            {activeAlerts.length > 0 ? (
+              <>
+                <div className="alerts-modal-sub">
+                  {alertState.status === "stale"
+                    ? "Останні підтверджені області з тривогою (натисніть для переходу):"
+                    : "Натисніть на область для миттєвого переходу камери:"}
+                </div>
+                <div className="alerts-regions-grid">
+                  {activeAlerts.map((regionName) => (
+                    <button
+                      key={regionName}
+                      type="button"
+                      className={`alert-region-chip ${alertState.status !== "fresh" ? "stale-chip" : ""}`}
+                      onClick={() => {
+                        window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.("light");
+                        handleSelectOblastFromAlert(regionName);
+                        setAlertsModalOpen(false);
+                      }}
+                    >
+                      <span className="alert-beacon-dot" />
+                      <span className="alert-region-text">{regionName}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="alerts-modal-empty">
+                {alertState.status === "fresh"
+                  ? "На момент останнього офіційного оновлення повітряних тривог в областях України не зафіксовано."
+                  : alertState.status === "stale"
+                  ? "На момент останнього підтвердження тривог не було, але зв'язок із джерелом втрачено — орієнтуйтесь на офіційні сирени."
+                  : "Немає підтверджених даних від джерела офіційних тривог."}
+              </div>
+            )}
+
+            <div className="alerts-modal-footer">
+              <span>Джерело: {alertState.source}</span>
+              <span>Підтверджено: {formatAlertConfirmedTime(alertState.lastConfirmedAt)}</span>
             </div>
           </div>
         </div>

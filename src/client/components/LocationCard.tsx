@@ -1,11 +1,14 @@
 import { useState } from "react";
 import type { TrackPacket } from "../hooks/useWsRadar";
 import { getLocationIntel } from "../lib/locationIntel";
+import type { AlertFeedStatus } from "../types";
 
 interface LocationCardProps {
   lat: number;
   lon: number;
   activeAlerts: string[];
+  alertStatus?: AlertFeedStatus;
+  alertsUpdatedAt?: number | null;
   packets: TrackPacket[];
   onClose: () => void;
   onCenterLocation: (lat: number, lon: number) => void;
@@ -15,6 +18,8 @@ export const LocationCard = ({
   lat,
   lon,
   activeAlerts,
+  alertStatus = "fresh",
+  alertsUpdatedAt = null,
   packets,
   onClose,
   onCenterLocation
@@ -23,6 +28,10 @@ export const LocationCard = ({
   const [subscribed, setSubscribed] = useState(false);
   const [subscribing, setSubscribing] = useState(false);
   const intel = getLocationIntel(lat, lon, activeAlerts, packets, 65);
+  const isAlertUnknown = alertStatus !== "fresh";
+  const confirmedTimeStr = alertsUpdatedAt
+    ? new Date(alertsUpdatedAt).toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    : null;
 
   const handleSubscribeBot = async () => {
     setSubscribing(true);
@@ -54,9 +63,14 @@ export const LocationCard = ({
   };
 
   const handleCopy = () => {
-    const text = `📍 ${intel.landmarkDesc} [${lat.toFixed(5)}°N, ${lon.toFixed(5)}°E] | Тривога: ${
-      intel.hasActiveAlert ? "АКТИВНА" : "ВІДБІЙ"
-    } | Цілей у секторі: ${intel.nearbyThreats.length}`;
+    const alertLabel = isAlertUnknown
+      ? intel.hasActiveAlert
+        ? `НЕ ОНОВЛЕНО (останнє: ТРИВОГА${confirmedTimeStr ? ` о ${confirmedTimeStr}` : ""})`
+        : "СТАН НЕВІДОМИЙ (НЕ ВІДБІЙ)"
+      : intel.hasActiveAlert
+      ? "АКТИВНА"
+      : "ВІДБІЙ";
+    const text = `📍 ${intel.landmarkDesc} [${lat.toFixed(5)}°N, ${lon.toFixed(5)}°E] | Тривога: ${alertLabel} | Цілей у секторі: ${intel.nearbyThreats.length}`;
     void navigator.clipboard.writeText(text);
     setCopied(true);
     window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success");
@@ -73,10 +87,20 @@ export const LocationCard = ({
               <span className="location-region-badge">{intel.regionName}</span>
               <span
                 className={`alert-status-pill ${
-                  intel.hasActiveAlert ? "alert-pill-active" : "alert-pill-clear"
+                  isAlertUnknown
+                    ? "alert-pill-unknown"
+                    : intel.hasActiveAlert
+                    ? "alert-pill-active"
+                    : "alert-pill-clear"
                 }`}
               >
-                {intel.hasActiveAlert ? "🚨 ТРИВОГА" : "🟢 ВІДБІЙ"}
+                {isAlertUnknown
+                  ? intel.hasActiveAlert
+                    ? "⚠ ОСТАННЄ: ТРИВОГА"
+                    : "⚠ СТАН НЕВІДОМИЙ"
+                  : intel.hasActiveAlert
+                  ? "🚨 ТРИВОГА"
+                  : "🟢 ВІДБІЙ"}
               </span>
             </div>
             <h3 className="location-name-title">{intel.landmarkDesc}</h3>
@@ -92,22 +116,32 @@ export const LocationCard = ({
         {/* Air Raid Alert Details Banner */}
         <div
           className={`location-alert-box ${
-            intel.hasActiveAlert ? "box-alert-danger" : "box-alert-safe"
+            isAlertUnknown
+              ? "box-alert-unknown"
+              : intel.hasActiveAlert
+              ? "box-alert-danger"
+              : "box-alert-safe"
           }`}
         >
           <div className="alert-box-icon">
-            {intel.hasActiveAlert ? "⚠️" : "🛡️"}
+            {isAlertUnknown ? "⚠️" : intel.hasActiveAlert ? "⚠️" : "🛡️"}
           </div>
           <div className="alert-box-content">
             <strong className="alert-box-title">
-              {intel.hasActiveAlert
+              {isAlertUnknown
+                ? intel.hasActiveAlert
+                  ? `Джерело тривог не оновлюється · останній стан: ТРИВОГА${confirmedTimeStr ? ` (${confirmedTimeStr})` : ""}`
+                  : "Стан офіційної тривоги невідомий (це НЕ відбій)"
+                : intel.hasActiveAlert
                 ? `Повітряна тривога в секторі: ${intel.alertTypeDesc}`
                 : "Повітряний простір: Відбій тривоги"}
             </strong>
             <p className="alert-box-advice">
-              {intel.hasActiveAlert
+              {isAlertUnknown
+                ? "Втрата зв'язку з джерелом не означає відбій тривоги. Орієнтуйтесь на сирени та офіційні канали ДСНС / обласної ОВА."
+                : intel.hasActiveAlert
                 ? "Залишайтеся в укриттях! Не ігноруйте сигнали сирен. Дотримуйтесь правила двох стін."
-                : "Сигнал тривоги у цьому районі не оголошено. Загрози для локації відсутні."}
+                : `Офіційну тривогу у цьому районі не оголошено${confirmedTimeStr ? ` (підтверджено ${confirmedTimeStr})` : ""}.`}
             </p>
           </div>
         </div>
