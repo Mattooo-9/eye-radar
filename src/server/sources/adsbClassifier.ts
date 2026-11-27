@@ -57,9 +57,9 @@ export function isCivilAirliner(callsign?: string, desc?: string, model?: string
 }
 
 /**
- * Operational intake gate: excludes all European civilian commercial airliners.
- * Admits only verified military aircraft within 350 km of Ukraine's border
- * OR non-civilian contacts physically inside Ukraine's national border polygon.
+ * Operational intake gate: excludes all civilian commercial airliners and all
+ * foreign traffic outside Ukraine's sovereign territory.
+ * Admits only non-civilian contacts physically inside Ukraine's national border polygon.
  */
 export function shouldIngestAdsbContact(
   lat: number,
@@ -74,9 +74,8 @@ export function shouldIngestAdsbContact(
     return { allowed: false, isMil: false, isInsideUkraine: false };
   }
   const isInsideUkraine = isInsideUkraineGeo(lat, lon);
-  const inMilTheater = isMil && getDistanceToUkraineBorderKm(lat, lon) <= 350;
   return {
-    allowed: isInsideUkraine || inMilTheater,
+    allowed: isInsideUkraine,
     isMil,
     isInsideUkraine
   };

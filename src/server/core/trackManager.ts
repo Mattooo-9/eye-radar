@@ -8,7 +8,7 @@ import { classifyAerialObject } from "./classificationEngine.js";
 import { TrackCorrelator } from "./trackCorrelator.js";
 import { encodeBinaryDelta, encodeBinarySnapshot } from "../../common/binaryCodec.js";
 import { timeCalibrationService } from "./timeCalibration.js";
-import { UKRAINE_CITIES } from "../sources/ukraineGeo.js";
+import { UKRAINE_CITIES, isInsideUkraineGeo } from "../sources/ukraineGeo.js";
 import { productionObservability } from "./observability.js";
 import { uncertaintyEventManager } from "./uncertaintyEventManager.js";
 
@@ -173,15 +173,25 @@ export class TrackManager {
     for (const t of checkpoint.tracks) {
       if (!t.id || typeof t.lat !== "number" || typeof t.lon !== "number" || t.isSynthetic) continue;
       const trackAgeMs = Math.max(0, Date.now() - (t.timestamp || baseTime));
+      const hasTelegramProvenance =
+        (typeof t.callsign === "string" && t.callsign.startsWith("@")) ||
+        (Array.isArray(t.provenanceChain) &&
+          t.provenanceChain.some(
+            (p) =>
+              (typeof p.source === "string" && p.source.startsWith("@")) ||
+              (typeof p.provenanceStr === "string" && p.provenanceStr.includes("@"))
+          ));
       if (
         trackAgeMs > 90_000 ||
         t.isDegraded ||
+        hasTelegramProvenance ||
         t.model === "Civilian Aircraft" ||
-        (typeof t.model === "string" && t.model.includes("аномальний стрибок РЕБ"))
+        (typeof t.model === "string" && t.model.includes("аномальний стрибок РЕБ")) ||
+        !isInsideUkraineGeo(t.lat, t.lon)
       ) {
         continue;
       }
-      // Sanitize textual OSINT tracks restored from checkpoints so legacy fabricated alt/speed never persist
+      // Sanitize textual OSINT tracks restored from checkpoints so legacy fabricated alt/speed/(OSINT) never persist
       const isRestoredOsint =
         t.dataCategory === "osint_message" ||
         t.id.startsWith("osint-") ||
@@ -190,10 +200,14 @@ export class TrackManager {
       if (isRestoredOsint) {
         const minTextFloor = t.id.startsWith("citizen-") ? 2_500 : 3_500;
         t.dataCategory = "osint_message";
+        t.speed = 0;
         t.altitude = undefined;
         t.measuredAltitude = undefined;
         t.measuredSpeed = undefined;
         t.uncertaintyRadius = Math.max(minTextFloor, t.uncertaintyRadius || 0);
+        if (typeof t.model === "string") {
+          t.model = t.model.replace(/\s*\(OSINT\)/gi, "").trim();
+        }
       } else if (!t.dataCategory) {
         t.dataCategory = "sensor_observation";
       }
@@ -385,10 +399,11 @@ export class TrackManager {
     };
 
     if (!existing) {
+      const isTextReport = sourceFamily === "osint" || sourceFamily === "manual";
       const filter = new ImmFilter2D();
       const imm = filter.update(observation.timestamp, observation.lat, observation.lon);
-      const effectiveSpeed = observation.speed ?? (imm.speedMs > 2 ? imm.speedMs : 45);
-      const effectiveHeading = observation.heading ?? (imm.headingDeg || 0);
+      const effectiveSpeed = isTextReport ? 0 : (observation.speed ?? (imm.speedMs > 2 ? imm.speedMs : 45));
+      const effectiveHeading = observation.heading ?? (isTextReport ? 0 : (imm.headingDeg || 0));
 
       const rawThreat = (observation.meta as any)?.threatEvidence ?? observation.threatEvidence;
       const obsThreatEvidence: string[] = typeof rawThreat === "string"
@@ -408,7 +423,6 @@ export class TrackManager {
         obsThreatEvidence.push(rawEv);
       }
 
-      const isTextReport = sourceFamily === "osint" || sourceFamily === "manual";
       const dataCategory = isTextReport ? "osint_message" as const : "sensor_observation" as const;
       const isMeasuredSpeedFlag = observation.meta?.speedIsMeasured !== false && !isTextReport;
       const classification = classifyAerialObject({
@@ -519,12 +533,17 @@ export class TrackManager {
       (derivedSpeed > 1100 && distanceMeters > minJumpDistM) ||
       (distanceMeters > 40_000 && elapsedSeconds < 30 && previous.speed < 300)
     );
-    const effectiveLat = isImpossibleJump ? previous.lat : imm.lat;
-    const effectiveLon = isImpossibleJump ? previous.lon : imm.lon;
-    const updatedSpeed = isImpossibleJump
+    const isTextReportUpdate = sourceFamily === "osint" || sourceFamily === "manual";
+    const effectiveLat = isTextReportUpdate ? observation.lat : (isImpossibleJump ? previous.lat : imm.lat);
+    const effectiveLon = isTextReportUpdate ? observation.lon : (isImpossibleJump ? previous.lon : imm.lon);
+    const updatedSpeed = isTextReportUpdate
+      ? 0
+      : isImpossibleJump
       ? previous.speed
       : (observation.speed ?? (derivedSpeed > 10 && derivedSpeed < 1100 ? derivedSpeed : (imm.speedMs || previous.speed)));
-    const updatedHeading = isImpossibleJump ? previous.heading : (observation.heading ?? derivedHeading);
+    const updatedHeading = isTextReportUpdate
+      ? (observation.heading ?? previous.measuredHeading ?? 0)
+      : (isImpossibleJump ? previous.heading : (observation.heading ?? derivedHeading));
 
     const mergedSources = new Set([...previous.sources, observation.source]);
     const mergedFamilies = new Set([...(previous.evidenceFamilies || []), sourceFamily]);
@@ -590,7 +609,6 @@ export class TrackManager {
       new Set([...(previous.threatEvidence || []), ...obsThreatEvidence])
     );
 
-    const isTextReportUpdate = sourceFamily === "osint" || sourceFamily === "manual";
     const updatedDataCategory = isTextReportUpdate
       ? (previous.dataCategory === "sensor_observation" ? "sensor_observation" as const : "osint_message" as const)
       : "sensor_observation" as const;

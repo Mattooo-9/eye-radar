@@ -1252,35 +1252,41 @@ const drawMilitaryCalloutPill = (
   const px = chosenX;
   const py = chosenY;
 
-  // Background glass pill
-  ctx.fillStyle = "rgba(7, 12, 22, 0.94)";
-  ctx.strokeStyle = isThreat ? "rgba(239, 68, 68, 0.88)" : "rgba(56, 189, 248, 0.78)";
-  ctx.lineWidth = 1.1;
+  // Background frosted obsidian pill with left accent bar
+  ctx.fillStyle = "rgba(8, 13, 23, 0.92)";
+  ctx.strokeStyle = isThreat ? `${color}88` : "rgba(255, 255, 255, 0.16)";
+  ctx.lineWidth = 1.0;
   ctx.beginPath();
-  ctx.roundRect(px, py, pillW, pillH, 4);
+  ctx.roundRect(px, py, pillW, pillH, 5);
   ctx.fill();
   ctx.stroke();
 
+  // Left color accent bar
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.roundRect(px + 1.5, py + 3, 2.5, pillH - 6, 1.5);
+  ctx.fill();
+
   // Subtle lead connector line from target to pill
-  ctx.strokeStyle = isThreat ? "rgba(239, 68, 68, 0.45)" : "rgba(56, 189, 248, 0.35)";
-  ctx.lineWidth = 0.9;
+  ctx.strokeStyle = `${color}55`;
+  ctx.lineWidth = 0.85;
   ctx.beginPath();
   if (px > targetX) {
-    ctx.moveTo(targetX + 16, targetY);
+    ctx.moveTo(targetX + 12, targetY);
     ctx.lineTo(px, py + 9);
   } else if (px + pillW < targetX) {
-    ctx.moveTo(targetX - 16, targetY);
+    ctx.moveTo(targetX - 12, targetY);
     ctx.lineTo(px + pillW, py + 9);
   } else {
-    ctx.moveTo(targetX, targetY > py ? targetY - 16 : targetY + 16);
+    ctx.moveTo(targetX, targetY > py ? targetY - 12 : targetY + 12);
     ctx.lineTo(px + pillW / 2, py + (targetY > py ? pillH : 0));
   }
   ctx.stroke();
 
   // Crisp high-contrast typography
-  ctx.fillStyle = "#f8fafc";
+  ctx.fillStyle = "#f1f5f9";
   ctx.textBaseline = "middle";
-  ctx.fillText(text, px + 8, py + 9.5);
+  ctx.fillText(text, px + 9, py + 9.5);
 
   ctx.restore();
 };
@@ -1428,9 +1434,9 @@ export const syncUkraineAlerts = (
         ? ["in", ["get", "shapeISO"], ["literal", activeIsos]]
         : ["==", ["get", "shapeISO"], "___NONE___"];
 
-    const alertColor = isStale ? "#f59e0b" : "#ef4444";
+    const alertColor = isStale ? "#f59e0b" : "#e11d48";
 
-    // 3. Ambient polygon fill for alarmed oblasts (amber when stale/last-confirmed, red when live fresh)
+    // 3. Subtle architectural polygon fill for alarmed oblasts
     if (!map.getLayer("ukraine-alerts-fill")) {
       map.addLayer(
         {
@@ -1439,7 +1445,7 @@ export const syncUkraineAlerts = (
           source: "ukraine-oblasts",
           paint: {
             "fill-color": alertColor,
-            "fill-opacity": isStale ? 0.15 : 0.18
+            "fill-opacity": isStale ? 0.08 : 0.11
           },
           filter: alertFilter
         },
@@ -1448,11 +1454,11 @@ export const syncUkraineAlerts = (
     } else {
       map.setFilter("ukraine-alerts-fill", alertFilter);
       map.setPaintProperty("ukraine-alerts-fill", "fill-color", alertColor);
-      map.setPaintProperty("ukraine-alerts-fill", "fill-opacity", isStale ? 0.15 : 0.18);
+      map.setPaintProperty("ukraine-alerts-fill", "fill-opacity", isStale ? 0.08 : 0.11);
       map.setLayoutProperty("ukraine-alerts-fill", "visibility", showAlerts ? "visible" : "none");
     }
 
-    // 4. Glowing perimeter outline for alarmed oblasts
+    // 4. Soft ambient perimeter glow for alarmed oblasts
     if (!map.getLayer("ukraine-alerts-glow")) {
       map.addLayer(
         {
@@ -1461,9 +1467,9 @@ export const syncUkraineAlerts = (
           source: "ukraine-oblasts",
           paint: {
             "line-color": alertColor,
-            "line-width": ["interpolate", ["linear"], ["zoom"], 4, 4.0, 7, 6.0, 10, 8.0],
-            "line-blur": ["interpolate", ["linear"], ["zoom"], 4, 2.5, 7, 4.0, 10, 6.0],
-            "line-opacity": isStale ? 0.45 : 0.55
+            "line-width": ["interpolate", ["linear"], ["zoom"], 4, 2.0, 7, 3.0, 10, 4.2],
+            "line-blur": ["interpolate", ["linear"], ["zoom"], 4, 1.8, 7, 2.5, 10, 3.5],
+            "line-opacity": isStale ? 0.14 : 0.20
           },
           filter: alertFilter
         },
@@ -1472,11 +1478,11 @@ export const syncUkraineAlerts = (
     } else {
       map.setFilter("ukraine-alerts-glow", alertFilter);
       map.setPaintProperty("ukraine-alerts-glow", "line-color", alertColor);
-      map.setPaintProperty("ukraine-alerts-glow", "line-opacity", isStale ? 0.45 : 0.55);
+      map.setPaintProperty("ukraine-alerts-glow", "line-opacity", isStale ? 0.14 : 0.20);
       map.setLayoutProperty("ukraine-alerts-glow", "visibility", showAlerts ? "visible" : "none");
     }
 
-    // 5. Crisp border for alarmed oblasts
+    // 5. Hairline precision border for alarmed oblasts
     if (!map.getLayer("ukraine-alerts-border")) {
       map.addLayer(
         {
@@ -1485,8 +1491,8 @@ export const syncUkraineAlerts = (
           source: "ukraine-oblasts",
           paint: {
             "line-color": alertColor,
-            "line-width": ["interpolate", ["linear"], ["zoom"], 4, 1.4, 7, 2.0, 10, 2.6],
-            "line-opacity": isStale ? 0.78 : 0.85
+            "line-width": ["interpolate", ["linear"], ["zoom"], 4, 0.75, 7, 1.1, 10, 1.45],
+            "line-opacity": isStale ? 0.36 : 0.46
           },
           filter: alertFilter
         },
@@ -1495,7 +1501,7 @@ export const syncUkraineAlerts = (
     } else {
       map.setFilter("ukraine-alerts-border", alertFilter);
       map.setPaintProperty("ukraine-alerts-border", "line-color", alertColor);
-      map.setPaintProperty("ukraine-alerts-border", "line-opacity", isStale ? 0.78 : 0.85);
+      map.setPaintProperty("ukraine-alerts-border", "line-opacity", isStale ? 0.36 : 0.46);
       map.setLayoutProperty("ukraine-alerts-border", "visibility", showAlerts ? "visible" : "none");
     }
   } catch {}
@@ -1520,7 +1526,7 @@ const syncUkraineBorders = (map: maplibregl.Map, showFrontline = true) => {
       try { map.removeSource("world-borders"); } catch {}
     }
 
-    // Tactical Line of Contact / Frontline (ЛБЗ)
+    // Tactical Line of Contact / Frontline (ЛБЗ) — understated cartographic contour
     if (!map.getSource("ukraine-frontline")) {
       map.addSource("ukraine-frontline", {
         type: "geojson",
@@ -1534,10 +1540,10 @@ const syncUkraineBorders = (map: maplibregl.Map, showFrontline = true) => {
         type: "line",
         source: "ukraine-frontline",
         paint: {
-          "line-color": "#ef4444",
-          "line-width": ["interpolate", ["linear"], ["zoom"], 4, 6.0, 8, 10.0, 12, 14.0],
-          "line-blur": ["interpolate", ["linear"], ["zoom"], 4, 3.0, 8, 5.0, 12, 7.0],
-          "line-opacity": 0.85
+          "line-color": "#e11d48",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 4, 2.5, 8, 4.0, 12, 6.0],
+          "line-blur": ["interpolate", ["linear"], ["zoom"], 4, 2.0, 8, 3.0, 12, 4.0],
+          "line-opacity": 0.14
         }
       });
     }
@@ -1548,32 +1554,23 @@ const syncUkraineBorders = (map: maplibregl.Map, showFrontline = true) => {
         type: "line",
         source: "ukraine-frontline",
         paint: {
-          "line-color": "#dc2626",
-          "line-width": ["interpolate", ["linear"], ["zoom"], 4, 2.2, 8, 3.2, 12, 4.2],
-          "line-opacity": 0.98
-        }
-      });
-    }
-
-    if (!map.getLayer("frontline-core")) {
-      map.addLayer({
-        id: "frontline-core",
-        type: "line",
-        source: "ukraine-frontline",
-        paint: {
-          "line-color": "#fef2f2",
-          "line-width": ["interpolate", ["linear"], ["zoom"], 4, 1.0, 8, 1.8, 12, 2.4],
-          "line-opacity": 0.98
+          "line-color": "#fb7185",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 4, 0.9, 8, 1.3, 12, 1.8],
+          "line-dasharray": [3, 2],
+          "line-opacity": 0.42
         }
       });
     }
 
     // Synchronize frontline visibility
     const frontlineVis = showFrontline ? "visible" : "none";
-    for (const id of ["frontline-glow", "frontline-dash", "frontline-core"]) {
+    for (const id of ["frontline-glow", "frontline-dash"]) {
       if (map.getLayer(id)) {
         map.setLayoutProperty(id, "visibility", frontlineVis);
       }
+    }
+    if (map.getLayer("frontline-core")) {
+      try { map.removeLayer("frontline-core"); } catch {}
     }
   } catch {
     // Graceful fallback if borders already present or WebGL busy
@@ -1773,55 +1770,15 @@ const drawTacticalPerimeterIndicator = (
 };
 
 const drawAlertsLayer = (
-  ctx: CanvasRenderingContext2D,
-  map: maplibregl.Map,
-  activeAlerts: string[],
+  _ctx: CanvasRenderingContext2D,
+  _map: maplibregl.Map,
+  _activeAlerts: string[],
   _now: number,
-  width: number,
-  height: number,
-  isStale = false
+  _width: number,
+  _height: number,
+  _isStale = false
 ) => {
-  if (!activeAlerts || activeAlerts.length === 0) return;
-  const zoom = map.getZoom();
-  // MapLibre renders full GPU-accelerated polygon fills; on canvas only draw tactical badges at zoom >= 5.5
-  if (zoom < 5.5) return;
-
-  ctx.save();
-  for (const alertName of activeAlerts) {
-    const clean = alertName.toLowerCase().replace("область", "").replace("обл.", "").trim();
-    const match = LOCATIONS.find(
-      (l) => l.name.toLowerCase().includes(clean) || l.region.toLowerCase().includes(clean)
-    );
-    if (!match) continue;
-
-    const pt = map.project([match.lon, match.lat]);
-    if (pt.x < 30 || pt.x > width - 30 || pt.y < 30 || pt.y > height - 30) {
-      continue;
-    }
-
-    ctx.font = "bold 9px 'JetBrains Mono', monospace";
-    const text = isStale ? "ОСТАННЄ: ТРИВОГА" : "ТРИВОГА";
-    const textWidth = ctx.measureText(text).width;
-    const badgeW = textWidth + 14;
-    const badgeH = 16;
-    const rx = pt.x - badgeW / 2;
-    const ry = pt.y - badgeH / 2;
-
-    ctx.fillStyle = isStale ? "rgba(217, 119, 6, 0.88)" : "rgba(220, 38, 38, 0.85)";
-    ctx.beginPath();
-    ctx.roundRect(rx, ry, badgeW, badgeH, 4);
-    ctx.fill();
-
-    ctx.strokeStyle = isStale ? "rgba(253, 230, 138, 0.7)" : "rgba(254, 202, 202, 0.6)";
-    ctx.lineWidth = 1;
-    ctx.stroke();
-
-    ctx.fillStyle = "#ffffff";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(text, pt.x, pt.y);
-  }
-  ctx.restore();
+  // GPU polygon shading (ukraine-alerts-fill + ukraine-alerts-border) renders oblast alerts cleanly without canvas text badges overlapping city names.
 };
 
 const drawSingleFirmsDot = (
@@ -2363,9 +2320,10 @@ export const MapView = ({
       const satLayer = m.getLayer("satellite-tiles-layer") ? "satellite-tiles-layer" : m.getLayer("esri-satellite-layer") ? "esri-satellite-layer" : null;
       if (satLayer) {
         const nightFactor = Math.min(1, Math.max(0, -elev / 10));
-        const targetBrightness = elev < 0 ? Math.max(0.35, 1.0 - nightFactor * 0.65) : 1.0;
-        const targetSaturation = elev < 0 ? -0.45 * nightFactor : 0.0;
-        const targetContrast = elev < 0 ? 0.25 * nightFactor : 0.0;
+        // Always maintain a deep, high-contrast dark-tactical satellite palette (no bright washed-out daytime green)
+        const targetBrightness = elev < 0 ? Math.max(0.36, 0.48 - nightFactor * 0.12) : 0.48;
+        const targetSaturation = elev < 0 ? -0.58 : -0.50;
+        const targetContrast = elev < 0 ? 0.24 : 0.18;
         lastAppliedBrightnessRef.current = targetBrightness;
         try {
           m.setPaintProperty(satLayer, "raster-brightness-max", targetBrightness);
@@ -2373,6 +2331,22 @@ export const MapView = ({
           m.setPaintProperty(satLayer, "raster-contrast", targetContrast);
         } catch {}
       }
+      // Normalize symbol layers on external vector styles to prefer Ukrainian names without mixed-language clutter
+      try {
+        const styleLayers = m.getStyle()?.layers;
+        if (Array.isArray(styleLayers)) {
+          for (const lyr of styleLayers) {
+            if (lyr.type === "symbol" && (lyr.layout as any)?.["text-field"]) {
+              m.setLayoutProperty(lyr.id, "text-field", [
+                "coalesce",
+                ["get", "name:uk"],
+                ["get", "name:nonlatin"],
+                ["get", "name"]
+              ]);
+            }
+          }
+        }
+      } catch {}
     };
 
     map.on("load", () => {
@@ -2650,9 +2624,9 @@ export const MapView = ({
             const satLayer = map.getLayer("satellite-tiles-layer") ? "satellite-tiles-layer" : map.getLayer("esri-satellite-layer") ? "esri-satellite-layer" : null;
             if (satLayer) {
               const nightFactor = Math.min(1, Math.max(0, -elev / 10));
-              const targetBrightness = elev < 0 ? Math.max(0.35, 1.0 - nightFactor * 0.65) : 1.0;
-              const targetSaturation = elev < 0 ? -0.45 * nightFactor : 0.0;
-              const targetContrast = elev < 0 ? 0.25 * nightFactor : 0.0;
+              const targetBrightness = elev < 0 ? Math.max(0.36, 0.48 - nightFactor * 0.12) : 0.48;
+              const targetSaturation = elev < 0 ? -0.58 : -0.50;
+              const targetContrast = elev < 0 ? 0.24 : 0.18;
 
               if (Math.abs(targetBrightness - lastAppliedBrightnessRef.current) > 0.02) {
                 lastAppliedBrightnessRef.current = targetBrightness;
@@ -3208,7 +3182,9 @@ export const MapView = ({
               speedKmh: item.speedKmh,
               isLowTier: isLowTier,
               confidence: item.confidence,
-              timeMs: now
+              timeMs: now,
+              hasDirection: item.speedKmh > 0 || item.screenHeadingDeg !== 0,
+              isSensor: item.id.startsWith("adsb-")
             });
             ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
 
@@ -3244,7 +3220,9 @@ export const MapView = ({
               speedKmh: item.speedKmh,
               isLowTier: isLowTier,
               confidence: item.confidence,
-              timeMs: now
+              timeMs: now,
+              hasDirection: item.speedKmh > 0 || item.screenHeadingDeg !== 0,
+              isSensor: item.id.startsWith("adsb-")
             });
             ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
 

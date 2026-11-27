@@ -252,14 +252,16 @@ describe("EYE RADAR — Mandatory Automated Acceptance Criteria (ACCEPTANCE.md)"
   });
 
   describe("2. Architecture & Single-Source ADS-B Gate", () => {
-    it("excludes European commercial airlines and admits only theater military or inside-Ukraine non-civil contacts", () => {
+    it("excludes European commercial airlines and foreign flights outside Ukraine, admitting only non-civil contacts inside Ukraine", () => {
       expect(shouldIngestAdsbContact(47.23, 23.32, "WZZ4848", "A321", "A21N").allowed).toBe(false);
       expect(shouldIngestAdsbContact(46.53, 22.03, "AAR522", "B77W", "B77W").allowed).toBe(false);
       expect(shouldIngestAdsbContact(44.62, 24.23, "THY4DE", "A321", "A21N").allowed).toBe(false);
-      // USAF C-17 within 350 km of Ukraine border -> allowed
-      expect(shouldIngestAdsbContact(47.0, 21.8, "RCH436", "Boeing C-17A Globemaster III", "C17").allowed).toBe(true);
-      // Military flight > 1000 km away in Western Europe -> excluded
-      expect(shouldIngestAdsbContact(40.4, -3.7, "RCH999", "Boeing C-17A", "C17").allowed).toBe(false);
+      // Foreign military flight outside Ukraine border (Hungary/Romania) -> excluded
+      expect(shouldIngestAdsbContact(47.0, 21.8, "RCH436", "Boeing C-17A Globemaster III", "C17").allowed).toBe(false);
+      // Military/non-civil contact strictly inside Ukraine -> allowed
+      expect(shouldIngestAdsbContact(50.45, 30.52, "RCH436", "Boeing C-17A Globemaster III", "C17").allowed).toBe(true);
+      // Commercial airliner inside Ukraine -> excluded
+      expect(shouldIngestAdsbContact(50.45, 30.52, "WZZ4848", "A321", "A21N").allowed).toBe(false);
     });
 
     it("prevents unbounded evidence array growth across repeated classification cycles", () => {

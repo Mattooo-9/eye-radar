@@ -166,10 +166,10 @@ export const TacticalMenuModal: React.FC<TacticalMenuModalProps> = ({
   return (
     <div className="tactical-menu-overlay" onClick={onClose}>
       <div className="tactical-menu-card" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
+          {/* Header */}
         <div className="tactical-menu-header">
           <div className="tactical-menu-title-row">
-            <span className="tactical-menu-badge">EYE RADAR // MENU</span>
+            <span className="tactical-menu-badge">EYE RADAR</span>
             <span className="tactical-menu-live-dot" />
             <strong className="tactical-menu-title">ОПЦІЇ ТА УПРАВЛІННЯ</strong>
           </div>
@@ -293,20 +293,6 @@ export const TacticalMenuModal: React.FC<TacticalMenuModalProps> = ({
                 </button>
               </div>
 
-              <div className="tactical-toggle-row">
-                <div>
-                  <div className="toggle-label-main">⚠️ Фільтр: Тільки загрози та військові цілі</div>
-                  <div className="toggle-label-sub">Приховувати транзитні цивільні рейси (показувати виключно БПЛА, ракети, КАБ та військові борти)</div>
-                </div>
-                <button
-                  type="button"
-                  className={`toggle-switch ${threatOnly ? "on" : "off"}`}
-                  onClick={onToggleThreatOnly}
-                >
-                  <span className="switch-knob" />
-                </button>
-              </div>
-
               <div className="tactical-action-box">
                 <button
                   type="button"
@@ -325,7 +311,7 @@ export const TacticalMenuModal: React.FC<TacticalMenuModalProps> = ({
           {/* TAB 2: VISION */}
           {activeTab === "vision" && (
             <div className="tactical-tab-pane">
-              <div className="tactical-section-title">СПЕКТРАЛЬНІ РЕЖИМИ ОПТИКИ ТА СУПУТНИКА</div>
+              <div className="tactical-section-title">РЕЖИМИ КАРТОГРАФІЧНОЇ ПІДЛОЖКИ</div>
 
               <div className="vision-cards-grid">
                 <div
@@ -334,10 +320,10 @@ export const TacticalMenuModal: React.FC<TacticalMenuModalProps> = ({
                 >
                   <div className="vision-card-header">
                     <span className="vision-icon">🛰️</span>
-                    <strong className="vision-name">Google Satellite HD</strong>
+                    <strong className="vision-name">Супутник Esri + PMTiles</strong>
                   </div>
                   <div className="vision-desc">
-                    Високодеталізована супутникова зйомка без обмежень та без водяних знаків.
+                    Темна супутникова підложка високої контрастності з українською векторною топографією.
                   </div>
                 </div>
 
@@ -347,7 +333,7 @@ export const TacticalMenuModal: React.FC<TacticalMenuModalProps> = ({
                 >
                   <div className="vision-card-header">
                     <span className="vision-icon">🟢</span>
-                    <strong className="vision-name">NVG Нічне бачення</strong>
+                    <strong className="vision-name">Нічне бачення</strong>
                   </div>
                   <div className="vision-desc">
                     Тактичний зелений спектр посилення залишкового світла з векторним оверлеєм.
@@ -360,10 +346,10 @@ export const TacticalMenuModal: React.FC<TacticalMenuModalProps> = ({
                 >
                   <div className="vision-card-header">
                     <span className="vision-icon">🔥</span>
-                    <strong className="vision-name">FLIR Тепловізор</strong>
+                    <strong className="vision-name">Тепловізійний спектр</strong>
                   </div>
                   <div className="vision-desc">
-                    Контрастний тепловий спектр (White Hot) для виявлення теплових сигнатур.
+                    Контрастний тепловий спектр для виділення теплових аномалій та цілей.
                   </div>
                 </div>
 
@@ -373,10 +359,10 @@ export const TacticalMenuModal: React.FC<TacticalMenuModalProps> = ({
                 >
                   <div className="vision-card-header">
                     <span className="vision-icon">🗺️</span>
-                    <strong className="vision-name">Тактичний вектор</strong>
+                    <strong className="vision-name">Темний вектор</strong>
                   </div>
                   <div className="vision-desc">
-                    Темна мінімалістична картографічна сітка без зайвих деталей рельєфу.
+                    Чиста векторна картографічна сітка без супутникового рельєфу.
                   </div>
                 </div>
               </div>
@@ -386,26 +372,12 @@ export const TacticalMenuModal: React.FC<TacticalMenuModalProps> = ({
           {/* TAB 3: LAYERS */}
           {activeTab === "layers" && (
             <div className="tactical-tab-pane">
-              <div className="tactical-section-title">ТАКТИЧНІ ОВЕРЛЕЇ ТА ДОДАТКОВІ ШАРИ</div>
+              <div className="tactical-section-title">КАРТОГРАФІЧНІ ШАРИ ТА СПОВІЩЕННЯ</div>
 
               <div className="tactical-toggle-row">
                 <div>
-                  <div className="toggle-label-main">✈️ Цивільна авіація (Транзитний ешелон)</div>
-                  <div className="toggle-label-sub">Фоновий шар комерційних бортів у прикордонній зоні</div>
-                </div>
-                <button
-                  type="button"
-                  className={`toggle-switch ${showAviation ? "on" : "off"}`}
-                  onClick={onToggleAviation}
-                >
-                  <span className="switch-knob" />
-                </button>
-              </div>
-
-              <div className="tactical-toggle-row">
-                <div>
-                  <div className="toggle-label-main">🚨 Зони повітряних тривог (Alerts)</div>
-                  <div className="toggle-label-sub">Фонове градієнтне затінення областей із загрозою</div>
+                  <div className="toggle-label-main">🚨 Зони повітряних тривог</div>
+                  <div className="toggle-label-sub">Контурне виділення областей з активною повітряною тривогою</div>
                 </div>
                 <button
                   type="button"
@@ -418,8 +390,8 @@ export const TacticalMenuModal: React.FC<TacticalMenuModalProps> = ({
 
               <div className="tactical-toggle-row">
                 <div>
-                  <div className="toggle-label-main">📡 Акустичні та радарні сектори (Uncertainty)</div>
-                  <div className="toggle-label-sub">Зони спостережень сенсорної мережі з неопределеною позицією</div>
+                  <div className="toggle-label-main">📡 Сектори орієнтовного виявлення</div>
+                  <div className="toggle-label-sub">Зони спостережень сенсорної мережі з радіусом просторової похибки</div>
                 </div>
                 <button
                   type="button"
@@ -433,7 +405,7 @@ export const TacticalMenuModal: React.FC<TacticalMenuModalProps> = ({
               <div className="tactical-toggle-row">
                 <div>
                   <div className="toggle-label-main">🔥 Теплові аномалії NASA FIRMS</div>
-                  <div className="toggle-label-sub">Супутникові термоточки та пожежі (деталі по кліку)</div>
+                  <div className="toggle-label-sub">Супутникові термоточки VIIRS та пожежі (деталі за натисканням)</div>
                 </div>
                 <button
                   type="button"
@@ -446,8 +418,8 @@ export const TacticalMenuModal: React.FC<TacticalMenuModalProps> = ({
 
               <div className="tactical-toggle-row">
                 <div>
-                  <div className="toggle-label-main">🌦️ Метеорадар опадів (RainViewer)</div>
-                  <div className="toggle-label-sub">Відображає хмари, грозові фронти та дощ у реальному часі</div>
+                  <div className="toggle-label-main">🌦️ Метеорадар опадів</div>
+                  <div className="toggle-label-sub">Хмарність, грозові фронти та опади в реальному часі</div>
                 </div>
                 <button
                   type="button"
@@ -460,8 +432,8 @@ export const TacticalMenuModal: React.FC<TacticalMenuModalProps> = ({
 
               <div className="tactical-toggle-row">
                 <div>
-                  <div className="toggle-label-main">⚔️ Лінія бойового зіткнення (Фронт / ЛБЗ)</div>
-                  <div className="toggle-label-sub">Оперативна лінія бойових дій та активні рубежі оборони</div>
+                  <div className="toggle-label-main">⚔️ Лінія бойового зіткнення</div>
+                  <div className="toggle-label-sub">Орієнтовний рубіж лінії фронту</div>
                 </div>
                 <button
                   type="button"
@@ -474,22 +446,8 @@ export const TacticalMenuModal: React.FC<TacticalMenuModalProps> = ({
 
               <div className="tactical-toggle-row">
                 <div>
-                  <div className="toggle-label-main">🛰️ Орбітальні розвідсупутники НАТО</div>
-                  <div className="toggle-label-sub">Розрахунок орбіт оптичних та SAR супутників над Україною</div>
-                </div>
-                <button
-                  type="button"
-                  className={`toggle-switch ${showSatellites ? "on" : "off"}`}
-                  onClick={onToggleSatellites}
-                >
-                  <span className="switch-knob" />
-                </button>
-              </div>
-
-              <div className="tactical-toggle-row">
-                <div>
-                  <div className="toggle-label-main">🔊 Тактичні звукові сигнали тривоги</div>
-                  <div className="toggle-label-sub">Акустичний пінґ при вході загрози в радіус 25 км</div>
+                  <div className="toggle-label-main">🔊 Звукові сигнали небезпеки</div>
+                  <div className="toggle-label-sub">Звукове сповіщення при наближенні загрози в радіус 25 км</div>
                 </div>
                 <button
                   type="button"
@@ -677,18 +635,18 @@ export const TacticalMenuModal: React.FC<TacticalMenuModalProps> = ({
 
               <div className="sensors-status-grid">
                 <div className="sensor-card">
-                  <div className="sensor-name">Повітряні Сили / Очі ППО (OSINT)</div>
+                  <div className="sensor-name">Державні та відомчі зведення</div>
                   <div className="sensor-status online">
-                    🟢 {liveHealth?.osintChannels
-                      ? `${liveHealth.osintChannels.respondingChannels}/${liveHealth.osintChannels.totalChannels} КАНАЛІВ LIVE`
-                      : "14 КАНАЛІВ ППО"}
+                    🟢 {liveHealth?.osintChannels?.activeBulletins
+                      ? `${liveHealth.osintChannels.activeBulletins} ЗВЕДЕНЬ АКТИВНО`
+                      : "БЕЗ TELEGRAM-КАНАЛІВ"}
                   </div>
                 </div>
                 <div className="sensor-card">
-                  <div className="sensor-name">ADS-B Військова авіація</div>
+                  <div className="sensor-name">Транспондери ADS-B (Україна)</div>
                   <div className="sensor-status online">
                     🟢 {liveHealth?.summary?.livePositionalSources?.some((s) => s.includes("adsb") || s.includes("airplanes"))
-                      ? "LIVE (4 АГРЕГАТОРИ)"
+                      ? "ОНЛАЙН (4 ДЖЕРЕЛА)"
                       : "ТРАНСЛЯЦІЯ АКТИВНА"}
                   </div>
                 </div>
@@ -724,7 +682,7 @@ export const TacticalMenuModal: React.FC<TacticalMenuModalProps> = ({
                   <div className="sensor-name">Neon PostgreSQL (БД та історія)</div>
                   <div className={`sensor-status ${liveHealth?.database?.ok === false ? "offline" : "online"}`}>
                     {liveHealth?.database?.ok
-                      ? `🐘 LIVE (${liveHealth.database.latencyMs ?? 0} мс · ${liveHealth.intelligenceDb?.bulletinsStored ?? 0} звед.)`
+                      ? `🐘 ОНЛАЙН (${liveHealth.database.latencyMs ?? 0} мс)`
                       : "🐘 ПІДКЛЮЧЕНО"}
                   </div>
                 </div>
@@ -736,8 +694,8 @@ export const TacticalMenuModal: React.FC<TacticalMenuModalProps> = ({
                   <div className="sensor-name">Автономний Воркер (24/7)</div>
                   <div className="sensor-status online">
                     🟢 {liveHealth?.watchdog?.memoryMb
-                      ? `${liveHealth.watchdog.memoryMb} MB · ${Math.floor((liveHealth.watchdog.uptimeSeconds ?? 0) / 60)} хв`
-                      : "HEALTHY"}
+                      ? `${liveHealth.watchdog.memoryMb} МБ · ${Math.floor((liveHealth.watchdog.uptimeSeconds ?? 0) / 60)} хв`
+                      : "АКТИВНИЙ"}
                   </div>
                 </div>
               </div>

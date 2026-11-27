@@ -10,12 +10,18 @@ interface LiveTimelineBarProps {
 }
 
 const TIMELINE_STEPS = [
-  { label: "СЕЙЧАС", offsetSec: 0, title: "Реальний час спостереження (LIVE)" },
+  { label: "НАЖИВО", offsetSec: 0, title: "Поточний стан у реальному часі" },
   { label: "5 хв", offsetSec: 300, title: "5 хвилин тому" },
   { label: "10 хв", offsetSec: 600, title: "10 хвилин тому" },
   { label: "30 хв", offsetSec: 1800, title: "30 хвилин тому" },
   { label: "60 хв", offsetSec: 3600, title: "60 хвилин тому" }
 ];
+
+const TIER_LABELS: Record<PerformanceTier, string> = {
+  LOW: "ЕКО",
+  NORMAL: "БАЛАНС",
+  HIGH: "МАКС"
+};
 
 export const LiveTimelineBar: React.FC<LiveTimelineBarProps> = ({
   selectedOffsetSec,
@@ -49,7 +55,7 @@ export const LiveTimelineBar: React.FC<LiveTimelineBarProps> = ({
               onSelectOffset(0);
             }}
           >
-            ● НАЗАД В LIVE
+            ● ПОВЕРНУТИСЬ НАЖИВО
           </button>
         </div>
       )}
@@ -79,9 +85,9 @@ export const LiveTimelineBar: React.FC<LiveTimelineBarProps> = ({
           type="button"
           className={`timeline-tier-badge tier-${performanceTier.toLowerCase()}`}
           onClick={cycleTier}
-          title={`Режим оптимізації пристрою: ${performanceTier}. Натисніть для зміни.`}
+          title={`Режим графіки: ${TIER_LABELS[performanceTier]}. Натисніть для зміни.`}
         >
-          ⚡ {performanceTier}
+          ⚡ {TIER_LABELS[performanceTier]}
         </button>
       </div>
     </div>

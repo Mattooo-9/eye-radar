@@ -134,6 +134,10 @@ export class IntelligenceStore {
       .slice(0, limit);
   }
 
+  clearMemoryBulletins(): void {
+    this.memoryBulletins.clear();
+  }
+
   async recordTrackSnapshot(tracks: TrackState[], now = Date.now()): Promise<void> {
     if (now - this.lastSnapshotAt < 30_000) return;
     const realTracks = tracks.filter((t) => !t.isSynthetic);

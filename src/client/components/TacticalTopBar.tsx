@@ -46,7 +46,7 @@ export const TacticalTopBar: React.FC<TacticalTopBarProps> = ({
           <span className="brand-text">EYE RADAR</span>
           <span className={`live-status-pill ${isLiveWs ? "ws-open" : "ws-sync"}`}>
             <span className="live-dot" />
-            <span className="live-text">{isLiveWs ? "LIVE WS" : "SYNC"}</span>
+            <span className="live-text">{isLiveWs ? "ОНЛАЙН" : "ЗВ'ЯЗОК"}</span>
           </span>
         </div>
       </div>

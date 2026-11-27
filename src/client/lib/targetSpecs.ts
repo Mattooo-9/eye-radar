@@ -111,7 +111,7 @@ export function getTargetDisplayMeta(
       ? "ТЕКСТОВЕ ПОВІДОМЛЕННЯ (OSINT)"
       : "ФАКТИЧНЕ СПОСТЕРЕЖЕННЯ (ADS-B)";
 
-  const cleanModel = (packetModel || "").trim();
+  const cleanModel = (packetModel || "").replace(/\s*\(OSINT\)/gi, "").trim();
 
   if (type === "munition") {
     return {

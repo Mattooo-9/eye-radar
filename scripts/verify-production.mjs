@@ -110,9 +110,10 @@ async function main() {
     `mem=${health.json?.watchdog?.memoryMb}MB`
   );
   check(
-    "14 OSINT channels registered & healthy",
-    (health.json?.osintChannels?.totalChannels ?? 0) >= 14 && (health.json?.osintChannels?.respondingChannels ?? 0) >= 10,
-    `${health.json?.osintChannels?.respondingChannels}/${health.json?.osintChannels?.totalChannels} responding`
+    "Telegram channels completely disconnected (0 Telegram sources)",
+    (health.json?.osintChannels?.totalChannels ?? -1) === 0 &&
+      health.json?.osintChannels?.telegramScrapingDisabled === true,
+    `totalChannels=${health.json?.osintChannels?.totalChannels}, telegramScrapingDisabled=${health.json?.osintChannels?.telegramScrapingDisabled}`
   );
   check(
     "Neon Postgres intelligenceStore active",
@@ -155,6 +156,11 @@ async function main() {
   const osintFalsePrecision = tracks.filter(
     (t) => t.dataCategory === "osint_message" && typeof t.uncertaintyRadius === "number" && t.uncertaintyRadius < 2500
   );
+  const telegramOrFakeRadarTracks = tracks.filter(
+    (t) =>
+      String(t.callsign || "").startsWith("@") ||
+      (t.dataCategory === "osint_message" && typeof t.speed === "number" && t.speed > 0)
+  );
   const evidenceBloat = tracks.filter((t) => Array.isArray(t.evidence) && t.evidence.length > 24);
 
   check(
@@ -169,6 +175,11 @@ async function main() {
   check("0 fabricated altitudes on textual OSINT tracks", osintFakeAlt.length === 0, `fakeAlt=${osintFakeAlt.length}`);
   check("0 fabricated measuredSpeed on textual OSINT tracks", osintFakeMeasuredSpeed.length === 0, `fakeSpd=${osintFakeMeasuredSpeed.length}`);
   check("0 false sub-2.5km precision on textual OSINT tracks", osintFalsePrecision.length === 0, `falsePrec=${osintFalsePrecision.length}`);
+  check(
+    "0 Telegram-sourced tracks or false moving radar extrapolations from text",
+    telegramOrFakeRadarTracks.length === 0,
+    `violations=${telegramOrFakeRadarTracks.length}`
+  );
   check("Bounded deduplicated evidence arrays (<=24)", evidenceBloat.length === 0, `bloated=${evidenceBloat.length}`);
 
   // 3. No synthetic EO dummy payload

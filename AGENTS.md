@@ -17,11 +17,11 @@ Eye Radar is an autonomous civil air-defense awareness system for Ukraine (Web A
    - Never silently upgrade generic `"БпЛА"` text alerts to `"Shahed-136"` or `"Shahed-238 (Jet)"` unless explicitly named in the source message or physically corroborated.
 3. **Strict 3-Way Data Separation (`DataCategory`)**
    - `official_alert` — Official civil defense air-raid sirens (`alerts.in.ua`, `/api/alerts`).
-   - `osint_message` — Textual air-defense monitoring reports (14 Ukrainian OSINT channels, eyewitness reports, `/api/osint/feed` & `/api/targets` where `dataCategory === "osint_message"`). Carries explicit source, publish timestamp, original snippet, and spatial uncertainty radius (`±X km`).
-   - `sensor_observation` — Direct physical telemetry (`adsb.lol`, `adsb.fi`, `adsb.one`, `opensky.live`, NASA FIRMS VIIRS thermal, Open-Meteo wind; `/api/targets` where `dataCategory === "sensor_observation"`). Only physically measured fields are displayed as measured.
-4. **Freshness & Zero European Civil Airliner Clutter**
+   - `osint_message` — Public departmental & state air-defense monitoring bulletins (non-Telegram sources via `PUBLIC_OSINT_URL` / `/api/ingest/osint`, plus unverified eyewitness reports; `/api/osint/feed` & `/api/targets` where `dataCategory === "osint_message"`). Telegram channel/chat scraping (`t.me`) is completely disconnected. Carries explicit source, publish timestamp, original snippet, `speed: 0` (zero fake radar coordinate drift), and spatial uncertainty radius (`±X km`).
+   - `sensor_observation` — Direct physical telemetry (`adsb.lol`, `adsb.fi`, `adsb.one`, `opensky.live` strictly inside Ukraine's national border polygon, NASA FIRMS VIIRS thermal, Open-Meteo wind; `/api/targets` where `dataCategory === "sensor_observation"`). Only physically measured fields are displayed as measured.
+4. **Freshness & Zero Civil / Out-of-Ukraine Airliner Clutter**
    - Observations older than 25 s are rejected on ingest; stale tracks prune automatically after 45 s without updates (manual eyewitness reports: 5 min).
-   - All ADS-B ingestion passes through the single canonical gate `src/server/sources/adsbClassifier.ts` (`shouldIngestAdsbContact`), which blocks commercial European airliners and enforces the exact Ukraine border polygon (`UKRAINE_BORDER_POLYGON`) + 350 km military theater boundary.
+   - All ADS-B ingestion passes through the single canonical gate `src/server/sources/adsbClassifier.ts` (`shouldIngestAdsbContact`), which blocks commercial airliners and enforces the exact Ukraine border polygon (`UKRAINE_BORDER_POLYGON` — zero foreign flights outside Ukraine).
 
 ---
 
@@ -43,7 +43,7 @@ Eye Radar is an autonomous civil air-defense awareness system for Ukraine (Web A
   - `openskyAdsbLol.ts` — Owns `api.adsb.lol` endpoints exclusively.
   - `airplanesLive.ts` — Owns `opendata.adsb.fi` + `api.adsb.one` military endpoints exclusively.
   - `openskyLive.ts` — Owns `opensky-network.org` exclusively.
-  - `publicOsintFeed.ts` + `src/server/ingest/osintParser.ts` + `ukraineGeo.ts` — 14 Ukrainian OSINT channels, homoglyph deobfuscation, Ukrainian locative morphology, 315+ geo-nodes, impact/interception extraction, promo footer stripping.
+  - `publicOsintFeed.ts` + `src/server/ingest/osintParser.ts` + `ukraineGeo.ts` — Non-Telegram departmental/state bulletin ingestion (`telegramScrapingDisabled: true`, zero `t.me` scraping), Ukrainian locative morphology, 320+ geo-nodes with longest-match prefix deduplication, stationary settlement anchoring (`speed: 0`), and impact/interception extraction.
   - `alertsInUa.ts` — Official air-raid sirens (`alerts.in.ua`).
   - `firmsThermal.ts` — NASA FIRMS VIIRS thermal anomalies.
   - `openMeteoWind.ts` — Atmospheric wind vectors.

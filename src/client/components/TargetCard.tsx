@@ -43,6 +43,21 @@ function formatAge(timestampMs: number): string {
   return `${min} хв тому`;
 }
 
+function formatLifecycleLabel(lifecycle?: string): string {
+  switch (lifecycle) {
+    case "CONFIRMED":
+      return "ПІДТВЕРДЖЕНО";
+    case "TENTATIVE":
+      return "ПЕРЕВІРЯЄТЬСЯ";
+    case "COASTING":
+      return "УТРИМАННЯ";
+    case "STALE":
+      return "ЗАСТАРІЛО";
+    default:
+      return lifecycle || "";
+  }
+}
+
 export const TargetCard = ({
   packet,
   location,
@@ -199,15 +214,15 @@ export const TargetCard = ({
           <div className="live-prov-header">
             <span className="live-prov-dot" />
             <span className="live-prov-title">
-              {isSensor ? "ФАКТИЧНЕ ДЖЕРЕЛО ТРАНСПОНДЕРА" : "ОРИГІНАЛЬНЕ ПОВІДОМЛЕННЯ ДЖЕРЕЛА"}
+              {isSensor ? "ФАКТИЧНЕ ДЖЕРЕЛО ТРАНСПОНДЕРА" : "ОФІЦІЙНЕ ПОВІДОМЛЕННЯ ДЖЕРЕЛА"}
             </span>
-            {liveDiag?.lifecycle && <span className="live-prov-status">{liveDiag.lifecycle}</span>}
+            {liveDiag?.lifecycle && <span className="live-prov-status">{formatLifecycleLabel(liveDiag.lifecycle)}</span>}
           </div>
           <div className="live-prov-quote">
             {liveDiag?.provenanceStr ||
               (isSensor
                 ? `Відкритий ADS-B/MLAT транспондер (${packetCallsign || id})`
-                : `Моніторинговий канал ${packetCallsign || "ППО"} · район: ${nearestLandmark}`)}
+                : `Публічне зведення служби повітряного спостереження · район: ${nearestLandmark}`)}
           </div>
         </div>
 
@@ -324,7 +339,7 @@ export const TargetCard = ({
             onClick={() => setShowInspector(true)}
             title="Переглянути повну історію джерел та технічну діагностику"
           >
-            Деталі (Provenance)
+            Джерела та деталі
           </button>
         </div>
       </div>

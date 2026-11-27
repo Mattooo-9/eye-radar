@@ -1,99 +1,40 @@
 import { createUnifiedObservation, type UnifiedObservation } from "../domain/unifiedObservation.js";
 import {
-  isStandDownMessage,
-  parseOsintBulletin,
   parseOsintImpact,
   parseOsintText,
   type ParsedOsintImpact
 } from "../ingest/osintParser.js";
 import { intelligenceStore, type PersistedOsintBulletin } from "../db/intelligenceStore.js";
-
-interface RawBulletinEntry {
-  channel: string;
-  postRef: string;
-  text: string;
-  publishedAt: number;
-}
-
-const CHANNEL_META: Record<string, { label: string; reliability: number; defaultRegion?: string }> = {
-  kpszsu: { label: "Повітряні Сили ЗСУ (@kpszsu)", reliability: 0.95 },
-  radar_raketaa: { label: "Радар Ракета (@radar_raketaa)", reliability: 0.90 },
-  mon1tor_ua: { label: "ППО | РАДАР (@mon1tor_ua)", reliability: 0.90 },
-  monitor_ukr: { label: "Монітор Україна (@monitor_ukr)", reliability: 0.89 },
-  bpla_radar: { label: "БпЛА Радар (@bpla_radar)", reliability: 0.89 },
-  radar_zp: { label: "Радар Запоріжжя (@radar_zp)", reliability: 0.89, defaultRegion: "Запорізька область" },
-  monitor1654: { label: "Монітор 1654 Харків (@monitor1654)", reliability: 0.89, defaultRegion: "Харківщина" },
-  tlknewsua: { label: "TLK Моніторинг (@tlknewsua)", reliability: 0.89, defaultRegion: "Харківщина" },
-  raketa_trevoga: { label: "Монітор ППО (@raketa_trevoga)", reliability: 0.89 },
-  dnipro_alerts: { label: "Дніпро Тривога (@dnipro_alerts)", reliability: 0.88, defaultRegion: "Дніпропетровщина" },
-  monitoringwar: { label: "Monitoring War (@monitoringwar)", reliability: 0.88 },
-  monitorwarr: { label: "Радар Моніторинг (@monitorwarr)", reliability: 0.88 },
-  vanek_nikolaev: { label: "Очі Півдня (@vanek_nikolaev)", reliability: 0.90 },
-  war_monitor: { label: "War Monitor (@war_monitor)", reliability: 0.89 }
-};
-
-function stripChannelPromo(text: string): string {
-  return text
-    .replace(/⚠️\s*TLK MAP ALERTS[\s\S]*/gi, "")
-    .replace(/📷\s*TlkInst[\s\S]*/gi, "")
-    .replace(/🎞\s*Канал со стримами[\s\S]*/gi, "")
-    .replace(/ℹ️\s*Alerts Live[\s\S]*/gi, "")
-    .replace(/➡\s*Підписатися[\s\S]*/gi, "")
-    .replace(/Підписатись\s*👉[\s\S]*/gi, "")
-    .replace(/✔\s*@[a-z0-9_]+/gi, "")
-    .replace(/«Наглядач[\s\S]*/gi, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function decodeHtmlText(rawHtml: string): string {
-  return rawHtml
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p>/gi, "\n")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&#(\d+);/g, (_, num) => String.fromCharCode(Number(num)))
-    .split("\n")
-    .map((line) => line.replace(/[ \t]+/g, " ").trim())
-    .filter(Boolean)
-    .join("\n");
-}
+import { query, getPool } from "../db/pool.js";
 
 /**
- * Public Official Air Defense OSINT & Spotter Feed Adapter ("Очі ППО")
- * Ingests empirical real-time air defense tracking alerts published by
- * the official Air Force of Ukraine (Повітряні Сили ЗСУ) and public monitoring channels.
+ * Non-Telegram Departmental & Public Web Bulletin Adapter.
  *
- * 100% EMPIRICAL - ZERO SYNTHESIS / ZERO SIMULATION.
+ * Telegram channels and chats (t.me / telegram.org) are strictly disconnected.
+ * Accepts only non-Telegram JSON/Web endpoints configured via PUBLIC_OSINT_URL
+ * or authenticated departmental pushes via POST /api/ingest/osint.
  */
 export class PublicOsintFeedSource {
-  private lastHttpFetch = 0;
-  private cachedBulletins: RawBulletinEntry[] = [];
-  private latestStandDownByType = new Map<string, number>();
-  private activeAlertOblasts = new Set<string>();
-  private channelSuccessTimestamps = new Map<string, number>();
-  private seenImpactPostRefs = new Set<string>();
   private pendingImpactEvents: Array<ParsedOsintImpact & { id: string; channel: string }> = [];
+  private seenImpactRefs = new Set<string>();
+  private activeAlertOblasts = new Set<string>();
 
   /**
-   * Hydrates recent empirical bulletins from Neon PostgreSQL on cold boot for zero blind-spot startup.
+   * Purges any legacy Telegram-sourced bulletins from Neon PostgreSQL on startup
+   * and loads only non-Telegram web/departmental bulletins.
    */
   async hydrateFromDb(): Promise<number> {
     try {
-      const persisted = await intelligenceStore.loadRecentBulletins(30 * 60 * 1000);
-      if (persisted.length > 0 && this.cachedBulletins.length === 0) {
-        this.cachedBulletins = persisted.map((p) => ({
-          channel: p.channel,
-          postRef: p.postRef,
-          text: p.text,
-          publishedAt: p.publishedAt
-        }));
+      const pool = getPool();
+      if (pool) {
+        await query(
+          `DELETE FROM osint_bulletins
+           WHERE channel NOT LIKE 'gov:%' AND channel NOT LIKE 'web:%'`
+        );
       }
-      return persisted.length;
+      intelligenceStore.clearMemoryBulletins();
+      const persisted = await intelligenceStore.loadRecentBulletins(15 * 60 * 1000);
+      return persisted.filter((p) => p.channel.startsWith("gov:") || p.channel.startsWith("web:")).length;
     } catch {
       return 0;
     }
@@ -105,25 +46,28 @@ export class PublicOsintFeedSource {
     return out;
   }
 
-  getChannelSummary(): { totalChannels: number; respondingChannels: number; activeBulletins: number } {
-    const cutoff = Date.now() - 120_000;
-    let responding = 0;
-    for (const ts of this.channelSuccessTimestamps.values()) {
-      if (ts >= cutoff) responding++;
-    }
+  getChannelSummary(): {
+    totalChannels: number;
+    respondingChannels: number;
+    activeBulletins: number;
+    telegramScrapingDisabled: boolean;
+  } {
     return {
-      totalChannels: Object.keys(CHANNEL_META).length,
-      respondingChannels: responding,
-      activeBulletins: this.cachedBulletins.length
+      totalChannels: 0,
+      respondingChannels: 0,
+      activeBulletins: this.getLiveFeed(25).length,
+      telegramScrapingDisabled: true
     };
   }
 
   getLiveFeed(limit = 25): Array<PersistedOsintBulletin & { channelLabel: string }> {
-    return intelligenceStore.getLatestFeedItems(limit).map((b) => ({
-      ...b,
-      text: stripChannelPromo(b.text),
-      channelLabel: CHANNEL_META[b.channel]?.label ?? `@${b.channel}`
-    }));
+    return intelligenceStore
+      .getLatestFeedItems(limit)
+      .filter((b) => b.channel.startsWith("gov:") || b.channel.startsWith("web:"))
+      .map((b) => ({
+        ...b,
+        channelLabel: b.channel.replace(/^(gov|web):/i, "")
+      }));
   }
 
   setActiveAlertOblasts(oblasts: string[]): void {
@@ -132,273 +76,98 @@ export class PublicOsintFeedSource {
     );
   }
 
-  private hasActiveAlertForOblast(oblast?: string): boolean {
-    if (this.activeAlertOblasts.size === 0 || !oblast) return true;
-    const key = oblast.toLowerCase().replace("область", "").replace("обл.", "").trim();
-    const ukSynonyms: Record<string, string[]> = {
-      kyiv: ["київськ", "м. київ", "київ"],
-      kharkiv: ["харківськ"],
-      dnipropetrovsk: ["дніпропетровськ"],
-      zaporizhzhia: ["запорізьк"],
-      mykolaiv: ["миколаївськ"],
-      odesa: ["одеськ"],
-      poltava: ["полтавськ"],
-      kirovohrad: ["кіровоградськ"],
-      sumy: ["сумськ"],
-      chernihiv: ["чернігівськ"],
-      zhytomyr: ["житомирськ"],
-      cherkasy: ["черкаськ"],
-      vinnytsia: ["вінницьк"],
-      rivne: ["рівненськ"],
-      volyn: ["волинськ"],
-      khmelnytskyi: ["хмельницьк"],
-      ternopil: ["тернопільськ"],
-      lviv: ["львівськ"],
-      "ivano-frankivsk": ["івано-франківськ"],
-      chernivtsi: ["чернівецьк"],
-      zakarpattia: ["закарпатськ"],
-      donetsk: ["донецьк"],
-      luhansk: ["луганськ"],
-      kherson: ["херсонськ"]
-    };
-
-    const probes = [key, ...(ukSynonyms[key] ?? [])];
-    for (const active of this.activeAlertOblasts) {
-      if (probes.some((p) => active.includes(p) || p.includes(active))) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  private async refreshRawBulletins(now: number): Promise<void> {
-    if (now - this.lastHttpFetch < 12_000 && this.cachedBulletins.length > 0) {
-      return;
-    }
-
-    this.lastHttpFetch = now;
-    const channels = Object.keys(CHANNEL_META);
-    const collected: RawBulletinEntry[] = [];
-    const standDowns = new Map<string, number>();
-
-    await Promise.allSettled(
-      channels.map(async (channel) => {
-        try {
-          const res = await fetch(`https://t.me/s/${channel}`, {
-            headers: {
-              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-              Accept: "text/html,application/xhtml+xml"
-            },
-            signal: AbortSignal.timeout(6000)
-          });
-
-          if (!res.ok) return;
-          this.channelSuccessTimestamps.set(channel, now);
-          const html = await res.text();
-          const messageRegex =
-            /<div class="tgme_widget_message\b[^>]*data-post="([^"]+)"[\s\S]*?<div class="tgme_widget_message_text[^>]*>([\s\S]*?)<\/div>[\s\S]*?<time datetime="([^"]+)"/g;
-
-          let match: RegExpExecArray | null;
-          while ((match = messageRegex.exec(html)) !== null) {
-            const postRef = match[1];
-            const cleanText = decodeHtmlText(match[2]);
-            const publishedAt = Date.parse(match[3]);
-            if (isNaN(publishedAt)) continue;
-
-            // Maximum empirical horizon: 30 minutes
-            const ageMs = now - publishedAt;
-            if (ageMs > 30 * 60 * 1000 || ageMs < -60_000) {
-              continue;
-            }
-
-            if (isStandDownMessage(cleanText)) {
-              const lower = cleanText.toLowerCase();
-              if (lower.includes("баліст") || lower.includes("баллист") || lower.includes("ракет")) {
-                standDowns.set("munition", Math.max(standDowns.get("munition") ?? 0, publishedAt));
-              } else if (lower.includes("бпла") || lower.includes("шахед") || lower.includes("дрон")) {
-                standDowns.set("uav", Math.max(standDowns.get("uav") ?? 0, publishedAt));
-              }
-              continue;
-            }
-
-            collected.push({
-              channel,
-              postRef,
-              text: cleanText,
-              publishedAt
-            });
-          }
-        } catch {
-          // Channel temporarily unavailable — tolerate gracefully
-        }
-      })
-    );
-
-    if (collected.length > 0 || standDowns.size > 0) {
-      this.cachedBulletins = collected;
-      this.latestStandDownByType = standDowns;
-    }
-  }
-
   async fetchPublicOsintObservations(): Promise<UnifiedObservation[]> {
     const now = Date.now();
-    await this.refreshRawBulletins(now);
+    const osintUrl = (process.env.PUBLIC_OSINT_URL || "").trim();
 
-    const bestByCorridor = new Map<
-      string,
-      { obs: UnifiedObservation; publishedAt: number; reliability: number }
-    >();
-    const toPersist: PersistedOsintBulletin[] = [];
-
-    for (const entry of this.cachedBulletins) {
-      const chMeta = CHANNEL_META[entry.channel] ?? { label: `@${entry.channel}`, reliability: 0.85 };
-      const parsedTargets = parseOsintBulletin(entry.text, entry.publishedAt, now, chMeta.defaultRegion);
-
-      // Extract real empirical impact / PVO interception reports (deduplicated per postRef)
-      if (!this.seenImpactPostRefs.has(entry.postRef) && now - entry.publishedAt <= 20 * 60 * 1000) {
-        const impact = parseOsintImpact(entry.text, entry.publishedAt, chMeta.defaultRegion);
-        if (impact) {
-          this.seenImpactPostRefs.add(entry.postRef);
-          if (this.seenImpactPostRefs.size > 500) {
-            this.seenImpactPostRefs.clear();
-          }
-          this.pendingImpactEvents.push({
-            ...impact,
-            id: `osint-evt-${entry.postRef.replace(/[^a-zA-Z0-9_-]/g, "-")}`,
-            channel: `@${entry.channel}`
-          });
-        }
-      }
-
-      if (parsedTargets.length > 0) {
-        const first = parsedTargets[0];
-        toPersist.push({
-          postRef: entry.postRef,
-          channel: entry.channel,
-          text: stripChannelPromo(entry.text),
-          publishedAt: entry.publishedAt,
-          targetType: first.observation.type,
-          oblast: first.oblast,
-          cityName: typeof first.observation.meta?.cityName === "string" ? first.observation.meta.cityName : undefined,
-          lat: first.observation.lat,
-          lon: first.observation.lon,
-          model: typeof first.observation.meta?.model === "string" ? first.observation.meta.model : undefined
-        });
-      }
-
-      for (const target of parsedTargets) {
-        const obsRaw = target.observation;
-        const ageMs = now - entry.publishedAt;
-
-        if (ageMs > target.maxAgeMs) continue;
-
-        // If channel or network issued a newer stand-down for ballistic/missile or broad UAV alert, respect it
-        const standDownTs = this.latestStandDownByType.get(obsRaw.type);
-        if (standDownTs && standDownTs > entry.publishedAt && obsRaw.type === "munition") {
-          continue;
-        }
-
-        // Cross-check official siren table for non-frontline deep-rear targets older than 3 minutes
-        if (!target.isFrontline && ageMs > 180_000 && !this.hasActiveAlertForOblast(target.oblast)) {
-          continue;
-        }
-
-        const ageMin = Math.max(0, Math.round(ageMs / 60_000));
-        const ageTag = ageMin === 0 ? "щойно" : `${ageMin} хв тому`;
-        const provenanceLabel = `${chMeta.label} · ${ageTag}: «${String(obsRaw.meta?.rawSnippet || "").slice(0, 90)}»`;
-
-        const unified = createUnifiedObservation({
-          source_id: "ukraine-air-defense-osint",
-          source_family: "osint",
-          sensorType: "air_defense_osint",
-          event_id: `post-${entry.postRef.replace("/", "-")}`,
-          object_id: target.corridorKey,
-          observed_at: now,
-          published_at: now,
-          received_at: now,
-          lat: obsRaw.lat,
-          lon: obsRaw.lon,
-          heading: obsRaw.heading,
-          speed: obsRaw.speed,
-          altitude: obsRaw.altitude,
-          object_type: obsRaw.type,
-          model: typeof obsRaw.meta?.model === "string" ? obsRaw.meta.model : undefined,
-          callsign: `@${entry.channel}`,
-          measurement_accuracy: obsRaw.uncertaintyRadius ?? 5000,
-          source_quality: chMeta.reliability,
-          confidence: chMeta.reliability,
-          classConfidence: 0.88,
-          isSynthetic: false,
-          evidence: ["official_air_force_bulletin", "air_defense_osint", `channel_${entry.channel}`],
-          threatEvidence: ["official_air_force_bulletin", "air_defense_osint"],
-          provenance: provenanceLabel
-        });
-
-        const existing = bestByCorridor.get(target.corridorKey);
-        if (
-          !existing ||
-          entry.publishedAt > existing.publishedAt ||
-          (entry.publishedAt === existing.publishedAt && chMeta.reliability > existing.reliability)
-        ) {
-          bestByCorridor.set(target.corridorKey, {
-            obs: unified,
-            publishedAt: entry.publishedAt,
-            reliability: chMeta.reliability
-          });
-        }
-      }
+    // Never fetch from Telegram domains (t.me, telegram.me, telegram.org)
+    if (!osintUrl || /t\.me|telegram\.(org|me)/i.test(osintUrl)) {
+      return [];
     }
 
-    // Optional external webhook/mirror if configured
-    const osintUrl = process.env.PUBLIC_OSINT_URL;
-    if (osintUrl) {
-      try {
-        const res = await fetch(osintUrl, {
-          headers: { "User-Agent": "EyeRadar/5.0 (Civil Air Defense Awareness)" },
-          signal: AbortSignal.timeout(4000)
-        });
-        if (res.ok) {
-          const items = (await res.json()) as Array<{ id: string; source: string; text: string; timestamp: number }>;
-          for (const item of items) {
-            const ts = item.timestamp || now;
-            if (now - ts > 25 * 60 * 1000) continue;
-            const parsedList = parseOsintText(item.text, ts);
-            for (const p of parsedList) {
-              const unified = createUnifiedObservation({
-                source_id: item.source || "osint-feed",
-                source_family: "osint",
-                event_id: `osint-${item.id}`,
-                object_id: p.id,
-                observed_at: now,
-                published_at: ts,
-                lat: p.lat,
-                lon: p.lon,
-                heading: p.heading,
-                speed: p.speed,
-                altitude: p.altitude,
-                object_type: p.type,
-                model: typeof p.meta?.model === "string" ? p.meta.model : undefined,
-                measurement_accuracy: 2500,
-                source_quality: 0.88,
-                confidence: p.confidence,
-                isSynthetic: false,
-                evidence: ["public_osint_message", `channel_${item.source}`, "air_defense_osint"],
-                threatEvidence: ["air_defense_osint"],
-                provenance: `OSINT: ${item.source}`
+    const bestByKey = new Map<string, UnifiedObservation>();
+    const toPersist: PersistedOsintBulletin[] = [];
+
+    try {
+      const res = await fetch(osintUrl, {
+        headers: { "User-Agent": "EyeRadar/2.0 (Civil Airspace Awareness)" },
+        signal: AbortSignal.timeout(4500)
+      });
+      if (res.ok) {
+        const items = (await res.json()) as Array<{
+          id: string;
+          source: string;
+          text: string;
+          timestamp: number;
+        }>;
+        for (const item of items) {
+          if (!item?.text || /t\.me|telegram|@/i.test(item.source || "")) continue;
+          const ts = item.timestamp || now;
+          if (now - ts > 12 * 60 * 1000) continue;
+
+          const sourceKey = `gov:${(item.source || "official-web").slice(0, 48)}`;
+          if (!this.seenImpactRefs.has(item.id)) {
+            const impact = parseOsintImpact(item.text, ts);
+            if (impact) {
+              this.seenImpactRefs.add(item.id);
+              this.pendingImpactEvents.push({
+                ...impact,
+                id: `gov-evt-${item.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`,
+                channel: item.source || "Офіційне повідомлення"
               });
-              bestByCorridor.set(p.id, { obs: unified, publishedAt: ts, reliability: 0.88 });
             }
           }
+
+          const parsedList = parseOsintText(item.text, ts);
+          for (const p of parsedList) {
+            toPersist.push({
+              postRef: `gov-${item.id}`,
+              channel: sourceKey,
+              text: item.text.slice(0, 500),
+              publishedAt: ts,
+              targetType: p.type,
+              cityName: typeof p.meta?.cityName === "string" ? p.meta.cityName : undefined,
+              lat: p.lat,
+              lon: p.lon,
+              model: typeof p.meta?.model === "string" ? p.meta.model : undefined
+            });
+
+            const unified = createUnifiedObservation({
+              source_id: sourceKey,
+              source_family: "osint",
+              event_id: `gov-${item.id}`,
+              object_id: p.id,
+              observed_at: now,
+              published_at: now,
+              received_at: now,
+              lat: p.lat,
+              lon: p.lon,
+              heading: p.heading,
+              speed: 0,
+              altitude: undefined,
+              object_type: p.type,
+              model: typeof p.meta?.model === "string" ? p.meta.model : undefined,
+              callsign: item.source || "Відомче зведення",
+              measurement_accuracy: 4500,
+              source_quality: 0.9,
+              confidence: p.confidence,
+              isSynthetic: false,
+              evidence: ["public_osint_message", "air_defense_osint"],
+              threatEvidence: ["air_defense_osint"],
+              provenance: `${item.source || "Офіційне зведення"}: «${item.text.slice(0, 100)}»`
+            });
+            bestByKey.set(p.id, unified);
+          }
         }
-      } catch {
-        // Tolerated
       }
+    } catch {
+      // Tolerated gracefully
     }
 
     if (toPersist.length > 0) {
       void intelligenceStore.saveBulletins(toPersist);
     }
 
-    return Array.from(bestByCorridor.values()).map((v) => v.obs);
+    return Array.from(bestByKey.values());
   }
 }

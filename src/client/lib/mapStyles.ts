@@ -134,7 +134,10 @@ export function buildRealisticSatelliteStyle(options: {
         paint: {
           "raster-opacity": 1.0,
           "raster-fade-duration": 0,
-          "raster-resampling": "linear"
+          "raster-resampling": "linear",
+          "raster-brightness-max": 0.54,
+          "raster-saturation": -0.45,
+          "raster-contrast": 0.16
         }
       },
       {
@@ -143,7 +146,7 @@ export function buildRealisticSatelliteStyle(options: {
         source: "reference-labels",
         minzoom: 6,
         paint: {
-          "raster-opacity": 0.78,
+          "raster-opacity": 0.62,
           "raster-fade-duration": 0,
           "raster-resampling": "linear"
         }

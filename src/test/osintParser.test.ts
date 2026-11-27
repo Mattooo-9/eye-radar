@@ -36,7 +36,7 @@ describe("OSINT Parser", () => {
     expect(observations.length).toBeGreaterThan(0);
     const obs = observations[0];
     expect(obs.type).toBe("bomb");
-    expect(obs.speed).toBeGreaterThan(200);
+    expect(obs.speed).toBe(0);
     expect(obs.meta?.model).toContain("КАБ");
   });
 

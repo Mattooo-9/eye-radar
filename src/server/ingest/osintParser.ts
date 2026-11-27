@@ -95,8 +95,8 @@ function classifyKinematics(effectiveType: TrackType, text: string): {
 
   if (effectiveType === "bomb") {
     return {
-      speed: 235,
-      model: lower.includes("1500") ? "КАБ-1500 (OSINT)" : lower.includes("умпб") ? "УМПБ (OSINT)" : "КАБ (OSINT)",
+      speed: 0,
+      model: lower.includes("1500") ? "КАБ-1500" : lower.includes("умпб") ? "УМПБ" : "КАБ",
       maxAgeMs: 6 * 60 * 1000
     };
   }
@@ -104,79 +104,80 @@ function classifyKinematics(effectiveType: TrackType, text: string): {
   if (effectiveType === "munition") {
     if (isBallistic) {
       return {
-        speed: 850,
+        speed: 0,
         model: lower.includes("кинджал") || lower.includes("кинжал")
-          ? "Аеробалістична ракета (Кинджал, OSINT)"
+          ? "Аеробалістична ціль (Кинджал)"
           : lower.includes("циркон")
-          ? "Гіперзвукова ціль (Циркон, OSINT)"
-          : "Балістична загроза (OSINT)",
+          ? "Гіперзвукова ціль (Циркон)"
+          : "Балістична загроза",
         maxAgeMs: 6 * 60 * 1000
       };
     }
     return {
-      speed: 230,
-      model: isCruise ? "Крилата ракета (OSINT)" : "Ракетна ціль (OSINT)",
-      maxAgeMs: 15 * 60 * 1000
+      speed: 0,
+      model: isCruise ? "Крилата ракета" : "Ракетна загроза",
+      maxAgeMs: 10 * 60 * 1000
     };
   }
 
   if (effectiveType === "fpv") {
     if (isMolniya) {
       return {
-        speed: 32,
-        model: lower.includes("ланцет") ? "БпЛА Ланцет (OSINT)" : "БпЛА Молнія (OSINT)",
-        maxAgeMs: 12 * 60 * 1000
+        speed: 0,
+        model: lower.includes("ланцет") ? "БпЛА Ланцет" : "БпЛА Молнія",
+        maxAgeMs: 8 * 60 * 1000
       };
     }
     return {
-      speed: 28,
-      model: lower.includes("опто") ? "FPV-дрон на оптоволокні (OSINT)" : "FPV-дрон (OSINT)",
-      maxAgeMs: 10 * 60 * 1000
+      speed: 0,
+      model: lower.includes("опто") ? "FPV-дрон (оптоволокно)" : "FPV-дрон",
+      maxAgeMs: 8 * 60 * 1000
     };
   }
 
   if (effectiveType === "aircraft") {
     return {
-      speed: 260,
-      model: "Тактична авіація (OSINT)",
-      maxAgeMs: 15 * 60 * 1000
+      speed: 0,
+      model: "Тактична авіація",
+      maxAgeMs: 10 * 60 * 1000
     };
   }
 
   if (effectiveType === "helicopter") {
     return {
-      speed: 65,
-      model: "Гелікоптер (OSINT)",
-      maxAgeMs: 15 * 60 * 1000
+      speed: 0,
+      model: "Гелікоптер",
+      maxAgeMs: 10 * 60 * 1000
     };
   }
 
-  // Truthful UAV descriptors: never upgrade generic "БпЛА" to specific hardware models unless stated in text
+  // Truthful UAV descriptors: never upgrade generic "БпЛА" to specific hardware models unless stated in text,
+  // and never assign fake measured speeds to textual OSINT bulletins
   if (isReactive) {
     return {
-      speed: 125,
-      model: "Реактивний БпЛА (OSINT)",
-      maxAgeMs: 20 * 60 * 1000
+      speed: 0,
+      model: "Реактивний БпЛА",
+      maxAgeMs: 12 * 60 * 1000
     };
   }
   if (isRecon) {
     return {
-      speed: 35,
-      model: "Розвідувальний БпЛА (OSINT)",
-      maxAgeMs: 25 * 60 * 1000
+      speed: 0,
+      model: "Розвідувальний БпЛА",
+      maxAgeMs: 12 * 60 * 1000
     };
   }
   if (isExplicitShahed) {
     return {
-      speed: 52,
-      model: "Shahed / Герань (OSINT)",
-      maxAgeMs: 25 * 60 * 1000
+      speed: 0,
+      model: "Shahed / Герань",
+      maxAgeMs: 12 * 60 * 1000
     };
   }
   return {
-    speed: 52,
-    model: isStrikeUav ? "Ударний БпЛА (OSINT)" : "БпЛА (тип не уточнено)",
-    maxAgeMs: 25 * 60 * 1000
+    speed: 0,
+    model: isStrikeUav ? "Ударний БпЛА" : "БпЛА (тип не уточнено)",
+    maxAgeMs: 12 * 60 * 1000
   };
 }
 
@@ -403,77 +404,32 @@ export const parseOsintBulletin = (
     }
 
     const kinematics = classifyKinematics(detectedType, deobClause);
-    const elapsedSec = Math.max(0, (referenceNow - publishedAt) / 1000);
     if ((referenceNow - publishedAt) > kinematics.maxAgeMs) {
       continue;
     }
 
-    let lat = anchorGeo.point.lat;
-    let lon = anchorGeo.point.lon;
+    // Never turn a textual OSINT message into a fake moving radar track:
+    // Anchor position directly to the reported destination/settlement with its spatial uncertainty radius.
+    const targetPoint = (geo.destination ?? anchorGeo).point;
+    const lat = targetPoint.lat;
+    const lon = targetPoint.lon;
     const heading = geo.approachHeading;
 
-    if (geo.origin && geo.destination && typeof heading === "number") {
-      // Corridor "Origin -> Destination": interpolate smoothly from 35% of route toward Destination
-      const totalDistM = haversineMeters(
-        geo.origin.point.lat,
-        geo.origin.point.lon,
-        geo.destination.point.lat,
-        geo.destination.point.lon
-      );
-      const startOffsetM = Math.min(totalDistM * 0.35, 35_000);
-      const advanceM = Math.min(totalDistM - 2_000, startOffsetM + kinematics.speed * elapsedSec);
-      const pt = destinationPoint(
-        geo.origin.point.lat,
-        geo.origin.point.lon,
-        heading,
-        Math.max(0, advanceM)
-      );
-      lat = pt.lat;
-      lon = pt.lon;
-    } else if (geo.destination && geo.isApproachingDestination && typeof heading === "number") {
-      // Incoming vector "на <Destination> з <Direction>":
-      // Start upstream from Destination on approach sector and advance smoothly WITHOUT overshooting Destination!
-      const leadDistM = detectedType === "bomb" || detectedType === "fpv" ? 14_000 : 28_000;
-      const upstreamBearing = (heading + 180) % 360;
-      const startPt = destinationPoint(
-        geo.destination.point.lat,
-        geo.destination.point.lon,
-        upstreamBearing,
-        leadDistM
-      );
-      const maxTravelM = Math.max(2_000, leadDistM - 2_500);
-      const traveledM = Math.min(maxTravelM, kinematics.speed * elapsedSec);
-      const pt = destinationPoint(startPt.lat, startPt.lon, heading, traveledM);
-      lat = pt.lat;
-      lon = pt.lon;
-    } else if (typeof heading === "number") {
-      // Explicit outgoing course from city: advance conservatively along course (capped to 25 km max per bulletin)
-      const traveledM = Math.min(25_000, kinematics.speed * elapsedSec);
-      if (traveledM > 100) {
-        const pt = destinationPoint(lat, lon, heading, traveledM);
-        lat = pt.lat;
-        lon = pt.lon;
-      }
-    }
-
-    const headingBucket = typeof heading === "number" ? Math.round(heading / 45) * 45 : "area";
     const targetTownKey = (geo.destination?.key || anchorGeo.key).toLowerCase().replace(/[^a-z0-9]/g, "");
-    const corridorKey = `osint-${detectedType}-${targetTownKey}-${headingBucket}`;
+    const corridorKey = `osint-${detectedType}-${targetTownKey}`;
 
     const isFrontline = Boolean(
       anchorGeo.point.isFrontline || geo.destination?.point.isFrontline || geo.origin?.point.isFrontline
     );
     const oblast = geo.destination?.point.oblast || anchorGeo.point.oblast;
     const isReactive = lowerClause.includes("реактив");
-    const uncertaintyRadius = anchorGeo.point.isRegion ? 18_000 : detectedType === "fpv" || detectedType === "bomb" ? 3_500 : 6_500;
+    const uncertaintyRadius = targetPoint.isRegion ? 18_000 : detectedType === "fpv" || detectedType === "bomb" ? 3_500 : 6_500;
 
     // Extract count badge (e.g. "4 БпЛА", "3 ударных", "2х ракети") if present in the clause
     const countMatch = clause.match(/^\s*(?:⚠️|🛵|🏍|🚀|💣)?\s*(\d{1,2})\s*[хx]?\s+(?=реактив|ударн|бпла|шахед|ракет|каб|fpv|фпв)/i);
     const groupCount = countMatch ? Number(countMatch[1]) : 1;
     const displayModel =
-      groupCount > 1 && kinematics.model
-        ? `${groupCount}х ${kinematics.model}`
-        : kinematics.model;
+      groupCount > 1 && kinematics.model ? `${groupCount}х ${kinematics.model}` : kinematics.model;
 
     results.push({
       observation: {
@@ -482,9 +438,8 @@ export const parseOsintBulletin = (
         lat,
         lon,
         heading,
-        // Area-only text alerts have unknown speed & direction (0 = no fabricated vector);
-        // directional bulletins keep corridor speed strictly for internal dead-reckoning (speedIsMeasured = false)
-        speed: typeof heading === "number" ? kinematics.speed : 0,
+        // Textual OSINT messages NEVER carry radar-measured speed (0 = stationary settlement/sector warning)
+        speed: 0,
         altitude: undefined,
         timestamp: referenceNow,
         source: "osint",

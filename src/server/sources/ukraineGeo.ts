@@ -94,6 +94,7 @@ export const UKRAINE_CITIES: Record<string, GeoPoint> = {
   zachepylivka: { name: "Zachepylivka", nameUk: "Зачепилівка", lat: 49.193, lon: 35.242, oblast: "Kharkiv", aliases: ["зачепилівка", "зачепилівку", "зачепиловка"] },
   barvinkove: { name: "Barvinkove", nameUk: "Барвінкове", lat: 48.905, lon: 37.022, oblast: "Kharkiv", isFrontline: true, aliases: ["барвінкове", "барвенково"] },
   borova: { name: "Borova", nameUk: "Борова", lat: 49.376, lon: 37.622, oblast: "Kharkiv", isFrontline: true, aliases: ["борова", "борову"] },
+  khotimlia: { name: "Khotimlia", nameUk: "Хотімля", lat: 50.017, lon: 36.875, oblast: "Kharkiv", isFrontline: true, aliases: ["хотімля", "хотімлю", "хотомля"] },
 
   // Dnipropetrovsk & Kirovohrad tactical towns
   lozuvatka: { name: "Lozuvatka", nameUk: "Лозуватка", lat: 48.054, lon: 33.289, oblast: "Dnipropetrovsk", aliases: ["лозуватка", "лозуватку"] },
@@ -147,7 +148,9 @@ export const UKRAINE_CITIES: Record<string, GeoPoint> = {
   vyshhorod: { name: "Vyshhorod", nameUk: "Вишгород", lat: 50.584, lon: 30.490, oblast: "Kyiv", aliases: ["вишгород", "вышгород"] },
   bucha: { name: "Bucha", nameUk: "Буча", lat: 50.548, lon: 30.221, oblast: "Kyiv", aliases: ["буча", "бучу"] },
   makariv: { name: "Makariv", nameUk: "Макарів", lat: 50.463, lon: 29.813, oblast: "Kyiv", aliases: ["макарів", "макаров"] },
+  piskivka: { name: "Piskivka", nameUk: "Пісківка", lat: 50.707, lon: 29.595, oblast: "Kyiv", aliases: ["пісківка", "пісківку", "песковка"] },
   mayaky: { name: "Mayaky", nameUk: "Маяки", lat: 46.415, lon: 30.274, oblast: "Odesa", aliases: ["маяки"] },
+  zakharivka: { name: "Zakharivka", nameUk: "Захарівка", lat: 47.332, lon: 29.756, oblast: "Odesa", aliases: ["захарівка", "захарівку", "захаровка"] },
   bilhorod_dnistrovskyi: { name: "Bilhorod-Dnistrovskyi", nameUk: "Білгород-Дністровський", lat: 46.192, lon: 30.344, oblast: "Odesa", aliases: ["білгород-дністровський", "белгород-днестровский"] },
   yuzhne: { name: "Yuzhne", nameUk: "Южне", lat: 46.622, lon: 31.101, oblast: "Odesa", aliases: ["южне", "південне"] },
   podilsk: { name: "Podilsk", nameUk: "Подільськ", lat: 47.742, lon: 29.534, oblast: "Odesa", aliases: ["подільськ", "подольск"] },
@@ -462,6 +465,7 @@ interface MatchedMention {
   key: string;
   point: GeoPoint;
   pos: number;
+  termLen: number;
 }
 
 const ALL_CITY_ENTRIES = Object.entries(UKRAINE_CITIES);
@@ -490,6 +494,7 @@ function findAllMentionsInNormalized(normalized: string): MatchedMention[] {
     }
 
     let bestPos = Infinity;
+    let bestTermLen = 0;
     for (const term of terms) {
       if (term.length < 3) continue;
       // Match whole-token prefix (space before term) so substrings inside unrelated words don't trigger
@@ -500,19 +505,36 @@ function findAllMentionsInNormalized(normalized: string): MatchedMention[] {
         const nextSpace = padded.indexOf(" ", idx + 1);
         const wordLen = nextSpace === -1 ? term.length : nextSpace - (idx + 1);
         if (wordLen <= term.length + 3 || afterChar === " ") {
-          if (idx < bestPos) bestPos = idx;
+          if (idx < bestPos || (idx === bestPos && term.length > bestTermLen)) {
+            bestPos = idx;
+            bestTermLen = term.length;
+          }
         }
       }
     }
 
     if (bestPos < Infinity) {
-      found.push({ key, point, pos: bestPos });
+      found.push({ key, point, pos: bestPos, termLen: bestTermLen });
     }
   }
 
-  // Sort by order of appearance in text, with non-region specific towns prioritized over generic oblast names at same pos
-  found.sort((a, b) => a.pos - b.pos || (a.point.isRegion ? 1 : 0) - (b.point.isRegion ? 1 : 0));
-  return found;
+  // Deduplicate matches at the exact same token position by keeping the longest matching settlement name
+  // (e.g. "на Васильківку" matches "васильківка" [len 11] and must not also match "васильків" [len 9])
+  const byPos = new Map<number, { key: string; point: GeoPoint; pos: number; termLen: number }>();
+  for (const item of found) {
+    const prev = byPos.get(item.pos);
+    if (
+      !prev ||
+      item.termLen > prev.termLen ||
+      (item.termLen === prev.termLen && !item.point.isRegion && prev.point.isRegion)
+    ) {
+      byPos.set(item.pos, item);
+    }
+  }
+
+  const deduped = Array.from(byPos.values());
+  deduped.sort((a, b) => a.pos - b.pos || (a.point.isRegion ? 1 : 0) - (b.point.isRegion ? 1 : 0));
+  return deduped;
 }
 
 export const findCityInText = (text: string): GeoPoint | null => {
