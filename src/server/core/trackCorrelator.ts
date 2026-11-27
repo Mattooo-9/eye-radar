@@ -45,12 +45,18 @@ export class TrackCorrelator {
     if (directMatch) {
       return { matchedTrackId: directMatch.id, confidenceBonus: 0.1, mahalanobisDistance: 0 };
     }
+    if (observation.id.startsWith("osint-dsns-")) {
+      return { matchedTrackId: null, confidenceBonus: 0 };
+    }
 
     let bestTrack: TrackState | null = null;
     let minDistance = Infinity;
     let bestMahalanobis = Infinity;
 
     for (const track of activeTracks) {
+      if (track.id.startsWith("osint-dsns-")) {
+        continue;
+      }
       // 2. Type compatibility gating: fundamentally different types cannot merge (e.g. aircraft vs munition)
       if (
         observation.type !== "unknown" &&

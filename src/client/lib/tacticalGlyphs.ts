@@ -1,94 +1,184 @@
 // src/client/lib/tacticalGlyphs.ts
-/**
- * Modern, minimalist, high-precision vector marker renderer for Eye Radar.
- * Eliminates cartoonish sprites, fake afterburners, and arcade silhouettes in favor of
- * clean cartographic nodes:
- * - Directional vector chevron when heading/course is known.
- * - Concentric sector beacon when only locality/area is reported (speed = 0, no heading).
- */
+// Precision vector cartographic silhouettes for aerial targets & threat sectors.
+// High-contrast, clean vector geometry (no pixelated bitmaps, no visual clutter).
 
 export interface GlyphRenderOptions {
   size: number;
   rotationDeg: number;
   type: string;
-  threatLevel?: string;
   color: string;
-  isSelected: boolean;
+  isSelected?: boolean;
   model?: string;
   speedKmh?: number;
-  hasDirection?: boolean;
-  isSensor?: boolean;
   isLowTier?: boolean;
   confidence?: number;
   timeMs?: number;
+  hasDirection?: boolean;
+  isSensor?: boolean;
 }
 
+/**
+ * Renders a high-contrast vector tactical marker at (0, 0).
+ * Note: The caller applies canvas translation and rotation before calling when directional.
+ */
 export function renderTacticalGlyph(
   ctx: CanvasRenderingContext2D,
-  opts: GlyphRenderOptions
+  options: GlyphRenderOptions
 ): void {
-  const { size, color, isSelected, hasDirection = false, isSensor = false, isLowTier = false } = opts;
-  const r = Math.max(7, Math.min(12, size * 0.44));
+  const {
+    type,
+    color,
+    isSelected = false,
+    isLowTier = false,
+    timeMs = 0
+  } = options;
 
-  // 1. Subtle ambient radial halo
-  if (!isLowTier) {
-    const haloR = isSelected ? r * 2.5 : r * 1.9;
-    const grad = ctx.createRadialGradient(0, 0, r * 0.2, 0, 0, haloR);
-    if (color === "#ef4444" || color === "#dc2626") {
-      grad.addColorStop(0, "rgba(239, 68, 68, 0.28)");
-      grad.addColorStop(1, "rgba(239, 68, 68, 0)");
-    } else if (color === "#f59e0b" || color === "#f97316") {
-      grad.addColorStop(0, "rgba(245, 158, 11, 0.26)");
-      grad.addColorStop(1, "rgba(245, 158, 11, 0)");
-    } else {
-      grad.addColorStop(0, "rgba(56, 189, 248, 0.26)");
-      grad.addColorStop(1, "rgba(56, 189, 248, 0)");
-    }
-    ctx.fillStyle = grad;
+  ctx.save();
+
+  const isThreat = type === "uav" || type === "munition" || type === "bomb" || type === "fpv";
+  const baseRadius = isSelected ? 11 : 9.5;
+
+  // 1. Subtle ambient pulse halo for active threats or selected target
+  if (!isLowTier && (isThreat || isSelected)) {
+    const pulse = 0.5 + 0.5 * Math.sin(timeMs / 420);
+    const haloR = baseRadius + 3.5 + (isSelected ? pulse * 3.5 : pulse * 2.0);
     ctx.beginPath();
     ctx.arc(0, 0, haloR, 0, Math.PI * 2);
+    ctx.fillStyle = isSelected ? `${color}38` : `${color}22`;
     ctx.fill();
-  }
-
-  // 2. Selection ring
-  if (isSelected) {
-    ctx.strokeStyle = "#f8fafc";
-    ctx.lineWidth = 1.4;
-    ctx.beginPath();
-    ctx.arc(0, 0, r + 4.5, 0, Math.PI * 2);
+    ctx.lineWidth = isSelected ? 1.4 : 0.9;
+    ctx.strokeStyle = isSelected ? "#ffffff" : `${color}88`;
     ctx.stroke();
   }
 
-  // 3. Dark obsidian disc base with crisp colored perimeter
-  ctx.fillStyle = "rgba(8, 13, 23, 0.94)";
-  ctx.strokeStyle = color;
-  ctx.lineWidth = isSelected ? 2.0 : 1.5;
+  // 2. Dark obsidian circular backing badge for contrast on both Day and Night satellite imagery
   ctx.beginPath();
-  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.arc(0, 0, baseRadius, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(8, 13, 23, 0.90)";
   ctx.fill();
+  ctx.lineWidth = isSelected ? 1.8 : 1.3;
+  ctx.strokeStyle = isSelected ? "#ffffff" : color;
   ctx.stroke();
 
-  // 4. Inner precision geometry: directional chevron if course is known, concentric dot if area-only
-  if (hasDirection || isSensor) {
-    // Sleek minimal directional chevron pointing along local -Y (upward before rotation)
-    const tipY = -r * 0.56;
-    const wingY = r * 0.42;
-    const wingX = r * 0.46;
-    const notchY = r * 0.16;
+  // 3. Crisp vector silhouette inside the badge by target category
+  ctx.fillStyle = color;
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 0.75;
+  ctx.lineJoin = "round";
 
-    ctx.fillStyle = color;
+  if (type === "aircraft") {
+    // Swept-wing jet aircraft silhouette pointing up (0, -y)
     ctx.beginPath();
-    ctx.moveTo(0, tipY);
-    ctx.lineTo(wingX, wingY);
-    ctx.lineTo(0, notchY);
-    ctx.lineTo(-wingX, wingY);
+    ctx.moveTo(0, -6.5);
+    ctx.lineTo(1.3, -3.5);
+    ctx.lineTo(6.2, 0.5);
+    ctx.lineTo(6.2, 2.0);
+    ctx.lineTo(1.3, 0.4);
+    ctx.lineTo(1.1, 4.2);
+    ctx.lineTo(3.4, 5.6);
+    ctx.lineTo(3.4, 6.4);
+    ctx.lineTo(0, 5.4);
+    ctx.lineTo(-3.4, 6.4);
+    ctx.lineTo(-3.4, 5.6);
+    ctx.lineTo(-1.1, 4.2);
+    ctx.lineTo(-1.3, 0.4);
+    ctx.lineTo(-6.2, 2.0);
+    ctx.lineTo(-6.2, 0.5);
+    ctx.lineTo(-1.3, -3.5);
     ctx.closePath();
     ctx.fill();
-  } else {
-    // Area-anchored textual report without course: clean luminous core dot
-    ctx.fillStyle = color;
+    ctx.stroke();
+  } else if (type === "munition") {
+    // Sleek cruise missile vector silhouette
     ctx.beginPath();
-    ctx.arc(0, 0, r * 0.42, 0, Math.PI * 2);
+    ctx.moveTo(0, -6.8);
+    ctx.lineTo(1.5, -3.8);
+    ctx.lineTo(1.5, -0.8);
+    ctx.lineTo(5.6, 1.8);
+    ctx.lineTo(5.6, 3.0);
+    ctx.lineTo(1.5, 1.5);
+    ctx.lineTo(1.4, 4.6);
+    ctx.lineTo(3.2, 6.0);
+    ctx.lineTo(-3.2, 6.0);
+    ctx.lineTo(-1.4, 4.6);
+    ctx.lineTo(-1.5, 1.5);
+    ctx.lineTo(-5.6, 3.0);
+    ctx.lineTo(-5.6, 1.8);
+    ctx.lineTo(-1.5, -0.8);
+    ctx.lineTo(-1.5, -3.8);
+    ctx.closePath();
     ctx.fill();
+    ctx.stroke();
+  } else if (type === "bomb") {
+    // Guided glide bomb (КАБ / УМПК) vector silhouette
+    ctx.beginPath();
+    ctx.moveTo(0, -6.2);
+    ctx.lineTo(2.0, -3.2);
+    ctx.lineTo(2.0, -0.5);
+    ctx.lineTo(5.8, 1.0);
+    ctx.lineTo(5.8, 2.4);
+    ctx.lineTo(1.8, 1.4);
+    ctx.lineTo(1.6, 4.8);
+    ctx.lineTo(3.2, 6.0);
+    ctx.lineTo(-3.2, 6.0);
+    ctx.lineTo(-1.6, 4.8);
+    ctx.lineTo(-1.8, 1.4);
+    ctx.lineTo(-5.8, 2.4);
+    ctx.lineTo(-5.8, 1.0);
+    ctx.lineTo(-2.0, -0.5);
+    ctx.lineTo(-2.0, -3.2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  } else if (type === "fpv") {
+    // 4-rotor tactical X-drone silhouette
+    ctx.lineWidth = 1.4;
+    ctx.strokeStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(-4.2, -4.2);
+    ctx.lineTo(4.2, 4.2);
+    ctx.moveTo(4.2, -4.2);
+    ctx.lineTo(-4.2, 4.2);
+    ctx.stroke();
+    for (const [rx, ry] of [
+      [-4.2, -4.2],
+      [4.2, -4.2],
+      [-4.2, 4.2],
+      [4.2, 4.2]
+    ]) {
+      ctx.beginPath();
+      ctx.arc(rx, ry, 2.1, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else if (type === "helicopter") {
+    // Rotary-wing helicopter silhouette
+    ctx.beginPath();
+    ctx.ellipse(0, -0.5, 2.2, 4.2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.moveTo(-5.2, -5.2);
+    ctx.lineTo(5.2, 5.2);
+    ctx.moveTo(5.2, -5.2);
+    ctx.lineTo(-5.2, 5.2);
+    ctx.stroke();
+  } else {
+    // Default / UAV: sharp delta-wing strike drone silhouette (Shahed / БпЛА)
+    ctx.beginPath();
+    ctx.moveTo(0, -6.2);
+    ctx.lineTo(5.6, 3.8);
+    ctx.lineTo(5.6, 5.0);
+    ctx.lineTo(1.6, 3.4);
+    ctx.lineTo(0, 4.8);
+    ctx.lineTo(-1.6, 3.4);
+    ctx.lineTo(-5.6, 5.0);
+    ctx.lineTo(-5.6, 3.8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
   }
+
+  ctx.restore();
 }

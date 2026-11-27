@@ -1201,24 +1201,24 @@ const drawMilitaryCalloutPill = (
   const isRightHalf = targetX > screenW * 0.55;
   const candidates: Array<{ x: number; y: number }> = isRightHalf
     ? [
-        { x: targetX - pillW - 14, y: Math.round(targetY - pillH / 2) }, // Left
-        { x: targetX - pillW - 14, y: Math.round(targetY - pillH / 2 - 20) }, // Left-Up
-        { x: targetX - pillW - 14, y: Math.round(targetY - pillH / 2 + 20) }, // Left-Down
-        { x: Math.round(targetX - pillW / 2), y: targetY - pillH - 12 }, // Top
-        { x: Math.round(targetX - pillW / 2), y: targetY + 14 }, // Bottom
-        { x: targetX + 14, y: Math.round(targetY - pillH / 2) }, // Right
-        { x: targetX + 14, y: Math.round(targetY - pillH / 2 - 20) }, // Right-Up
-        { x: targetX + 14, y: Math.round(targetY - pillH / 2 + 20) } // Right-Down
+        { x: targetX - pillW - 16, y: Math.round(targetY - pillH / 2) }, // Left
+        { x: targetX - pillW - 16, y: Math.round(targetY - pillH / 2 - 20) }, // Left-Up
+        { x: targetX - pillW - 16, y: Math.round(targetY - pillH / 2 + 20) }, // Left-Down
+        { x: Math.round(targetX - pillW / 2), y: targetY - pillH - 15 }, // Top
+        { x: Math.round(targetX - pillW / 2), y: targetY + 15 }, // Bottom
+        { x: targetX + 16, y: Math.round(targetY - pillH / 2) }, // Right
+        { x: targetX + 16, y: Math.round(targetY - pillH / 2 - 20) }, // Right-Up
+        { x: targetX + 16, y: Math.round(targetY - pillH / 2 + 20) } // Right-Down
       ]
     : [
-        { x: targetX + 14, y: Math.round(targetY - pillH / 2) }, // Right
-        { x: targetX + 14, y: Math.round(targetY - pillH / 2 - 20) }, // Right-Up
-        { x: targetX + 14, y: Math.round(targetY - pillH / 2 + 20) }, // Right-Down
-        { x: Math.round(targetX - pillW / 2), y: targetY - pillH - 12 }, // Top
-        { x: Math.round(targetX - pillW / 2), y: targetY + 14 }, // Bottom
-        { x: targetX - pillW - 14, y: Math.round(targetY - pillH / 2) }, // Left
-        { x: targetX - pillW - 14, y: Math.round(targetY - pillH / 2 - 20) }, // Left-Up
-        { x: targetX - pillW - 14, y: Math.round(targetY - pillH / 2 + 20) } // Left-Down
+        { x: targetX + 16, y: Math.round(targetY - pillH / 2) }, // Right
+        { x: targetX + 16, y: Math.round(targetY - pillH / 2 - 20) }, // Right-Up
+        { x: targetX + 16, y: Math.round(targetY - pillH / 2 + 20) }, // Right-Down
+        { x: Math.round(targetX - pillW / 2), y: targetY - pillH - 15 }, // Top
+        { x: Math.round(targetX - pillW / 2), y: targetY + 15 }, // Bottom
+        { x: targetX - pillW - 16, y: Math.round(targetY - pillH / 2) }, // Left
+        { x: targetX - pillW - 16, y: Math.round(targetY - pillH / 2 - 20) }, // Left-Up
+        { x: targetX - pillW - 16, y: Math.round(targetY - pillH / 2 + 20) } // Left-Down
       ];
 
   let chosenX = candidates[0].x;
@@ -1230,7 +1230,13 @@ const drawMilitaryCalloutPill = (
     const clampedY = Math.max(6, Math.min(screenH - pillH - 6, cand.y));
     const testRect: PillRect = { x: clampedX, y: clampedY, w: pillW, h: pillH };
 
-    const collides = placedBoxes.some((b) => doesPillOverlap(testRect, b));
+    const collides = placedBoxes.some((b) => {
+      // Never collide with this target's own pre-seeded icon footprint
+      if (Math.abs(b.x + b.w / 2 - targetX) < 3 && Math.abs(b.y + b.h / 2 - targetY) < 3) {
+        return false;
+      }
+      return doesPillOverlap(testRect, b);
+    });
     if (!collides) {
       chosenX = clampedX;
       chosenY = clampedY;
@@ -2985,6 +2991,9 @@ export const MapView = ({
 
           const cleanModel = packetModel
             ? packetModel
+                .replace(/^Повітряна загроза\s*·\s*/i, "Загроза · ")
+                .replace(/^Загроза артобстрілу\s*·\s*/i, "Обстріл · ")
+                .replace(/^Бойові дії в районі\s*·\s*/i, "Бої · ")
                 .replace(/ Cruise Missile/gi, "")
                 .replace(/ Fighting Falcon/gi, "")
                 .replace(/ Flanker/gi, "")
@@ -3080,13 +3089,13 @@ export const MapView = ({
           }
         }
 
-        // Pre-seed collision boxes with target glyph footprints so callout pills never cover adjacent target icons
+        // Pre-seed collision boxes with tight target glyph footprints so callout pills avoid covering other target icons
         for (const tItem of tacticalItems) {
           placedPillBoxes.push({
-            x: tItem.targetX - 14,
-            y: tItem.targetY - 14,
-            w: 28,
-            h: 28
+            x: tItem.targetX - 9,
+            y: tItem.targetY - 9,
+            w: 18,
+            h: 18
           });
         }
 
@@ -3261,7 +3270,7 @@ export const MapView = ({
             });
             ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
 
-            const showPill = item.isSelected || (zoom >= 4.4 && standalone.length <= 35);
+            const showPill = item.isSelected || zoom >= 4.2;
             if (showPill) {
               drawMilitaryCalloutPill(
                 ctx,
@@ -3299,7 +3308,7 @@ export const MapView = ({
             });
             ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
 
-            const showPill2 = item.isSelected || (zoom >= 4.4 && tacticalItems.length <= 35);
+            const showPill2 = item.isSelected || zoom >= 4.2;
             if (showPill2) {
               drawMilitaryCalloutPill(
                 ctx,
