@@ -1,26 +1,47 @@
-name: Autonomous CI & Render Keepalive
+name: Autonomous CI, Deploy Sync & Keepalive
 
 on:
   push:
+    branches: [main]
+  pull_request:
     branches: [main]
   schedule:
     # Keep Render worker warm 24/7 & verify live production health every 10 minutes
     - cron: "*/10 * * * *"
   workflow_dispatch:
 
+concurrency:
+  group: eye-radar-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   keepalive:
+    if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
     steps:
-      - name: Ping Render live radar backend & verify healthy response
+      - name: Verify live Render backend & Vercel official alert feed
         run: |
-          curl -fsS --max-time 20 https://eye-radar.onrender.com/health | head -c 500
-          echo ""
-          curl -fsS --max-time 20 https://eye-radar.vercel.app/api/osint/feed?limit=3 | head -c 500
-          echo ""
+          node -e '
+            (async () => {
+              const h = await fetch("https://eye-radar.onrender.com/health", { signal: AbortSignal.timeout(20000) });
+              if (!h.ok) throw new Error("Render /health HTTP " + h.status);
+              const hj = await h.json();
+              if (!hj.ok || !hj.database?.ok) throw new Error("Render unhealthy: " + JSON.stringify(hj.database));
+              const a = await fetch("https://eye-radar.vercel.app/api/alerts", { signal: AbortSignal.timeout(20000) });
+              if (!a.ok) throw new Error("Vercel /api/alerts HTTP " + a.status);
+              const aj = await a.json();
+              console.log("KEEPALIVE OK:", {
+                sha: String(hj.releaseSha || "dev").slice(0, 7),
+                memMb: hj.watchdog?.memoryMb,
+                dbMs: hj.database?.latencyMs,
+                alertsStatus: aj.status,
+                alertsCount: aj.count
+              });
+            })().catch((e) => { console.error(e); process.exit(1); });
+          '
 
   verify:
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,3 +51,58 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run acceptance
+
+  deploy-vercel:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: [verify]
+    runs-on: ubuntu-latest
+    outputs:
+      deployed: ${{ steps.deploy.outputs.deployed }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Deploy client & rewrites to Vercel Production
+        id: deploy
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: team_DZuxT2x7A5lAuNkXlaxM0olJ
+          VERCEL_PROJECT_ID: prj_CiRMS4eAdOhLvjAyLZMp9KPPYrFr
+          VITE_RELEASE_SHA: ${{ github.sha }}
+        run: |
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "::notice title=Vercel Auto-Deploy Secret Missing::Configure repository secret VERCEL_TOKEN to enable automatic GitHub -> Vercel production deploys on push to main."
+            echo "deployed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          npx --yes vercel@latest pull --yes --environment=production --token="$VERCEL_TOKEN" --scope="$VERCEL_ORG_ID"
+          npx --yes vercel@latest build --prod --token="$VERCEL_TOKEN" --scope="$VERCEL_ORG_ID"
+          npx --yes vercel@latest deploy --prebuilt --prod --yes --token="$VERCEL_TOKEN" --scope="$VERCEL_ORG_ID"
+          echo "deployed=true" >> "$GITHUB_OUTPUT"
+
+  post-deploy-verify:
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && needs.verify.result == 'success'
+    needs: [verify, deploy-vercel]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Optional Render deploy hook trigger
+        if: env.RENDER_DEPLOY_HOOK_URL != ''
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: curl -fsS -X POST "$RENDER_DEPLOY_HOOK_URL" >/dev/null
+      - name: Wait for Render rollout & run full production acceptance gate
+        env:
+          VERCEL_DEPLOYED: ${{ needs.deploy-vercel.outputs.deployed }}
+          TARGET_SHA: ${{ github.sha }}
+        run: |
+          if [ "$VERCEL_DEPLOYED" = "true" ]; then
+            node scripts/verify-production.mjs --wait-seconds 210 --expect-sha "$TARGET_SHA"
+          else
+            node scripts/verify-production.mjs --wait-seconds 210 --expect-render-sha "$TARGET_SHA"
+          fi

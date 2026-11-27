@@ -17,6 +17,7 @@
     "test": "vitest run",
     "acceptance": "npm run check && vitest run && npm run build",
     "verify:prod": "node scripts/verify-production.mjs",
+    "verify:prod:wait": "node scripts/verify-production.mjs --wait-seconds 180",
     "start": "node dist/server/index.js"
   },
   "dependencies": {

@@ -388,12 +388,20 @@ const readBody = async (req: IncomingMessage): Promise<string> =>
     req.on("error", rejectBody);
   });
 
+const RELEASE_SHA =
+  process.env.RENDER_GIT_COMMIT ||
+  process.env.GITHUB_SHA ||
+  process.env.VERCEL_GIT_COMMIT_SHA ||
+  "dev";
+const SERVER_STARTED_AT = new Date().toISOString();
+
 const json = (res: ServerResponse, statusCode: number, payload: unknown): void => {
   res.writeHead(statusCode, {
     "Content-Type": "application/json; charset=utf-8",
     "Cache-Control": "no-store",
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "strict-origin-when-cross-origin",
+    "X-Release-Sha": RELEASE_SHA.slice(0, 12),
     "Access-Control-Allow-Origin": "*"
   });
   res.end(JSON.stringify(payload));
@@ -491,6 +499,8 @@ const server = createServer(async (req, res) => {
 
     json(res, 200, {
       ok: true,
+      releaseSha: RELEASE_SHA,
+      startedAt: SERVER_STARTED_AT,
       database: dbHealth,
       intelligenceDb: intelDbStats,
       osintChannels: publicOsintSource.getChannelSummary(),
