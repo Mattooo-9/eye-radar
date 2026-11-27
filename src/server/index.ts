@@ -1,4 +1,4 @@
-import { createReadStream, existsSync } from "node:fs";
+import { createReadStream, existsSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { extname, join, resolve } from "node:path";
@@ -64,6 +64,7 @@ const MIME_TYPES: Record<string, string> = {
   ".css": "text/css; charset=utf-8",
   ".json": "application/json; charset=utf-8",
   ".geojson": "application/geo+json; charset=utf-8",
+  ".pmtiles": "application/octet-stream",
   ".svg": "image/svg+xml",
   ".png": "image/png",
   ".jpg": "image/jpeg"
@@ -488,9 +489,39 @@ const serveClient = async (req: IncomingMessage, res: ServerResponse): Promise<v
   const cacheControl = finalPath.endsWith("index.html")
     ? "no-cache, no-store, must-revalidate, max-age=0"
     : "public, max-age=31536000, immutable";
+  const stat = statSync(finalPath);
+  const rangeHeader = req.headers.range;
+
+  if (rangeHeader && /^bytes=\d*-\d*$/i.test(rangeHeader)) {
+    const [, startStr, endStr] = rangeHeader.match(/^bytes=(\d*)-(\d*)$/i) || [];
+    const start = startStr ? Number.parseInt(startStr, 10) : 0;
+    const end = endStr ? Math.min(stat.size - 1, Number.parseInt(endStr, 10)) : stat.size - 1;
+    if (start >= 0 && start <= end && end < stat.size) {
+      res.writeHead(206, {
+        "Content-Type": contentType,
+        "Content-Range": `bytes ${start}-${end}/${stat.size}`,
+        "Accept-Ranges": "bytes",
+        "Content-Length": end - start + 1,
+        "Cache-Control": cacheControl,
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Expose-Headers": "Accept-Ranges, Content-Range, Content-Length"
+      });
+      if (req.method === "HEAD") {
+        res.end();
+        return;
+      }
+      createReadStream(finalPath, { start, end }).pipe(res);
+      return;
+    }
+  }
+
   res.writeHead(200, {
     "Content-Type": contentType,
+    "Content-Length": stat.size,
+    "Accept-Ranges": "bytes",
     "Cache-Control": cacheControl,
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Expose-Headers": "Accept-Ranges, Content-Range, Content-Length",
     ...(finalPath.endsWith("index.html") ? { Pragma: "no-cache", Expires: "0" } : {})
   });
   if (req.method === "HEAD") {
@@ -799,7 +830,8 @@ const server = createServer(async (req, res) => {
   if (req.method === "GET" && url.pathname === "/api/config") {
     json(res, 200, {
       wsUrl: `${env.publicBaseUrl.replace(/^http/, "ws")}${env.wsPath}`,
-      mapStyleUrl: env.mapStyleUrl
+      mapStyleUrl: env.mapStyleUrl,
+      pmtilesUrl: env.pmtilesUrl || undefined
     });
     return;
   }

@@ -50,7 +50,7 @@ export default defineConfig(({ mode }) => {
         output: {
           manualChunks: {
             react: ["react", "react-dom"],
-            map: ["maplibre-gl"]
+            map: ["maplibre-gl", "pmtiles", "@protomaps/basemaps"]
           }
         }
       }

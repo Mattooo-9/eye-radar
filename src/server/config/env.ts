@@ -26,7 +26,8 @@ const rawParsed = ServerEnvSchema.safeParse({
   webAppPath: process.env.WEB_APP_PATH ?? "/app",
   wsPath: process.env.WS_PATH ?? "/ws",
   mapStyleUrl:
-    process.env.MAP_STYLE_URL ?? "https://basemaps.cartocdn.com/gl/dark-matter-nolabels-gl-style/style.json",
+    process.env.MAP_STYLE_URL ?? "https://tiles.openfreemap.org/styles/dark",
+  pmtilesUrl: process.env.PMTILES_URL ?? "",
   jitterRadiusKm: process.env.JITTER_RADIUS_KM ?? 15,
   trustMinScore: process.env.TRUST_MIN_SCORE ?? 55
 });

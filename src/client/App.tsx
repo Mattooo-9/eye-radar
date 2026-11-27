@@ -90,7 +90,7 @@ export const App = () => {
   } = useTrustedLocation();
   const [isPickingLocation, setIsPickingLocation] = useState(false);
   const [locationSetupOpen, setLocationSetupOpen] = useState(false);
-  const { packets, impacts, uncertaintyEvents, connectionState, mapStyleUrl } = useWsRadar(
+  const { packets, impacts, uncertaintyEvents, connectionState, mapStyleUrl, pmtilesUrl } = useWsRadar(
     userId,
     location,
     trustScore,
@@ -492,6 +492,7 @@ export const App = () => {
           packets={filteredPackets}
           impacts={impacts}
           mapStyleUrl={mapStyleUrl}
+          pmtilesUrl={pmtilesUrl}
           location={location}
           confirmedLocation={confirmedLocation}
           filters={filters}

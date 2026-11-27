@@ -8,6 +8,7 @@ import {
 } from "../../common/binaryCodec.js";
 import type { CompactTrackPacket, ThreatLevel } from "../../server/domain/types.js";
 import { trackStore, type ClientUncertaintyEvent } from "../lib/trackStore.js";
+import { OPENFREEMAP_DARK_STYLE_URL } from "../lib/mapStyles.js";
 
 export interface ImpactEvent {
   id: string;
@@ -26,6 +27,7 @@ export type TrackPacket = CompactTrackPacket;
 interface ConfigResponse {
   wsUrl: string;
   mapStyleUrl: string;
+  pmtilesUrl?: string;
 }
 
 interface TargetApiResponse {
@@ -58,8 +60,9 @@ export const useWsRadar = (
   const [connectionState, setConnectionState] = useState<"idle" | "connecting" | "open" | "closed">(
     "idle"
   );
-  const [mapStyleUrl, setMapStyleUrl] = useState(
-    "https://basemaps.cartocdn.com/gl/dark-matter-nolabels-gl-style/style.json"
+  const [mapStyleUrl, setMapStyleUrl] = useState(OPENFREEMAP_DARK_STYLE_URL);
+  const [pmtilesUrl, setPmtilesUrl] = useState<string>(
+    () => (import.meta as any).env?.VITE_PMTILES_URL || ""
   );
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
@@ -255,6 +258,7 @@ export const useWsRadar = (
         if (response.ok) {
           const config = (await response.json()) as ConfigResponse;
           if (config.mapStyleUrl) setMapStyleUrl(config.mapStyleUrl);
+          if (config.pmtilesUrl) setPmtilesUrl(config.pmtilesUrl);
           wsUrl = determineWsUrl(config.wsUrl);
         }
       } catch {}
@@ -459,8 +463,9 @@ export const useWsRadar = (
       impacts,
       uncertaintyEvents,
       connectionState,
-      mapStyleUrl
+      mapStyleUrl,
+      pmtilesUrl
     }),
-    [connectionState, impacts, mapStyleUrl, packets, uncertaintyEvents]
+    [connectionState, impacts, mapStyleUrl, packets, pmtilesUrl, uncertaintyEvents]
   );
 };

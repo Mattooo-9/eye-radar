@@ -15,12 +15,15 @@ import { getTierConfig } from "../lib/hardwareBenchmark.js";
 import { trackStore, isCivilAviation, type ClientUncertaintyEvent } from "../lib/trackStore.js";
 import { renderTacticalGlyph } from "../lib/tacticalGlyphs.js";
 import { LOCATIONS } from "./CitySelector";
+import { ensurePmtilesProtocol, resolveMapStyle } from "../lib/mapStyles";
 
 export type VisionMode = "satellite" | "nvg" | "flir" | "tactical";
 
 interface MapViewProps {
   packets: TrackPacket[];
   mapStyleUrl: string;
+  pmtilesUrl?: string;
+  preferLocalPmtiles?: boolean;
   location: TrustedLocation | null;
   confirmedLocation?: { lat: number; lon: number; name: string; region?: string } | null;
   filters?: FilterState;
@@ -51,72 +54,6 @@ interface MapViewProps {
   activeAlerts?: string[];
   alertStatus?: AlertFeedStatus;
 }
-
-const SATELLITE_STYLE = {
-  version: 8 as const,
-  glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
-  sources: {
-    "satellite-tiles": {
-      type: "raster" as const,
-      tiles: [
-        "https://mt0.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
-        "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
-        "https://mt2.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
-        "https://mt3.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
-      ],
-      tileSize: 256,
-      maxzoom: 18
-    },
-    "road-tiles": {
-      type: "raster" as const,
-      tiles: [
-        "https://mt0.google.com/vt/lyrs=h&x={x}&y={y}&z={z}",
-        "https://mt1.google.com/vt/lyrs=h&x={x}&y={y}&z={z}",
-        "https://mt2.google.com/vt/lyrs=h&x={x}&y={y}&z={z}",
-        "https://mt3.google.com/vt/lyrs=h&x={x}&y={y}&z={z}"
-      ],
-      tileSize: 256,
-      maxzoom: 18
-    }
-  },
-  layers: [
-    {
-      id: "satellite-tiles-layer",
-      type: "raster" as const,
-      source: "satellite-tiles",
-      paint: {
-        "raster-opacity": 1.0,
-        "raster-fade-duration": 0,
-        "raster-resampling": "linear" as const
-      }
-    },
-    {
-      id: "road-tiles-layer",
-      type: "raster" as const,
-      source: "road-tiles",
-      paint: {
-        "raster-opacity": 0.82,
-        "raster-fade-duration": 0,
-        "raster-resampling": "linear" as const
-      }
-    }
-  ]
-};
-
-const SATELLITE_STYLE_LOW = {
-  ...SATELLITE_STYLE,
-  sources: {
-    ...SATELLITE_STYLE.sources,
-    "satellite-tiles": {
-      ...SATELLITE_STYLE.sources["satellite-tiles"],
-      maxzoom: 12
-    },
-    "road-tiles": {
-      ...SATELLITE_STYLE.sources["road-tiles"],
-      maxzoom: 12
-    }
-  }
-};
 
 const metersPerPixel = (latitude: number, zoom: number): number =>
   (156543.03392 * Math.cos((latitude * Math.PI) / 180)) / 2 ** zoom;
@@ -2044,6 +1981,8 @@ const drawUncertaintyEvents = (
 export const MapView = ({
   packets,
   mapStyleUrl,
+  pmtilesUrl,
+  preferLocalPmtiles = false,
   location,
   confirmedLocation,
   filters,
@@ -2196,7 +2135,8 @@ export const MapView = ({
   const onMapReadyRef = useRef(onMapReady);
   onMapReadyRef.current = onMapReady;
 
-  const currentStyleRef = useRef<string | object | null>(null);
+  const currentStyleKeyRef = useRef<string | null>(null);
+  const styleFallbackCountRef = useRef<number>(0);
   const lastAppliedBrightnessRef = useRef<number>(-1);
   const lastBrightnessCheckRef = useRef<number>(0);
   const cachedRingsGeoRef = useRef<Array<{ radiusM: number; pts: Array<[number, number]> }>>([]);
@@ -2230,15 +2170,22 @@ export const MapView = ({
     }
   };
 
-  // 1. Initialize MapLibre instance ONCE on mount
+  // 1. Initialize MapLibre instance ONCE on mount with PMTiles v3 protocol
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) {
       return;
     }
 
-    const isSat = visionMode !== "tactical";
-    const initialStyle = isSat ? SATELLITE_STYLE : mapStyleUrl;
-    currentStyleRef.current = initialStyle;
+    ensurePmtilesProtocol(maplibregl);
+
+    const resolvedInitial = resolveMapStyle({
+      visionMode,
+      performanceTier,
+      mapStyleUrl,
+      pmtilesUrl,
+      preferLocalPmtiles
+    });
+    currentStyleKeyRef.current = resolvedInitial.styleKey;
 
     const isMobile = typeof window !== "undefined" && window.innerWidth < 600;
     // Operational Theater Viewport: Comprehensive view encompassing Ukraine and western border buffer
@@ -2247,7 +2194,7 @@ export const MapView = ({
 
     const map = new maplibregl.Map({
       container: mapContainerRef.current,
-      style: initialStyle,
+      style: resolvedInitial.style,
       center: initialCenter,
       zoom: initialZoom,
       minZoom: 1.5,
@@ -2448,6 +2395,33 @@ export const MapView = ({
       resizeCanvasSafe();
       triggerInstantRedraw();
     });
+    map.on("error", (ev: any) => {
+      const msg = String(ev?.error?.message || "");
+      const isStyleFailure =
+        !ev?.sourceId ||
+        msg.includes("Failed to fetch") ||
+        msg.includes("AJAXError") ||
+        msg.includes("styles/dark");
+      if (
+        isStyleFailure &&
+        currentStyleKeyRef.current &&
+        !currentStyleKeyRef.current.startsWith("pmtiles-local") &&
+        styleFallbackCountRef.current < 1 &&
+        typeof navigator !== "undefined" &&
+        navigator.onLine === false
+      ) {
+        styleFallbackCountRef.current += 1;
+        const fallback = resolveMapStyle({
+          visionMode: "tactical",
+          performanceTier: performanceTierRef.current || "NORMAL",
+          preferLocalPmtiles: true
+        });
+        currentStyleKeyRef.current = fallback.styleKey;
+        try {
+          map.setStyle(fallback.style);
+        } catch {}
+      }
+    });
     map.on("render", triggerInstantRedraw);
     map.on("move", triggerInstantRedraw);
     map.on("zoom", triggerInstantRedraw);
@@ -2478,19 +2452,20 @@ export const MapView = ({
     };
   }, []);
 
-  // 2. Switch base map style only when toggling between Satellite and Tactical vector
+  // 2. Switch base map style cleanly via Protomaps/PMTiles + Esri/OpenFreeMap resolver
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    const isSat = visionMode !== "tactical";
-    const targetStyle = isSat
-      ? performanceTier === "LOW"
-        ? SATELLITE_STYLE_LOW
-        : SATELLITE_STYLE
-      : mapStyleUrl;
-    if (currentStyleRef.current !== targetStyle) {
-      currentStyleRef.current = targetStyle;
-      map.setStyle(targetStyle);
+    const resolved = resolveMapStyle({
+      visionMode,
+      performanceTier,
+      mapStyleUrl,
+      pmtilesUrl,
+      preferLocalPmtiles
+    });
+    if (currentStyleKeyRef.current !== resolved.styleKey) {
+      currentStyleKeyRef.current = resolved.styleKey;
+      map.setStyle(resolved.style);
       map.once("styledata", () => {
         syncUkraineBorders(map, showFrontlineRef.current !== false);
         syncUkraineAlerts(map, activeAlertsRef.current, showAlertsRef.current !== false, alertStatusRef.current !== "fresh");
@@ -2499,7 +2474,7 @@ export const MapView = ({
         }
       });
     }
-  }, [mapStyleUrl, performanceTier, visionMode]);
+  }, [mapStyleUrl, pmtilesUrl, preferLocalPmtiles, performanceTier, visionMode]);
 
   // 3. Live Weather Radar synchronization with RainViewer
   useEffect(() => {

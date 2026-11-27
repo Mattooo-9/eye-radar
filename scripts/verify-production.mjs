@@ -212,6 +212,19 @@ async function main() {
     vercelApp.status === 200 && Boolean(scriptMatch),
     `HTTP ${vercelApp.status}, bundle=${scriptMatch?.[0] ?? "none"}, sha=${vercelSha.slice(0, 7)}`
   );
+
+  const pmtilesRes = await fetchWithRetry(`${VERCEL_BASE}/tiles/ukraine-overview.pmtiles`, {
+    headers: { Range: "bytes=0-126" }
+  });
+  const pmtilesBuf = Buffer.from(await pmtilesRes.arrayBuffer());
+  const pmtilesMagic = pmtilesBuf.subarray(0, 7).toString("ascii");
+  check(
+    "Protomaps PMTiles v3 archive serves HTTP Range requests on Vercel CDN",
+    (pmtilesRes.status === 206 || pmtilesRes.status === 200) &&
+      pmtilesMagic === "PMTiles" &&
+      pmtilesBuf[7] === 3,
+    `HTTP ${pmtilesRes.status}, magic=${pmtilesMagic}, version=${pmtilesBuf[7]}, bytes=${pmtilesBuf.byteLength}, cors=${pmtilesRes.headers.get("access-control-allow-origin")}`
+  );
   check(
     "Vercel /api/osint/feed & /api/alerts carry official status, timestamp & freshness",
     vercelFeed.status === 200 &&

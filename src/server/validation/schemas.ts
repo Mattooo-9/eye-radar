@@ -122,7 +122,8 @@ export const ServerEnvSchema = z.object({
   publicBaseUrl: z.string().url().default("http://localhost:3000"),
   webAppPath: z.string().startsWith("/").default("/app"),
   wsPath: z.string().startsWith("/").default("/ws"),
-  mapStyleUrl: z.string().url().default("https://basemaps.cartocdn.com/gl/dark-matter-nolabels-gl-style/style.json"),
+  mapStyleUrl: z.string().url().default("https://tiles.openfreemap.org/styles/dark"),
+  pmtilesUrl: z.string().optional().default(""),
   jitterRadiusKm: z.coerce.number().finite().min(0).max(100).default(15),
   trustMinScore: z.coerce.number().finite().min(0).max(100).default(55)
 });

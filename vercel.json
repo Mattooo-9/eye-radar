@@ -119,11 +119,32 @@
       "destination": "/index.html"
     },
     {
-      "source": "/((?!api/|health|ws|avatar\\.jpg|assets/|.*\\.(?:geojson|json|js|css|svg|png|jpg|jpeg|ico|webmanifest)).*)",
+      "source": "/((?!api/|health|ws|avatar\\.jpg|assets/|tiles/|.*\\.(?:geojson|json|js|css|svg|png|jpg|jpeg|ico|webmanifest|pmtiles)).*)",
       "destination": "/index.html"
     }
   ],
   "headers": [
+    {
+      "source": "/tiles/(.*\\.pmtiles)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        },
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Access-Control-Allow-Headers",
+          "value": "Range, Content-Type"
+        },
+        {
+          "key": "Access-Control-Expose-Headers",
+          "value": "Accept-Ranges, Content-Range, Content-Length"
+        }
+      ]
+    },
     {
       "source": "/(app.*|.*html|$)",
       "headers": [
