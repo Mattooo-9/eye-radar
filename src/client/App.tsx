@@ -25,6 +25,7 @@ import { haversineMeters } from "./lib/geo";
 import { soundEngine } from "./lib/sound";
 import { useTrustedLocation } from "./location/useTrustedLocation";
 import { LocationSetupModal, type ConfirmedLocation } from "./components/LocationSetupModal";
+import { isControlledUkraineLocationClient } from "./lib/ukraineBorders";
 import { detectHardwareTier } from "./lib/hardwareBenchmark.js";
 import { trackStore, isCivilAviation } from "./lib/trackStore.js";
 
@@ -513,6 +514,10 @@ export const App = () => {
   };
 
   const handleConfirmLocation = (newLoc: ConfirmedLocation) => {
+    if (!isControlledUkraineLocationClient(newLoc.lat, newLoc.lon)) {
+      setLocationSetupOpen(true);
+      return;
+    }
     saveUserLocation(newLoc);
     setLocationSetupOpen(false);
     if (mapInstance) {
@@ -529,11 +534,16 @@ export const App = () => {
   };
 
   const handlePickLocation = (lat: number, lon: number) => {
+    if (!isControlledUkraineLocationClient(lat, lon)) {
+      setIsPickingLocation(false);
+      setLocationSetupOpen(true);
+      return;
+    }
     const customLoc: ConfirmedLocation = {
       lat: Math.round(lat * 10000) / 10000,
       lon: Math.round(lon * 10000) / 10000,
-      name: "Точка на карті",
-      region: "Власна геопозиція"
+      name: "Точка на карті (Україна)",
+      region: "Підконтрольна територія"
     };
     saveUserLocation(customLoc);
     setIsPickingLocation(false);

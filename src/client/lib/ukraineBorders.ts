@@ -230,3 +230,125 @@ export const getFrontlineGeoJSON = () => ({
   ]
 });
 
+/**
+ * Polygon of temporarily occupied territory behind the Line of Contact (ЛБЗ)
+ * for cartographic visualization on the tactical map.
+ */
+export const getOccupiedZoneGeoJSON = () => {
+  const occupiedEasternAndSouthernBoundary: Array<[number, number]> = [
+    [31.850, 46.510],
+    [31.65, 46.35],
+    [31.85, 46.15],
+    [32.25, 46.05],
+    [33.25, 45.82],
+    [33.15, 45.65],
+    [32.55, 45.35],
+    [32.52, 45.08],
+    [33.05, 45.18],
+    [33.42, 44.75],
+    [33.62, 44.45],
+    [34.05, 44.40],
+    [34.75, 44.82],
+    [35.45, 45.02],
+    [36.45, 45.25],
+    [36.65, 45.38],
+    [36.62, 45.48],
+    [35.95, 45.85],
+    [35.05, 46.22],
+    [34.85, 46.35],
+    [35.65, 46.68],
+    [36.85, 46.85],
+    [37.65, 47.08],
+    [38.05, 47.12],
+    [38.25, 47.25],
+    [38.65, 47.45],
+    [38.85, 47.65],
+    [39.05, 47.88],
+    [39.45, 48.05],
+    [39.85, 48.15],
+    [40.15, 48.45],
+    [40.22, 48.78],
+    [40.18, 49.12],
+    [40.05, 49.45],
+    [39.82, 49.75],
+    [39.55, 49.92],
+    [38.95, 49.95],
+    [38.45, 49.98],
+    [37.750, 50.000]
+  ];
+
+  return {
+    type: "FeatureCollection" as const,
+    features: [
+      {
+        type: "Feature" as const,
+        properties: {
+          name: "Тимчасово окупована територія (за ЛБЗ)"
+        },
+        geometry: {
+          type: "Polygon" as const,
+          coordinates: [[...FRONTLINE_COORDINATES, ...occupiedEasternAndSouthernBoundary]]
+        }
+      }
+    ]
+  };
+};
+
+function isPointInUkrainePolygonClient(lat: number, lon: number): boolean {
+  if (lat < 44.35 || lat > 52.40 || lon < 22.10 || lon > 40.25) return false;
+  let inside = false;
+  for (let i = 0, j = UKRAINE_STATE_BORDER.length - 1; i < UKRAINE_STATE_BORDER.length; j = i++) {
+    const xi = UKRAINE_STATE_BORDER[i][0];
+    const yi = UKRAINE_STATE_BORDER[i][1];
+    const xj = UKRAINE_STATE_BORDER[j][0];
+    const yj = UKRAINE_STATE_BORDER[j][1];
+    const intersect = yi > lat !== yj > lat && lon < ((xj - xi) * (lat - yi)) / (yj - yi + 1e-12) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+export function isBehindOccupiedFrontlineClient(lat: number, lon: number): boolean {
+  if (lat < 46.20 && lon > 32.35) return true;
+  if (lon > 38.28) return true;
+  if (lat >= 47.75 && lat <= 50.00 && lon > 36.80) {
+    for (let i = 0; i < FRONTLINE_COORDINATES.length - 1; i++) {
+      const [lon1, lat1] = FRONTLINE_COORDINATES[i];
+      const [lon2, lat2] = FRONTLINE_COORDINATES[i + 1];
+      const minLat = Math.min(lat1, lat2);
+      const maxLat = Math.max(lat1, lat2);
+      if (lat >= minLat && lat <= maxLat) {
+        const t = maxLat === minLat ? 0.5 : (lat - lat1) / (lat2 - lat1);
+        const frontLon = lon1 + t * (lon2 - lon1);
+        if (lon > frontLon + 0.05) return true;
+      }
+    }
+  }
+  if (lon >= 31.85 && lon <= 37.40 && lat < 47.85) {
+    for (let i = 25; i < FRONTLINE_COORDINATES.length - 1; i++) {
+      const [lon1, lat1] = FRONTLINE_COORDINATES[i];
+      const [lon2, lat2] = FRONTLINE_COORDINATES[i + 1];
+      const minLon = Math.min(lon1, lon2);
+      const maxLon = Math.max(lon1, lon2);
+      if (lon >= minLon && lon <= maxLon) {
+        const t = maxLon === minLon ? 0.5 : (lon - lon1) / (lon2 - lon1);
+        const frontLat = lat1 + t * (lat2 - lat1);
+        if (lat < frontLat - 0.04) return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Verifies that a user's location is inside Ukrainian-controlled territory
+ * (strictly blocking Russia, Belarus, foreign countries, and occupied zones behind the frontline).
+ */
+export function isControlledUkraineLocationClient(lat: number, lon: number): boolean {
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
+  if (!isPointInUkrainePolygonClient(lat, lon)) return false;
+  if (isBehindOccupiedFrontlineClient(lat, lon)) return false;
+  return true;
+}
+
+

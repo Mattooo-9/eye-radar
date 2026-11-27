@@ -844,3 +844,141 @@ export const findDirectionInText = (text: string, originCity?: GeoPoint | null):
 
   return null;
 };
+
+// Active Line of Contact (Лінія бойового зіткнення / ЛБЗ) from North-East Kharkiv to Kinburn Spit ([lon, lat])
+export const FRONTLINE_POLYLINE: Array<[number, number]> = [
+  [37.750, 50.000],
+  [37.742, 49.880],
+  [37.721, 49.720],
+  [37.820, 49.620],
+  [37.940, 49.560],
+  [37.962, 49.490],
+  [37.985, 49.380],
+  [38.005, 49.230],
+  [38.021, 49.120],
+  [38.030, 49.030],
+  [38.140, 48.970],
+  [38.240, 48.920],
+  [38.252, 48.860],
+  [38.180, 48.810],
+  [38.080, 48.750],
+  [37.970, 48.710],
+  [37.860, 48.600],
+  [37.842, 48.580],
+  [37.940, 48.530],
+  [37.972, 48.470],
+  [37.960, 48.430],
+  [37.900, 48.400],
+  [37.860, 48.380],
+  [37.840, 48.330],
+  [37.580, 48.300],
+  [37.470, 48.280],
+  [37.380, 48.260],
+  [37.340, 48.280],
+  [37.330, 48.210],
+  [37.320, 48.160],
+  [37.300, 48.140],
+  [37.320, 48.090],
+  [37.370, 48.040],
+  [37.300, 47.990],
+  [37.240, 47.950],
+  [37.190, 47.860],
+  [37.250, 47.780],
+  [37.080, 47.790],
+  [36.980, 47.810],
+  [36.830, 47.840],
+  [36.810, 47.760],
+  [36.630, 47.740],
+  [36.460, 47.690],
+  [36.260, 47.650],
+  [36.000, 47.530],
+  [35.880, 47.510],
+  [35.840, 47.440],
+  [35.820, 47.420],
+  [35.610, 47.510],
+  [35.370, 47.540],
+  [35.280, 47.430],
+  [35.000, 47.380],
+  [34.650, 47.500],
+  [34.000, 47.200],
+  [33.370, 46.840],
+  [33.080, 46.730],
+  [32.720, 46.640],
+  [32.480, 46.540],
+  [31.850, 46.510]
+];
+
+/**
+ * Checks whether a point lies behind the occupied side of the frontline
+ * (Crimea, occupied Luhansk/Donetsk east of frontline, occupied Zaporizhzhia/Kherson south of frontline).
+ */
+export function isBehindOccupiedFrontline(lat: number, lon: number): boolean {
+  // Crimea & Sea of Azov south
+  if (lat < 46.20 && lon > 32.35) return true;
+  // Deep Luhansk east of frontline
+  if (lon > 38.28) return true;
+
+  // Eastern frontline segment (lat 47.75 .. 50.00): check if point is east of frontline longitude at that latitude
+  if (lat >= 47.75 && lat <= 50.00 && lon > 36.80) {
+    for (let i = 0; i < FRONTLINE_POLYLINE.length - 1; i++) {
+      const [lon1, lat1] = FRONTLINE_POLYLINE[i];
+      const [lon2, lat2] = FRONTLINE_POLYLINE[i + 1];
+      const minLat = Math.min(lat1, lat2);
+      const maxLat = Math.max(lat1, lat2);
+      if (lat >= minLat && lat <= maxLat) {
+        const t = maxLat === minLat ? 0.5 : (lat - lat1) / (lat2 - lat1);
+        const frontLon = lon1 + t * (lon2 - lon1);
+        if (lon > frontLon + 0.05) return true;
+      }
+    }
+  }
+
+  // Southern frontline segment (Zaporizhzhia & Left-Bank Kherson, lon 31.85 .. 37.35): check if point is south of frontline latitude
+  if (lon >= 31.85 && lon <= 37.40 && lat < 47.85) {
+    for (let i = 25; i < FRONTLINE_POLYLINE.length - 1; i++) {
+      const [lon1, lat1] = FRONTLINE_POLYLINE[i];
+      const [lon2, lat2] = FRONTLINE_POLYLINE[i + 1];
+      const minLon = Math.min(lon1, lon2);
+      const maxLon = Math.max(lon1, lon2);
+      if (lon >= minLon && lon <= maxLon) {
+        const t = maxLon === minLon ? 0.5 : (lon - lon1) / (lon2 - lon1);
+        const frontLat = lat1 + t * (lat2 - lat1);
+        if (lat < frontLat - 0.04) return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Strict Ukraine-Only Access Control Gate:
+ * Returns true ONLY if (lat, lon) is inside Ukraine's national borders
+ * AND on the Ukrainian-controlled side of the frontline (excludes RF, RB, foreign countries, and occupied territory).
+ */
+export function isControlledUkraineLocation(lat: number, lon: number): boolean {
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
+  if (!isInsideUkraineGeo(lat, lon)) return false;
+  if (isBehindOccupiedFrontline(lat, lon)) return false;
+  return true;
+}
+
+/**
+ * Finds the closest frontline vertex to (lat, lon) so threat trajectories near the frontline
+ * originate from the frontline into controlled Ukrainian territory.
+ */
+export function getNearestFrontlinePoint(lat: number, lon: number): { lat: number; lon: number; distKm: number } {
+  let bestLat = 48.58;
+  let bestLon = 37.84;
+  let minD = Infinity;
+  const latCos = Math.cos((lat * Math.PI) / 180) || 1;
+  for (const [fLon, fLat] of FRONTLINE_POLYLINE) {
+    const dKm = Math.hypot((fLat - lat) * 111.139, (fLon - lon) * 111.139 * latCos);
+    if (dKm < minD) {
+      minD = dKm;
+      bestLat = fLat;
+      bestLon = fLon;
+    }
+  }
+  return { lat: bestLat, lon: bestLon, distKm: minD };
+}

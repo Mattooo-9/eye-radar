@@ -34,7 +34,7 @@ import { earthObservationService } from "./sources/earthObservation.js";
 import { backendAiEngine } from "./core/backendAiEngine.js";
 import { pingDb, getPool, query } from "./db/pool.js";
 import { initSchema } from "./db/schema.js";
-import { UKRAINE_CITIES } from "./sources/ukraineGeo.js";
+import { isControlledUkraineLocation, UKRAINE_CITIES } from "./sources/ukraineGeo.js";
 import { checkpointService } from "./db/checkpointService.js";
 import { intelligenceStore } from "./db/intelligenceStore.js";
 import { watchdogService } from "./db/watchdogService.js";
@@ -535,6 +535,18 @@ const serveClient = async (req: IncomingMessage, res: ServerResponse): Promise<v
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", env.publicBaseUrl);
 
+  // Strict Anti-RF/RB Geo-IP Gate: block requests originating from Russia (RU) or Belarus (BY)
+  const ipCountry = String(req.headers["x-vercel-ip-country"] || req.headers["cf-ipcountry"] || "")
+    .trim()
+    .toUpperCase();
+  if (ipCountry === "RU" || ipCountry === "BY") {
+    json(res, 403, {
+      ok: false,
+      error: "Доступ заблоковано: EYE RADAR працює виключно для резидентів підконтрольної території України."
+    });
+    return;
+  }
+
   if (req.method === "GET" && url.pathname === "/health") {
     const audit = healthTracker.getAuditReport(trackManager.snapshot(false));
     const livePositional = sourceRegistry.getLivePositionalSources().map(s => s.name);
@@ -959,16 +971,22 @@ const server = createServer(async (req, res) => {
   if (req.method === "GET" && url.pathname === "/api/location/ip") {
     const ip = getIpAddress(req);
     const resolved = await resolveIpLocation(ip);
+    const isBlockedCountry =
+      resolved &&
+      (["RU", "BY", "RUS", "BLR", "RUSSIA", "BELARUS"].includes(String(resolved.country || "").toUpperCase()) ||
+        !isControlledUkraineLocation(Number(resolved.latitude), Number(resolved.longitude)));
     json(res, 200, {
       ip,
-      fallback: resolved
-        ? {
-            lat: resolved.latitude,
-            lon: resolved.longitude,
-            city: resolved.city,
-            country: resolved.country
-          }
-        : null
+      blocked: Boolean(isBlockedCountry),
+      fallback:
+        resolved && !isBlockedCountry
+          ? {
+              lat: resolved.latitude,
+              lon: resolved.longitude,
+              city: resolved.city,
+              country: resolved.country
+            }
+          : null
     });
     return;
   }
@@ -1006,7 +1024,7 @@ const server = createServer(async (req, res) => {
         }
       }
 
-      if (row) {
+      if (row && isControlledUkraineLocation(Number(row.lat), Number(row.lon))) {
         json(res, 200, {
           ok: true,
           location: {
@@ -1028,7 +1046,7 @@ const server = createServer(async (req, res) => {
 
     if (!isNaN(chatId)) {
       const pref = botManager.getUserLocation(chatId);
-      if (pref) {
+      if (pref && isControlledUkraineLocation(pref.lat, pref.lon)) {
         json(res, 200, {
           ok: true,
           location: {
@@ -1062,6 +1080,13 @@ const server = createServer(async (req, res) => {
       // Privacy minimization: store user sector coordinates at 3-decimal precision (~110m)
       const minLat = Number(parsed.lat.toFixed(3));
       const minLon = Number(parsed.lon.toFixed(3));
+      if (!isControlledUkraineLocation(minLat, minLon)) {
+        json(res, 403, {
+          ok: false,
+          error: "Доступ заблоковано: координати знаходяться поза підконтрольною територією України (РФ, РБ або за лінією фронту)."
+        });
+        return;
+      }
       await botManager.subscribeUserLocation(parsed.userId, minLat, minLon, city, parsed.radiusKm ?? 35);
       json(res, 200, {
         ok: true,
@@ -1093,6 +1118,13 @@ const server = createServer(async (req, res) => {
       const { userId: chatId, lat, lon, cityName, radiusKm } = result.data;
       const minLat = Number(lat.toFixed(3));
       const minLon = Number(lon.toFixed(3));
+      if (!isControlledUkraineLocation(minLat, minLon)) {
+        json(res, 403, {
+          ok: false,
+          error: "Доступ заблоковано: координати знаходяться поза підконтрольною територією України (РФ, РБ або за лінією фронту)."
+        });
+        return;
+      }
       await botManager.subscribeUserLocation(chatId, minLat, minLon, cityName, radiusKm);
       json(res, 200, { ok: true, subscribed: true, chatId, lat: minLat, lon: minLon, radiusKm });
     } catch {

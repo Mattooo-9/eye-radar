@@ -13,7 +13,7 @@ import { ThreatEngine } from "../core/threatEngine.js";
 import type { AlertRegion, TrackState, UserAlertPreference } from "../domain/types.js";
 import type { AlertsInUaSource } from "../sources/alertsInUa.js";
 import type { SourceHealthTracker } from "../sources/sourceHealth.js";
-import { findCityInText, UKRAINE_CITIES } from "../sources/ukraineGeo.js";
+import { findCityInText, isControlledUkraineLocation, UKRAINE_CITIES } from "../sources/ukraineGeo.js";
 import { alertStateMachine } from "../core/alertStateMachine.js";
 import { parseOsintText } from "../ingest/osintParser.js";
 import type { Observation } from "../domain/types.js";
@@ -131,7 +131,38 @@ export class EyeRadarBotManager {
       }).catch(() => {});
     }
 
+    const isUserVerifiedInUkraine = (chatId: number): boolean => {
+      const pref = this.storage.getPreference(chatId);
+      return Boolean(pref && pref.enabled && isControlledUkraineLocation(pref.lat, pref.lon));
+    };
+
+    const sendVerificationRequiredPrompt = async (chatId: number) => {
+      try {
+        await sendBotMessage(
+          chatId,
+          `🛡️ *EYE RADAR // ПЕРЕВІРКА ДОСТУПУ (УКРАЇНА)*\n\n` +
+            `Доступ до бота та оперативних даних ППО надається **виключно резидентам підконтрольної території України** (з урахуванням лінії бойового зіткнення).\n\n` +
+            `Для отримання повного доступу до карти, висот, швидкостей та сповіщень підтвердіть свою локацію кнопкою нижче або командою \`/setlocation <Місто>\`:`,
+          {
+            parse_mode: "Markdown",
+            reply_markup: {
+              keyboard: [[{ text: "📍 Підтвердити локацію в Україні (GPS)", request_location: true }]],
+              resize_keyboard: true,
+              one_time_keyboard: true
+            },
+            ttlMs: SIX_HOURS_MS
+          }
+        );
+      } catch (err) {
+        console.error("Failed to send verification prompt:", err);
+      }
+    };
+
     const sendLaunchMessage = async (chatId: number) => {
+      if (!isUserVerifiedInUkraine(chatId)) {
+        await sendVerificationRequiredPrompt(chatId);
+        return;
+      }
       try {
         const primaryBtn = isHttps
           ? { text: "🛰️ ВІДКРИТИ EYE RADAR", web_app: { url: webAppUrl } }
@@ -142,9 +173,9 @@ export class EyeRadarBotManager {
           chatId,
           `🛰️ *EYE RADAR // СИСТЕМА ЦИВІЛЬНОГО ІНФОРМУВАННЯ*\n\n` +
             `• Офіційні сигнали повітряної тривоги (alerts.in.ua)\n` +
-            `• Текстові повідомлення 14 каналів моніторингу ППО (OSINT)\n` +
+            `• Оперативні зведення Повітряних Сил ЗСУ та ДСНС України (висота, швидкість, курс)\n` +
             `• Відкриті спостереження військової авіації (ADS-B) та NASA FIRMS\n\n` +
-            `_Усі шари розділено за джерелом та часом оновлення. У разі тривоги орієнтуйтесь на офіційні сигнали._`,
+            `_Локацію в Україні підтверджено. Повний доступ до всіх даних активовано._`,
           {
             parse_mode: "Markdown",
             reply_markup: {
@@ -160,6 +191,10 @@ export class EyeRadarBotManager {
     };
 
     const handleBriefing = async (ctx: any) => {
+      if (!isUserVerifiedInUkraine(ctx.chat.id)) {
+        await sendVerificationRequiredPrompt(ctx.chat.id);
+        return;
+      }
       const waitMsg = await ctx.reply("⏳ Аналіз повітряного простору та генерація AI-зведення...");
       const pref = this.storage.getPreference(ctx.chat.id);
       const tracks = this.tracksProvider ? this.tracksProvider() : [];
@@ -203,6 +238,10 @@ export class EyeRadarBotManager {
     });
     bot.hears("📊 AI-Зведення", handleBriefing);
     bot.hears("🔔 Тривоги", async (ctx) => {
+      if (!isUserVerifiedInUkraine(ctx.chat.id)) {
+        await sendVerificationRequiredPrompt(ctx.chat.id);
+        return;
+      }
       await replyAndSchedule(ctx, formatAlertsReport(), {
         parse_mode: "Markdown",
         reply_markup: {
@@ -211,6 +250,10 @@ export class EyeRadarBotManager {
       });
     });
     bot.hears("⚙️ Статус", async (ctx) => {
+      if (!isUserVerifiedInUkraine(ctx.chat.id)) {
+        await sendVerificationRequiredPrompt(ctx.chat.id);
+        return;
+      }
       await replyAndSchedule(ctx, formatStatusReport(), { parse_mode: "Markdown" });
     });
 
@@ -241,6 +284,10 @@ export class EyeRadarBotManager {
     });
 
     bot.command("radius", async (ctx) => {
+      if (!isUserVerifiedInUkraine(ctx.chat.id)) {
+        await sendVerificationRequiredPrompt(ctx.chat.id);
+        return;
+      }
       const parts = ctx.message.text.split(" ");
       const km = parseInt(parts[1], 10);
       if (isNaN(km) || km < 5 || km > 150) {
@@ -248,13 +295,7 @@ export class EyeRadarBotManager {
         return;
       }
 
-      const pref = this.storage.getPreference(ctx.chat.id) ?? {
-        chatId: ctx.chat.id,
-        lat: 50.4501,
-        lon: 30.5234,
-        radiusKm: km,
-        enabled: true
-      };
+      const pref = this.storage.getPreference(ctx.chat.id)!;
       pref.radiusKm = km;
       this.storage.savePreference(pref);
 
@@ -266,7 +307,7 @@ export class EyeRadarBotManager {
       if (!parts) {
         await replyAndSchedule(
           ctx,
-          "Вкажіть назву міста (наприклад: `/setlocation Полтава`) або просто надішліть геопозицію Telegram скріпкою в чат.",
+          "Вкажіть назву міста на підконтрольній території України (наприклад: `/setlocation Полтава`) або надішліть GPS-геопозицію кнопкою в чаті.",
           { parse_mode: "Markdown" }
         );
         return;
@@ -274,6 +315,14 @@ export class EyeRadarBotManager {
 
       const city = findCityInText(parts);
       if (city) {
+        if (!isControlledUkraineLocation(city.lat, city.lon)) {
+          await replyAndSchedule(
+            ctx,
+            `⛔ *ДОСТУП ЗАБЛОКОВАНО:* Локація *${city.nameUk}* знаходиться за лінією фронту на тимчасово окупованій території або поза Україною. Доступ до бота та даних дозволено лише на підконтрольній території України.`,
+            { parse_mode: "Markdown" }
+          );
+          return;
+        }
         const pref = this.storage.getPreference(ctx.chat.id) ?? {
           chatId: ctx.chat.id,
           lat: city.lat,
@@ -283,18 +332,36 @@ export class EyeRadarBotManager {
         };
         pref.lat = city.lat;
         pref.lon = city.lon;
+        pref.enabled = true;
+        pref.cityName = city.nameUk;
         this.storage.savePreference(pref);
 
-        await replyAndSchedule(ctx, `✅ Локацію для сповіщень встановлено: *${city.nameUk}* (${city.lat}, ${city.lon}). Радіус: *${pref.radiusKm} км*`, {
+        await replyAndSchedule(ctx, `✅ Локацію в Україні підтверджено: *${city.nameUk}* (${city.lat.toFixed(3)}, ${city.lon.toFixed(3)}). Радіус: *${pref.radiusKm} км*.\n🔓 Повний доступ до всіх даних EYE RADAR відкрито!`, {
           parse_mode: "Markdown"
         });
+        await sendLaunchMessage(ctx.chat.id);
       } else {
-        await replyAndSchedule(ctx, `Не вдалося знайти місто "${parts}". Спробуйте іншу назву (Київ, Харків, Одеса, Дніпро, Запоріжжя тощо).`);
+        await replyAndSchedule(ctx, `Не вдалося знайти місто "${parts}". Спробуйте іншу назву на підконтрольній території України (Київ, Харків, Одеса, Дніпро, Запоріжжя, Львів тощо).`);
       }
     });
 
     bot.on("location", async (ctx) => {
       const loc = ctx.message.location;
+      if (!isControlledUkraineLocation(loc.latitude, loc.longitude)) {
+        const existing = this.storage.getPreference(ctx.chat.id);
+        if (existing) {
+          existing.enabled = false;
+          this.storage.savePreference(existing);
+        }
+        await replyAndSchedule(
+          ctx,
+          `⛔ *ДОСТУП ЗАБЛОКОВАНО*\n\nКоординати \`${loc.latitude.toFixed(4)}, ${loc.longitude.toFixed(4)}\` знаходяться поза підконтрольною територією України (РФ, РБ або за лінією фронту). Доступ до бота та даних EYE RADAR заборонено.`,
+          { parse_mode: "Markdown" }
+        );
+        return;
+      }
+
+      const nearest = findNearestOblast(loc.latitude, loc.longitude);
       const pref = this.storage.getPreference(ctx.chat.id) ?? {
         chatId: ctx.chat.id,
         lat: loc.latitude,
@@ -304,11 +371,16 @@ export class EyeRadarBotManager {
       };
       pref.lat = loc.latitude;
       pref.lon = loc.longitude;
+      pref.enabled = true;
+      pref.cityName = nearest.nameUk;
       this.storage.savePreference(pref);
 
-      await replyAndSchedule(ctx, `📍 Координати збережено: *${loc.latitude.toFixed(4)}, ${loc.longitude.toFixed(4)}*. Радіус контролю: *${pref.radiusKm} км*`, {
-        parse_mode: "Markdown"
-      });
+      await replyAndSchedule(
+        ctx,
+        `✅ *Локацію в Україні підтверджено!*\n📍 Сектор: *${nearest.nameUk}* (\`${loc.latitude.toFixed(4)}, ${loc.longitude.toFixed(4)}\`)\n📏 Радіус контролю: *${pref.radiusKm} км*\n🔓 Повний доступ до всіх даних EYE RADAR відкрито!`,
+        { parse_mode: "Markdown" }
+      );
+      await sendLaunchMessage(ctx.chat.id);
     });
 
     const formatStatusReport = (): string => {
@@ -337,11 +409,21 @@ export class EyeRadarBotManager {
     };
 
     bot.command("status", async (ctx) => {
+      if (!isUserVerifiedInUkraine(ctx.chat.id)) {
+        await sendVerificationRequiredPrompt(ctx.chat.id);
+        return;
+      }
       await replyAndSchedule(ctx, formatStatusReport(), { parse_mode: "Markdown" });
     });
 
     bot.action("cmd_status", async (ctx) => {
       await ctx.answerCbQuery();
+      const chatId = ctx.chat?.id;
+      if (!chatId) return;
+      if (!isUserVerifiedInUkraine(chatId)) {
+        await sendVerificationRequiredPrompt(chatId);
+        return;
+      }
       await replyAndSchedule(ctx, formatStatusReport(), { parse_mode: "Markdown" });
     });
 
@@ -400,6 +482,10 @@ export class EyeRadarBotManager {
     };
 
     bot.command("alerts", async (ctx) => {
+      if (!isUserVerifiedInUkraine(ctx.chat.id)) {
+        await sendVerificationRequiredPrompt(ctx.chat.id);
+        return;
+      }
       await replyAndSchedule(ctx, formatAlertsReport(), {
         parse_mode: "Markdown",
         reply_markup: {
@@ -410,6 +496,12 @@ export class EyeRadarBotManager {
 
     bot.action("cmd_alerts", async (ctx) => {
       await ctx.answerCbQuery();
+      const chatId = ctx.chat?.id;
+      if (!chatId) return;
+      if (!isUserVerifiedInUkraine(chatId)) {
+        await sendVerificationRequiredPrompt(chatId);
+        return;
+      }
       await replyAndSchedule(ctx, formatAlertsReport(), {
         parse_mode: "Markdown",
         reply_markup: {
@@ -419,6 +511,10 @@ export class EyeRadarBotManager {
     });
 
     bot.command("report", async (ctx) => {
+      if (!isUserVerifiedInUkraine(ctx.chat.id)) {
+        await sendVerificationRequiredPrompt(ctx.chat.id);
+        return;
+      }
       const text = ctx.message.text.replace(/^\/report\s*/, "").trim().slice(0, 240);
       if (!text) {
         await replyAndSchedule(ctx, "Вкажіть спостереження після команди. Приклад: `/report Чую звук БпЛА біля Білої Церкви`", {
@@ -466,6 +562,14 @@ export class EyeRadarBotManager {
     cityName?: string,
     radiusKm = 30
   ): Promise<boolean> {
+    if (!isControlledUkraineLocation(lat, lon)) {
+      const existing = this.storage.getPreference(chatId);
+      if (existing) {
+        existing.enabled = false;
+        this.storage.savePreference(existing);
+      }
+      return false;
+    }
     const nearest = findNearestOblast(lat, lon);
     const resolvedCity = cityName || nearest.nameUk;
     const existing = this.storage.getPreference(chatId);
@@ -498,11 +602,11 @@ export class EyeRadarBotManager {
       try {
         await sendBotMessage(
           chatId,
-          `📍 *Локацію для сповіщень підтверджено!*\n\n` +
+          `📍 *Локацію в Україні підтверджено!*\n\n` +
             `🎯 Сектор: *${resolvedCity}* (${nearest.oblast} обл.)\n` +
             `🌐 Координати: \`${lat.toFixed(4)}, ${lon.toFixed(4)}\`\n` +
             `📏 Радіус контролю: *${radiusKm} км*\n\n` +
-            `🔔 *Ви отримуватимете в цьому боті:*\n` +
+            `🔓 *Повний доступ до всіх даних EYE RADAR відкрито!*\n` +
             `• Сигнали початку та відбою повітряної тривоги для вашого сектору\n` +
             `• Попередження про пряме наближення Шахедів, ракет та КАБів у радіус ${radiusKm} км\n\n` +
             `_Змінити локацію можна кліком на карті або командою /setlocation_`,
@@ -532,7 +636,7 @@ export class EyeRadarBotManager {
     const activeOblastNames = this.alertsSource ? this.alertsSource.getActiveAlertOblastNames() : [];
 
     for (const pref of preferences) {
-      if (!pref.enabled) continue;
+      if (!pref.enabled || !isControlledUkraineLocation(pref.lat, pref.lon)) continue;
 
       const nearest = findNearestOblast(pref.lat, pref.lon);
       const userOblastKey = nearest.oblast.toLowerCase();

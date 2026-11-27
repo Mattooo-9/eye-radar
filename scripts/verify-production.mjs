@@ -148,7 +148,7 @@ async function main() {
     (t) => t.dataCategory !== "osint_message" && t.dataCategory !== "sensor_observation"
   );
   const osintFakeAlt = tracks.filter(
-    (t) => t.dataCategory === "osint_message" && (t.altitude !== undefined && t.altitude !== null)
+    (t) => t.dataCategory === "osint_message" && (t.measuredAltitude !== undefined && t.measuredAltitude !== null)
   );
   const osintFakeMeasuredSpeed = tracks.filter(
     (t) => t.dataCategory === "osint_message" && (t.measuredSpeed !== undefined && t.measuredSpeed !== null)

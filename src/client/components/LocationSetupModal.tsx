@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { LOCATIONS } from "./CitySelector";
+import { isControlledUkraineLocationClient } from "../lib/ukraineBorders";
 
 export interface ConfirmedLocation {
   lat: number;
@@ -62,10 +63,16 @@ export const LocationSetupModal: React.FC<LocationSetupModalProps> = ({
   const [isLocating, setIsLocating] = useState(false);
   const [gpsError, setGpsError] = useState<string | null>(null);
 
+  const controlledOblasts = useMemo(
+    () => OBLASTS_OF_UKRAINE.filter((ob) => isControlledUkraineLocationClient(ob.center.lat, ob.center.lon)),
+    []
+  );
+
   const filteredCities = useMemo(() => {
-    if (!searchQuery.trim()) return LOCATIONS;
+    const controlled = LOCATIONS.filter((loc) => isControlledUkraineLocationClient(loc.lat, loc.lon));
+    if (!searchQuery.trim()) return controlled;
     const q = searchQuery.toLowerCase().trim();
-    return LOCATIONS.filter(
+    return controlled.filter(
       (loc) => loc.name.toLowerCase().includes(q) || loc.region.toLowerCase().includes(q)
     );
   }, [searchQuery]);
@@ -80,6 +87,14 @@ export const LocationSetupModal: React.FC<LocationSetupModalProps> = ({
 
   const handleSelectAndApply = (loc: ConfirmedLocation) => {
     triggerHaptic();
+    if (!isControlledUkraineLocationClient(loc.lat, loc.lon)) {
+      setTab("gps");
+      setGpsError(
+        "⛔ ДОСТУП ЗАБЛОКОВАНО: Координати знаходяться в РФ/РБ або за лінією фронту поза підконтрольною територією України. Доступ до даних заборонено."
+      );
+      return;
+    }
+    setGpsError(null);
     setSelectedPending(loc);
     onConfirmLocation(loc);
     onClose();
@@ -102,7 +117,14 @@ export const LocationSetupModal: React.FC<LocationSetupModalProps> = ({
         const lat = Math.round(pos.coords.latitude * 10000) / 10000;
         const lon = Math.round(pos.coords.longitude * 10000) / 10000;
 
-        let closestName = "Моя GPS локація";
+        if (!isControlledUkraineLocationClient(lat, lon)) {
+          setGpsError(
+            "⛔ ДОСТУП ЗАБЛОКОВАНО: Ваша GPS-локація знаходиться поза підконтрольною територією України (РФ, РБ або за лінією фронту). Доступ до даних EYE RADAR заборонено."
+          );
+          return;
+        }
+
+        let closestName = "Моя GPS локація (Україна)";
         let closestDist = Infinity;
         for (const loc of LOCATIONS) {
           const d = Math.hypot(loc.lat - lat, loc.lon - lon);
@@ -116,13 +138,13 @@ export const LocationSetupModal: React.FC<LocationSetupModalProps> = ({
           lat,
           lon,
           name: closestName,
-          region: "GPS"
+          region: "GPS · Україна"
         };
         handleSelectAndApply(resolved);
       },
       () => {
         setIsLocating(false);
-        setGpsError("Доступ до геопозиції відхилено. Оберіть місто зі списку вручну");
+        setGpsError("Доступ до геопозиції відхилено. Оберіть місто на підконтрольній території України зі списку");
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
     );
@@ -149,10 +171,10 @@ export const LocationSetupModal: React.FC<LocationSetupModalProps> = ({
             <span className="location-setup-icon">📍</span>
             <div>
               <div className="location-setup-title">
-                {isFirstLaunch ? "ВСТАНОВЛЕННЯ ЛОКАЦІЇ" : "МОЯ ЛОКАЦІЯ"}
+                {isFirstLaunch ? "ПІДТВЕРДЖЕННЯ ЛОКАЦІЇ В УКРАЇНІ" : "МОЯ ЛОКАЦІЯ (УКРАЇНА)"}
               </div>
               <div className="location-setup-sub">
-                Оберіть місто/область одним дотиком
+                Доступ лише для підконтрольної території України (з урахуванням лінії фронту)
               </div>
             </div>
           </div>
@@ -294,7 +316,7 @@ export const LocationSetupModal: React.FC<LocationSetupModalProps> = ({
         {tab === "region" && (
           <div className="location-tab-content">
             <div className="location-regions-grid">
-              {OBLASTS_OF_UKRAINE.map((ob) => {
+              {controlledOblasts.map((ob) => {
                 const isSelected =
                   selectedPending?.lat === ob.center.lat && selectedPending?.lon === ob.center.lon;
                 return (

@@ -58,10 +58,11 @@ export const LiveThreatDrawer: React.FC<LiveThreatDrawerProps> = ({
   const enriched = useMemo(() => {
     return packets
       .map((packet) => {
-        const [id, type, lat, lon, heading, speed, , , uncertaintyRadius, , , model, callsign] = packet;
+        const [id, type, lat, lon, heading, speed, , , uncertaintyRadius, , altitude, model, callsign] = packet;
         const dataCategory = classifyClientDataCategory(id, callsign);
         const isSensor = dataCategory === "sensor_observation";
-        const speedKmh = isSensor && speed > 0 ? Math.round(speed * 3.6) : null;
+        const speedKmh = speed > 0 ? Math.round(speed * 3.6) : null;
+        const altM = typeof altitude === "number" && altitude > 0 ? Math.round(altitude) : null;
         const hasVector = speed > 0;
         const landmark = findNearestLandmark(lat, lon);
         const shortPlace = landmark.replace(/^~?\d+\s*км\s+[^\s]+\s+(від\s+)?/i, "").split("(")[0].trim();
@@ -79,6 +80,7 @@ export const LiveThreatDrawer: React.FC<LiveThreatDrawerProps> = ({
           heading: Math.round(heading || 0),
           hasVector,
           speedKmh,
+          altM,
           uncertaintyStr: formatRadius(uncertaintyRadius),
           model: model || (type === "uav" ? "БпЛА (тип не уточнено)" : "Повітряний об'єкт"),
           callsign: callsign || "",
@@ -126,7 +128,7 @@ export const LiveThreatDrawer: React.FC<LiveThreatDrawerProps> = ({
           <span className="threat-row-model">{item.model}</span>
           <span className="threat-row-speed">
             {item.speedKmh !== null
-              ? `${compassArrow(item.heading)} ${item.speedKmh} км/год`
+              ? `${compassArrow(item.heading)} ${item.speedKmh} км/год${item.altM ? ` · ${item.altM} м` : ""}`
               : item.hasVector
               ? `${compassArrow(item.heading)} ${item.heading}°`
               : item.uncertaintyStr || "Район"}

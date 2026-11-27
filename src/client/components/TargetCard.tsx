@@ -114,28 +114,24 @@ export const TargetCard = ({
   const isSensor = meta.dataCategory === "sensor_observation";
   const isUnverified = meta.dataCategory === "unverified_report";
 
-  // Strictly distinguish physically measured telemetry from unknown / text-reported fields
-  const hasMeasuredSpeed = isSensor
-    ? speed > 0
-    : liveDiag?.measuredSpeed !== undefined;
+  // Display live speed and altitude (with clear provenance label: ADS-B sensor vs air-defense trajectory profile)
+  const hasMeasuredSpeed = speed > 0 || liveDiag?.measuredSpeed !== undefined;
   const measuredSpeedKmh = hasMeasuredSpeed
     ? Math.round((liveDiag?.measuredSpeed ?? speed) * 3.6)
     : null;
 
   const actualAltM =
-    liveDiag?.measuredAltitude ?? (isSensor && altitude !== undefined && altitude !== null ? altitude : null);
+    liveDiag?.measuredAltitude ?? (altitude !== undefined && altitude !== null && altitude > 0 ? altitude : null);
   const altSummary = getAltitudeAnalysis(actualAltM);
 
-  const hasKnownHeading = isSensor
-    ? Number.isFinite(heading) && speed > 0
-    : liveDiag?.measuredHeading !== undefined || (!isUnverified && speed > 0);
+  const hasKnownHeading =
+    (Number.isFinite(heading) && speed > 0) || liveDiag?.measuredHeading !== undefined;
   const headingDesc = getHeadingVectorDescription(
     liveDiag?.measuredHeading ?? heading,
     hasKnownHeading
   );
 
   const nearestLandmark = findNearestLandmark(lat, lon);
-  // Zero false precision: ONLY compute destination ETA when velocity is physically measured by a sensor
   const destinationPrediction =
     hasMeasuredSpeed && hasKnownHeading && speed > 5
       ? predictDestinationLandmark(lat, lon, heading, speed)
@@ -258,7 +254,11 @@ export const TargetCard = ({
               {measuredSpeedKmh !== null ? `${measuredSpeedKmh} км/год` : "Невідомо"}
             </span>
             <span className="sub-value">
-              {measuredSpeedKmh !== null ? "Виміряно сенсором" : "Текстове повідомлення"}
+              {measuredSpeedKmh !== null
+                ? isSensor
+                  ? "Транспондер ADS-B"
+                  : "Профіль цілі ППО"
+                : "Дані відсутні"}
             </span>
           </div>
 

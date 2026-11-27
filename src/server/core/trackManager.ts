@@ -200,8 +200,10 @@ export class TrackManager {
       // Sanitize textual OSINT tracks restored from checkpoints so legacy fabricated alt/speed/(OSINT) never persist
       if (isRestoredOsint) {
         const minTextFloor = t.id.startsWith("citizen-") ? 2_500 : 3_500;
+        if ((t.speed || 0) <= 5 || t.measuredAltitude !== undefined) {
+          t.altitude = undefined;
+        }
         t.dataCategory = "osint_message";
-        t.altitude = undefined;
         t.measuredAltitude = undefined;
         t.measuredSpeed = undefined;
         t.uncertaintyRadius = Math.max(minTextFloor, t.uncertaintyRadius || 0);
@@ -315,7 +317,8 @@ export class TrackManager {
         return null;
       }
       if (!regSource.capability.canProvideAltitude) {
-        observation.altitude = undefined;
+        if (!observation.meta) observation.meta = {};
+        observation.meta.altitudeIsMeasured = false;
       }
       if (!regSource.capability.canProvideSpeed) {
         if (!observation.meta) observation.meta = {};

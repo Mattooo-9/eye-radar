@@ -8,7 +8,7 @@ import { getSubsolarPoint, getTerminatorCoordinates, getLocalSolarStatus } from 
 import { findNearestLandmark } from "../lib/landmarks";
 import { getLiveWeatherRadarTileUrl } from "../lib/weatherRadar";
 import { calculateSatellitePositions, type SatelliteTrack } from "../lib/satelliteRecon";
-import { getFrontlineGeoJSON } from "../lib/ukraineBorders";
+import { getFrontlineGeoJSON, getOccupiedZoneGeoJSON } from "../lib/ukraineBorders";
 import type { AlertFeedStatus, FilterState } from "../types";
 import { SpatialIndex } from "../lib/spatialIndex.js";
 import { getTierConfig } from "../lib/hardwareBenchmark.js";
@@ -1534,7 +1534,27 @@ const syncUkraineBorders = (map: maplibregl.Map, showFrontline = true) => {
       try { map.removeSource("world-borders"); } catch {}
     }
 
-    // Tactical Line of Contact / Frontline (ЛБЗ) — understated cartographic contour
+    // 1. Shaded Temporarily Occupied Territory zone behind the Frontline (ЛБЗ)
+    if (!map.getSource("ukraine-occupied-zone")) {
+      map.addSource("ukraine-occupied-zone", {
+        type: "geojson",
+        data: getOccupiedZoneGeoJSON()
+      });
+    }
+
+    if (!map.getLayer("frontline-occupied-fill")) {
+      map.addLayer({
+        id: "frontline-occupied-fill",
+        type: "fill",
+        source: "ukraine-occupied-zone",
+        paint: {
+          "fill-color": "#7f1d1d",
+          "fill-opacity": 0.14
+        }
+      });
+    }
+
+    // 2. Tactical Line of Contact / Frontline (ЛБЗ) — clearly visible combat boundary
     if (!map.getSource("ukraine-frontline")) {
       map.addSource("ukraine-frontline", {
         type: "geojson",
@@ -1549,9 +1569,9 @@ const syncUkraineBorders = (map: maplibregl.Map, showFrontline = true) => {
         source: "ukraine-frontline",
         paint: {
           "line-color": "#e11d48",
-          "line-width": ["interpolate", ["linear"], ["zoom"], 4, 2.5, 8, 4.0, 12, 6.0],
-          "line-blur": ["interpolate", ["linear"], ["zoom"], 4, 2.0, 8, 3.0, 12, 4.0],
-          "line-opacity": 0.14
+          "line-width": ["interpolate", ["linear"], ["zoom"], 4, 3.2, 8, 5.2, 12, 7.5],
+          "line-blur": ["interpolate", ["linear"], ["zoom"], 4, 2.2, 8, 3.2, 12, 4.5],
+          "line-opacity": 0.28
         }
       });
     }
@@ -1562,17 +1582,17 @@ const syncUkraineBorders = (map: maplibregl.Map, showFrontline = true) => {
         type: "line",
         source: "ukraine-frontline",
         paint: {
-          "line-color": "#fb7185",
-          "line-width": ["interpolate", ["linear"], ["zoom"], 4, 0.9, 8, 1.3, 12, 1.8],
+          "line-color": "#f43f5e",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 4, 1.4, 8, 2.2, 12, 3.0],
           "line-dasharray": [3, 2],
-          "line-opacity": 0.42
+          "line-opacity": 0.82
         }
       });
     }
 
-    // Synchronize frontline visibility
+    // Synchronize frontline & occupied zone visibility
     const frontlineVis = showFrontline ? "visible" : "none";
-    for (const id of ["frontline-glow", "frontline-dash"]) {
+    for (const id of ["frontline-occupied-fill", "frontline-glow", "frontline-dash"]) {
       if (map.getLayer(id)) {
         map.setLayoutProperty(id, "visibility", frontlineVis);
       }

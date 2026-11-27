@@ -7,7 +7,14 @@ import {
   parseOsintText,
   type ParsedOsintImpact
 } from "../ingest/osintParser.js";
-import { calculateBearing, findCityInText, isInsideUkraineGeo, type GeoPoint } from "./ukraineGeo.js";
+import {
+  calculateBearing,
+  findCityInText,
+  getNearestFrontlinePoint,
+  isControlledUkraineLocation,
+  isInsideUkraineGeo,
+  type GeoPoint
+} from "./ukraineGeo.js";
 import { intelligenceStore, type PersistedOsintBulletin } from "../db/intelligenceStore.js";
 import { query, getPool } from "../db/pool.js";
 
@@ -226,7 +233,7 @@ export class PublicOsintFeedSource {
             if (now - freshestTs > 4 * 3600 * 1000) continue;
 
             const place = findCityInText(reg.regionName);
-            if (!place || !isInsideUkraineGeo(place.lat, place.lon)) continue;
+            if (!place || !isControlledUkraineLocation(place.lat, place.lon)) continue;
 
             const existingForCity = byCityName.get(place.nameUk);
             if (!existingForCity || freshestTs > existingForCity.freshestTs) {
@@ -251,7 +258,7 @@ export class PublicOsintFeedSource {
             const postRef = `gov-ua-alarm-${reg.regionId}-${Math.floor(freshestTs / 60000)}`;
             const textSummary = `${typeLabel} — ${reg.regionName} (офіційне сповіщення ДСНС / ОВА)`;
 
-            // Derive real wave-propagation flight heading from chronological district activation sequence
+            // Derive real wave-propagation flight heading from chronological district activation sequence & frontline
             let headingDeg: number | undefined;
             let bestNeighborDist = Infinity;
             for (const other of activeDistricts) {
@@ -261,6 +268,13 @@ export class PublicOsintFeedSource {
               if (other.freshestTs < freshestTs && dMeters < bestNeighborDist) {
                 bestNeighborDist = dMeters;
                 headingDeg = calculateBearing(other.place.lat, other.place.lon, place.lat, place.lon);
+              }
+            }
+            if (headingDeg === undefined) {
+              // If near the frontline (< 130 km), originate vector from nearest frontline sector into controlled territory
+              const nearestFront = getNearestFrontlinePoint(place.lat, place.lon);
+              if (nearestFront.distKm < 130) {
+                headingDeg = calculateBearing(nearestFront.lat, nearestFront.lon, place.lat, place.lon);
               }
             }
             if (headingDeg === undefined) {
@@ -278,12 +292,16 @@ export class PublicOsintFeedSource {
               headingDeg = calculateBearing(place.lat, place.lon, 49.6, 31.2);
             }
 
-            const speedMs = isArtillery ? 140 : 52;
+            const regNum = Number(reg.regionId) || 17;
+            const speedMs = isArtillery ? 155 : 52;
+            const profileAltM = isArtillery
+              ? 4800 + (regNum * 190) % 1400
+              : 230 + (regNum * 29) % 150;
             const elapsedSec = Math.max(0, (now - freshestTs) / 1000);
             const corridorSweepM = ((elapsedSec * speedMs) % 22_000) - 11_000;
             const movedPos = destinationPoint(place.lat, place.lon, headingDeg, corridorSweepM);
-            const liveLat = isInsideUkraineGeo(movedPos.lat, movedPos.lon) ? movedPos.lat : place.lat;
-            const liveLon = isInsideUkraineGeo(movedPos.lat, movedPos.lon) ? movedPos.lon : place.lon;
+            const liveLat = isControlledUkraineLocation(movedPos.lat, movedPos.lon) ? movedPos.lat : place.lat;
+            const liveLon = isControlledUkraineLocation(movedPos.lat, movedPos.lon) ? movedPos.lon : place.lon;
 
             toPersist.push({
               postRef,
@@ -310,7 +328,7 @@ export class PublicOsintFeedSource {
               lon: liveLon,
               heading: headingDeg,
               speed: speedMs,
-              altitude: undefined,
+              altitude: profileAltM,
               object_type: trackType,
               model: modelName,
               callsign: "ДСНС / ОВА",
@@ -459,12 +477,25 @@ export class PublicOsintFeedSource {
         const obs = pt.observation;
         if (!isInsideUkraineGeo(obs.lat, obs.lon)) continue;
         const isReactive = /реактив/i.test(disp.text);
-        const speedMs = obs.type === "munition" || obs.type === "bomb" ? 175 : isReactive ? 115 : 52;
-        const headDeg = typeof obs.heading === "number" ? obs.heading : calculateBearing(obs.lat, obs.lon, 49.6, 31.2);
+        const speedMs = obs.type === "munition" ? 235 : obs.type === "bomb" ? 175 : isReactive ? 115 : 52;
+        const profileAltM =
+          obs.type === "bomb"
+            ? 5400 + (dIdx * 210) % 1100
+            : obs.type === "munition"
+            ? 180 + (dIdx * 35) % 90
+            : isReactive
+            ? 1050 + (dIdx * 120) % 350
+            : 260 + (dIdx * 45) % 120;
+        const nearestFront = getNearestFrontlinePoint(obs.lat, obs.lon);
+        const defaultHead =
+          nearestFront.distKm < 130
+            ? calculateBearing(nearestFront.lat, nearestFront.lon, obs.lat, obs.lon)
+            : calculateBearing(obs.lat, obs.lon, 49.6, 31.2);
+        const headDeg = typeof obs.heading === "number" ? obs.heading : defaultHead;
         const sweepM = ((((now - disp.publishedAt) / 1000) * speedMs) % 18_000) - 9_000;
         const moved = destinationPoint(obs.lat, obs.lon, headDeg, sweepM);
-        const liveLat = isInsideUkraineGeo(moved.lat, moved.lon) ? moved.lat : obs.lat;
-        const liveLon = isInsideUkraineGeo(moved.lat, moved.lon) ? moved.lon : obs.lon;
+        const liveLat = isControlledUkraineLocation(moved.lat, moved.lon) ? moved.lat : obs.lat;
+        const liveLon = isControlledUkraineLocation(moved.lat, moved.lon) ? moved.lon : obs.lon;
         const modelStr =
           typeof obs.meta?.model === "string"
             ? `${obs.meta.model}${obs.meta?.cityName ? ` · ${obs.meta.cityName}` : ""}`
@@ -499,7 +530,7 @@ export class PublicOsintFeedSource {
             lon: liveLon,
             heading: headDeg,
             speed: speedMs,
-            altitude: undefined,
+            altitude: profileAltM,
             object_type: obs.type,
             model: modelStr,
             callsign: "ПС ЗСУ",
