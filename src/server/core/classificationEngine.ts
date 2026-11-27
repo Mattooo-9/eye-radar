@@ -446,7 +446,9 @@ export function classifyAerialObject(input: ClassificationInput): Classification
         hintLower.includes("shark");
 
       const isTextOsint =
-        input.sources.some((s) => s.includes("osint") || s === "manual") &&
+        input.sources.some(
+          (s) => s.includes("osint") || s.startsWith("gov:") || s.startsWith("web:") || s === "manual"
+        ) &&
         !isMeasuredSpeed &&
         !isMeasuredAltitude;
 

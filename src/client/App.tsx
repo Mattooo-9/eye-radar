@@ -5,7 +5,7 @@ import { AiBriefingModal } from "./components/AiBriefingModal";
 import { CitizenReportModal } from "./components/CitizenReportModal";
 import { LOCATIONS } from "./components/CitySelector";
 import { LiveTimelineBar, type PerformanceTier } from "./components/LiveTimelineBar";
-import { MapView, type VisionMode } from "./components/MapView";
+import { MapView, type SolarMode, type VisionMode } from "./components/MapView";
 import {
   type AlertFeedStatus,
   type ClientAlertDetail,
@@ -151,6 +151,7 @@ export const App = () => {
       ? storedPrefs.visionMode
       : "satellite"
   );
+  const [solarMode, setSolarMode] = useState<SolarMode>("auto");
   const [selectedTarget, setSelectedTarget] = useState<TrackPacket | null>(null);
   const [inspectedTarget, setInspectedTarget] = useState<TrackPacket | null>(null);
   const [selectedImpact, setSelectedImpact] = useState<ImpactEvent | null>(null);
@@ -603,6 +604,8 @@ export const App = () => {
         onSelectOffset={setTimelineOffsetSec}
         performanceTier={performanceTier}
         onSelectTier={setPerformanceTier}
+        solarMode={solarMode}
+        onSelectSolarMode={setSolarMode}
       />
 
       {/* 3. Full-screen map (edge to edge, clean, zero watermarks) */}
@@ -617,6 +620,7 @@ export const App = () => {
           confirmedLocation={confirmedLocation}
           filters={filters}
           visionMode={visionMode}
+          solarMode={solarMode}
           selectedTarget={selectedTarget}
           selectedImpact={selectedImpact}
           selectedLocation={selectedLocation}
@@ -670,6 +674,7 @@ export const App = () => {
       <LiveThreatDrawer
         packets={filteredPackets}
         location={location}
+        activeAlerts={activeAlerts}
         selectedTargetId={selectedTarget?.[0] ?? null}
         onSelectTarget={(packet) => {
           setSelectedTarget(packet);
@@ -705,6 +710,8 @@ export const App = () => {
         map={mapInstance}
         visionMode={visionMode}
         onSelectVision={(mode) => setVisionMode(mode)}
+        solarMode={solarMode}
+        onSelectSolarMode={(mode) => setSolarMode(mode)}
         showWeather={showWeather}
         onToggleWeather={() => setShowWeather((prev) => !prev)}
         showSatellites={showSatellites}

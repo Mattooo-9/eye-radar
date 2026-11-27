@@ -56,10 +56,30 @@ export function isCivilAirliner(callsign?: string, desc?: string, model?: string
   return CIVIL_AIRFRAME_MARKERS.some((m) => text.includes(m));
 }
 
+const DEDICATED_THEATER_RECON_AND_AIRLIFT_MARKERS = [
+  "E-3", "E3TF", "E3CF", "E-7", "AWACS", "SENTRY",
+  "KC-135", "K35R", "STRATOTANKER", "KC-46", "A332", "MRTT",
+  "P-8", "POSEIDON", "RC-135", "RIVET", "RQ-4", "FORTE", "GLOBAL HAWK", "MQ-9", "REAPER",
+  "C-17", "C17", "GLOBEMASTER", "C-130", "C130", "HERCULES", "A400",
+  "F-16", "F-15", "F-35", "TYPHOON", "RAFALE", "GRIPEN", "NATO"
+];
+
+function isPassengerAirlinerAirframe(desc?: string, model?: string): boolean {
+  const text = `${desc ?? ""} ${model ?? ""}`.toUpperCase();
+  return CIVIL_AIRFRAME_MARKERS.some((m) => text.includes(m));
+}
+
+function isDedicatedTheaterMilitaryAsset(callsign?: string, desc?: string, model?: string): boolean {
+  if (isPassengerAirlinerAirframe(desc, model)) return false;
+  const text = `${callsign ?? ""} ${desc ?? ""} ${model ?? ""}`.toUpperCase();
+  return DEDICATED_THEATER_RECON_AND_AIRLIFT_MARKERS.some((kw) => text.includes(kw));
+}
+
 /**
- * Operational intake gate: excludes all civilian commercial airliners and all
- * foreign traffic outside Ukraine's sovereign territory.
- * Admits only non-civilian contacts physically inside Ukraine's national border polygon.
+ * Operational intake gate:
+ * - Excludes all commercial airlines and passenger airliner airframes (even VIP government B738/A319/A321neo).
+ * - Admits non-civilian contacts inside Ukraine's national border polygon.
+ * - Admits dedicated military AWACS / reconnaissance / tanker / tactical airlift assets within 200 km of Ukraine's border.
  */
 export function shouldIngestAdsbContact(
   lat: number,
@@ -70,13 +90,21 @@ export function shouldIngestAdsbContact(
 ): { allowed: boolean; isMil: boolean; isInsideUkraine: boolean } {
   const isMil = isMilitaryAircraft(callsign, desc, model);
   const isCivil = isCivilAirliner(callsign, desc, model);
-  if (isCivil) {
+  if (isCivil || isPassengerAirlinerAirframe(desc, model)) {
     return { allowed: false, isMil: false, isInsideUkraine: false };
   }
   const isInsideUkraine = isInsideUkraineGeo(lat, lon);
+  if (isInsideUkraine) {
+    return { allowed: true, isMil, isInsideUkraine: true };
+  }
+  const isTheaterAsset = isDedicatedTheaterMilitaryAsset(callsign, desc, model);
+  if (!isTheaterAsset) {
+    return { allowed: false, isMil, isInsideUkraine: false };
+  }
+  const distKm = getDistanceToUkraineBorderKm(lat, lon);
   return {
-    allowed: isInsideUkraine,
-    isMil,
-    isInsideUkraine
+    allowed: distKm <= 200,
+    isMil: true,
+    isInsideUkraine: false
   };
 }

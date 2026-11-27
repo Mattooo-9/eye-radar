@@ -208,7 +208,12 @@ export const UKRAINE_CITIES: Record<string, GeoPoint> = {
   artsyz: { name: "Artsyz", nameUk: "Арциз", lat: 45.992, lon: 29.431, oblast: "Odesa", aliases: ["арциз", "арциза"] },
   tatarbunary: { name: "Tatarbunary", nameUk: "Татарбунари", lat: 45.847, lon: 29.615, oblast: "Odesa", aliases: ["татарбунари", "татарбунары"] },
   ovidiopol: { name: "Ovidiopol", nameUk: "Овідіополь", lat: 46.246, lon: 30.440, oblast: "Odesa", aliases: ["овідіополь", "овидиополь"] },
-  rozdilna: { name: "Rozdilna", nameUk: "Роздільна", lat: 46.849, lon: 30.077, oblast: "Odesa", aliases: ["роздільна", "роздільну", "раздельная"] },
+  rozdilna: { name: "Rozdilna", nameUk: "Роздільна", lat: 46.849, lon: 30.077, oblast: "Odesa", aliases: ["роздільна", "роздільну", "раздельная", "роздільнянський район"] },
+  berezivka_od: { name: "Berezivka", nameUk: "Березівка", lat: 47.204, lon: 30.916, oblast: "Odesa", aliases: ["березівка", "березівку", "березівський район"] },
+  vasylivka_zp: { name: "Vasylivka", nameUk: "Василівка", lat: 47.441, lon: 35.274, oblast: "Zaporizhzhia", isFrontline: true, aliases: ["василівка", "василівський район"] },
+  polohy: { name: "Polohy", nameUk: "Пологи", lat: 47.479, lon: 36.253, oblast: "Zaporizhzhia", isFrontline: true, aliases: ["пологи", "пологівський район"] },
+  volnovakha: { name: "Volnovakha", nameUk: "Волноваха", lat: 47.596, lon: 37.499, oblast: "Donetsk", isFrontline: true, aliases: ["волноваха", "волноваський район"] },
+  chervonohryhorivka: { name: "Chervonohryhorivka", nameUk: "Червоногригорівка", lat: 47.625, lon: 34.536, oblast: "Dnipropetrovsk", isFrontline: true, aliases: ["червоногригорівка", "червоногригорівська територіальна громада"] },
   trostianets_sumy: { name: "Trostianets", nameUk: "Тростянець", lat: 50.481, lon: 34.965, oblast: "Sumy", isFrontline: true, aliases: ["тростянець", "тростянця", "тростянец"] },
   krolevets: { name: "Krolevets", nameUk: "Кролевець", lat: 51.552, lon: 33.376, oblast: "Sumy", aliases: ["кролевець", "кролевця", "кролевец"] },
   bilopillia: { name: "Bilopillia", nameUk: "Білопілля", lat: 51.147, lon: 34.303, oblast: "Sumy", isFrontline: true, aliases: ["білопілля", "белополье"] },
@@ -447,6 +452,53 @@ export const normalizeUkText = (text: string): string =>
   deobfuscateCyrillic(text)
     .toLowerCase()
     .replace(/[’ʼ`]/g, "'")
+    .replace(/\bтериторіальна громада\b/g, " ")
+    .replace(/\bселищна громада\b/g, " ")
+    .replace(/\bміська громада\b/g, " ")
+    .replace(/\bзолотоніський\b/g, "золотоноша")
+    .replace(/\bподільський\b/g, "подільськ")
+    .replace(/\bлубенський\b/g, "лубни")
+    .replace(/\bприлуцький\b/g, "прилуки")
+    .replace(/\bбучанський\b/g, "буча")
+    .replace(/\bвишгородський\b/g, "вишгород")
+    .replace(/\bкоростенський\b/g, "коростень")
+    .replace(/\bзвягельський\b/g, "звягель")
+    .replace(/\bроменський\b/g, "ромни")
+    .replace(/\bконотопський\b/g, "конотоп")
+    .replace(/\bкриворізький\b/g, "кривий ріг")
+    .replace(/\bлозівський\b/g, "лозова")
+    .replace(/\bчугуївський\b/g, "чугуїв")
+    .replace(/\bпавлоградський\b/g, "павлоград")
+    .replace(/\bдніпровський\b/g, "дніпро")
+    .replace(/\bнікопольський\b/g, "нікополь")
+    .replace(/\bкуп'янський\b/g, "куп'янськ")
+    .replace(/\bізюмський\b/g, "ізюм")
+    .replace(/\bніжинський\b/g, "ніжин")
+    .replace(/\bохтирський\b/g, "охтирка")
+    .replace(/\bкорюківський\b/g, "корюківка")
+    .replace(/\bсинельниківський\b/g, "синельникове")
+    .replace(/\bберезівський\b/g, "березівка")
+    .replace(/\bвасилівський\b/g, "василівка")
+    .replace(/\bпологівський\b/g, "пологи")
+    .replace(/\bволноваський\b/g, "волноваха")
+    .replace(/\bкраматорський\b/g, "краматорськ")
+    .replace(/\bпокровський\b/g, "покровськ")
+    .replace(/\bбахмутський\b/g, "бахмут")
+    .replace(/\bмаріупольський\b/g, "маріуполь")
+    .replace(/\bмелітопольський\b/g, "мелітополь")
+    .replace(/\bбердянський\b/g, "бердянськ")
+    .replace(/\bчернігівський\b/g, "чернігів")
+    .replace(/\bсумський\b/g, "суми")
+    .replace(/\bхарківський\b/g, "харків")
+    .replace(/\bзапорізький\b/g, "запоріжжя")
+    .replace(/\bчеркаський\b/g, "черкаси")
+    .replace(/\bлипецька\b/g, "липці")
+    .replace(/\bвовчанська\b/g, "вовчанськ")
+    .replace(/\bмарганецька\b/g, "марганець")
+    .replace(/\bпокровська\b/g, "покров")
+    .replace(/\bчервоногригорівська\b/g, "червоногригорівка")
+    .replace(/\bмалинській\b/g, "малин")
+    .replace(/\bмалинська\b/g, "малин")
     .replace(/[^\p{L}\p{N}\s']/gu, " ")
     .replace(/\s+/g, " ")
     .trim();

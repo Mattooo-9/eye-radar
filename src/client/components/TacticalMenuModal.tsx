@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import type { Map } from "maplibre-gl";
-import type { VisionMode } from "./MapView";
+import type { SolarMode, VisionMode } from "./MapView";
 import type { FilterState } from "../types";
 import type { TrustedLocation } from "../location/useTrustedLocation";
 import type { ImpactEvent, TrackPacket } from "../hooks/useWsRadar";
@@ -13,6 +13,8 @@ interface TacticalMenuModalProps {
   // Vision & Layers
   visionMode: VisionMode;
   onSelectVision: (mode: VisionMode) => void;
+  solarMode?: SolarMode;
+  onSelectSolarMode?: (mode: SolarMode) => void;
   showWeather: boolean;
   onToggleWeather: () => void;
   showSatellites: boolean;
@@ -69,6 +71,8 @@ export const TacticalMenuModal: React.FC<TacticalMenuModalProps> = ({
   map,
   visionMode,
   onSelectVision,
+  solarMode = "auto",
+  onSelectSolarMode,
   showWeather,
   onToggleWeather,
   showSatellites,
@@ -366,6 +370,37 @@ export const TacticalMenuModal: React.FC<TacticalMenuModalProps> = ({
                   </div>
                 </div>
               </div>
+
+              {onSelectSolarMode && (
+                <>
+                  <div className="tactical-section-title" style={{ marginTop: 14 }}>
+                    ОСВІТЛЕННЯ КАРТИ (ДЕНЬ / НІЧ / СОНЯЧНИЙ ТЕРМІНАТОР)
+                  </div>
+                  <div className="cities-chips-grid">
+                    <button
+                      type="button"
+                      className={`city-chip ${solarMode === "auto" ? "city-chip-alarm" : ""}`}
+                      onClick={() => onSelectSolarMode("auto")}
+                    >
+                      <span className="city-chip-name">🌓 Авто (Реальний час за Сонцем)</span>
+                    </button>
+                    <button
+                      type="button"
+                      className={`city-chip ${solarMode === "day" ? "city-chip-alarm" : ""}`}
+                      onClick={() => onSelectSolarMode("day")}
+                    >
+                      <span className="city-chip-name">☀️ День (Денна зйомка)</span>
+                    </button>
+                    <button
+                      type="button"
+                      className={`city-chip ${solarMode === "night" ? "city-chip-alarm" : ""}`}
+                      onClick={() => onSelectSolarMode("night")}
+                    >
+                      <span className="city-chip-name">🌙 Ніч (Нічний режим)</span>
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           )}
 

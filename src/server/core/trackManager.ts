@@ -1,6 +1,6 @@
 import type { SourceRegistry } from "../sources/SourceRegistry.js";
 import { sourceRegistry as globalSourceRegistry } from "../sources/SourceRegistry.js";
-import { bearingDegrees, destinationPoint, haversineMeters } from "../domain/geo.js";
+import { bearingDegrees, destinationPoint, getDistanceToUkraineBorderKm, haversineMeters } from "../domain/geo.js";
 import type { CompactTrackPacket, Observation, ThreatLevel, TrackLifecycle, TrackState, TrackDiagnosticReport } from "../domain/types.js";
 import type { ProvenanceRecord, SourceFamily } from "../domain/unifiedObservation.js";
 import { ImmFilter2D, type ImmResult } from "./immFilter.js";
@@ -181,22 +181,22 @@ export class TrackManager {
               (typeof p.source === "string" && p.source.startsWith("@")) ||
               (typeof p.provenanceStr === "string" && p.provenanceStr.includes("@"))
           ));
+      const isRestoredOsint =
+        t.dataCategory === "osint_message" ||
+        t.id.startsWith("osint-") ||
+        t.id.startsWith("citizen-") ||
+        t.evidenceFamilies?.includes("osint");
       if (
         trackAgeMs > 90_000 ||
         t.isDegraded ||
         hasTelegramProvenance ||
         t.model === "Civilian Aircraft" ||
         (typeof t.model === "string" && t.model.includes("аномальний стрибок РЕБ")) ||
-        !isInsideUkraineGeo(t.lat, t.lon)
+        (!isInsideUkraineGeo(t.lat, t.lon) && (isRestoredOsint || getDistanceToUkraineBorderKm(t.lat, t.lon) > 200))
       ) {
         continue;
       }
       // Sanitize textual OSINT tracks restored from checkpoints so legacy fabricated alt/speed/(OSINT) never persist
-      const isRestoredOsint =
-        t.dataCategory === "osint_message" ||
-        t.id.startsWith("osint-") ||
-        t.id.startsWith("citizen-") ||
-        t.evidenceFamilies?.includes("osint");
       if (isRestoredOsint) {
         const minTextFloor = t.id.startsWith("citizen-") ? 2_500 : 3_500;
         t.dataCategory = "osint_message";

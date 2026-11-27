@@ -252,14 +252,19 @@ describe("EYE RADAR — Mandatory Automated Acceptance Criteria (ACCEPTANCE.md)"
   });
 
   describe("2. Architecture & Single-Source ADS-B Gate", () => {
-    it("excludes European commercial airlines and foreign flights outside Ukraine, admitting only non-civil contacts inside Ukraine", () => {
+    it("excludes commercial airlines, VIP passenger jets, and distant flights while admitting in-Ukraine and <=200km border recon assets", () => {
       expect(shouldIngestAdsbContact(47.23, 23.32, "WZZ4848", "A321", "A21N").allowed).toBe(false);
       expect(shouldIngestAdsbContact(46.53, 22.03, "AAR522", "B77W", "B77W").allowed).toBe(false);
       expect(shouldIngestAdsbContact(44.62, 24.23, "THY4DE", "A321", "A21N").allowed).toBe(false);
-      // Foreign military flight outside Ukraine border (Hungary/Romania) -> excluded
-      expect(shouldIngestAdsbContact(47.0, 21.8, "RCH436", "Boeing C-17A Globemaster III", "C17").allowed).toBe(false);
-      // Military/non-civil contact strictly inside Ukraine -> allowed
-      expect(shouldIngestAdsbContact(50.45, 30.52, "RCH436", "Boeing C-17A Globemaster III", "C17").allowed).toBe(true);
+      // Government VIP passenger airliner airframes (B738, A21N) -> excluded
+      expect(shouldIngestAdsbContact(50.1, 22.0, "PLF110", "BOEING 737-800", "B738").allowed).toBe(false);
+      expect(shouldIngestAdsbContact(46.63, 24.71, "GAF744", "AIRBUS A-321neo", "A21N").allowed).toBe(false);
+      // Dedicated NATO AWACS / C-17 within 200 km of Ukraine border -> allowed
+      expect(shouldIngestAdsbContact(46.26, 25.04, "NATO08", "Boeing E-3A Sentry", "E3TF").allowed).toBe(true);
+      expect(shouldIngestAdsbContact(47.0, 21.8, "RCH436", "Boeing C-17A Globemaster III", "C17").allowed).toBe(true);
+      // Flights > 200 km away (Warsaw / Western Europe) -> excluded
+      expect(shouldIngestAdsbContact(52.26, 20.41, "PLF631", "MIL Mi-8", "MI8").allowed).toBe(false);
+      expect(shouldIngestAdsbContact(40.4, -3.7, "RCH999", "Boeing C-17A", "C17").allowed).toBe(false);
       // Commercial airliner inside Ukraine -> excluded
       expect(shouldIngestAdsbContact(50.45, 30.52, "WZZ4848", "A321", "A21N").allowed).toBe(false);
     });

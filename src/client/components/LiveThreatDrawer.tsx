@@ -11,6 +11,7 @@ interface LiveThreatDrawerProps {
   selectedTargetId?: string | null;
   onSelectTarget: (packet: TrackPacket) => void;
   onFitAll: () => void;
+  activeAlerts?: string[];
 }
 
 const TYPE_PRIORITY: Record<string, number> = {
@@ -49,7 +50,8 @@ export const LiveThreatDrawer: React.FC<LiveThreatDrawerProps> = ({
   location,
   selectedTargetId,
   onSelectTarget,
-  onFitAll
+  onFitAll,
+  activeAlerts = []
 }) => {
   const [expanded, setExpanded] = useState(false);
 
@@ -205,16 +207,20 @@ export const LiveThreatDrawer: React.FC<LiveThreatDrawerProps> = ({
 
       <button
         type="button"
-        className={`live-threat-pill ${osintItems.length > 0 ? "has-combat" : "calm"}`}
+        className={`live-threat-pill ${osintItems.length > 0 || activeAlerts.length > 0 ? "has-combat" : "calm"}`}
         onClick={() => {
           window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.("light");
           setExpanded((prev) => !prev);
         }}
-        title="Відкрити розділений список повідомлень ППО та спостережень ADS-B"
+        title="Відкрити розділений список загроз, сповіщень ДСНС/ОВА та спостережень ADS-B"
       >
-        <span className={`threat-pulse-dot ${osintItems.length > 0 ? "danger" : "calm"}`} />
+        <span className={`threat-pulse-dot ${osintItems.length > 0 || activeAlerts.length > 0 ? "danger" : "calm"}`} />
         <span className="live-threat-pill-main">
-          {enriched.length > 0 ? `ЦІЛІ: ${enriched.length}` : "НЕБО ЧИСТЕ"}
+          {enriched.length > 0
+            ? `ЦІЛІ: ${enriched.length}`
+            : activeAlerts.length > 0
+            ? `ТРИВОГА: ${activeAlerts.length} ОБЛ.`
+            : "ТРИВОГ НЕМАЄ"}
         </span>
         {countsText && <span className="live-threat-pill-sub">{countsText}</span>}
         <span className="live-threat-pill-chevron">{expanded ? "▼" : "▲"}</span>

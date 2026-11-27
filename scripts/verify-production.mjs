@@ -164,8 +164,11 @@ async function main() {
   const evidenceBloat = tracks.filter((t) => Array.isArray(t.evidence) && t.evidence.length > 24);
 
   check(
-    "/api/targets compact payload (<100KB) & explicit categories",
-    targets.status === 200 && targets.bytes < 100_000 && Boolean(targets.json?.categories),
+    "/api/targets compact payload (<100KB), non-empty live targets & explicit categories",
+    targets.status === 200 &&
+      targets.bytes < 100_000 &&
+      Boolean(targets.json?.categories) &&
+      tracks.length > 0,
     `${(targets.bytes / 1024).toFixed(1)} KB, count=${tracks.length}, categories=${JSON.stringify(targets.json?.categories)}`
   );
   check("0 synthetic tracks in production", synthCount === 0, `synthetic=${synthCount}`);
@@ -254,6 +257,7 @@ async function main() {
   check(
     "Vercel /api/osint/feed & /api/alerts carry official status, timestamp & freshness",
     vercelFeed.status === 200 &&
+      (vercelFeed.json?.count ?? 0) > 0 &&
       vercelAlerts.status === 200 &&
       vercelAlerts.json?.dataCategory === "official_alert" &&
       vercelAlerts.json?.status === "fresh" &&

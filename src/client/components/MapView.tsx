@@ -18,6 +18,7 @@ import { LOCATIONS } from "./CitySelector";
 import { ensurePmtilesProtocol, resolveMapStyle } from "../lib/mapStyles";
 
 export type VisionMode = "satellite" | "nvg" | "flir" | "tactical";
+export type SolarMode = "auto" | "day" | "night";
 
 interface MapViewProps {
   packets: TrackPacket[];
@@ -29,6 +30,7 @@ interface MapViewProps {
   filters?: FilterState;
   satelliteMode?: boolean;
   visionMode?: VisionMode;
+  solarMode?: SolarMode;
   selectedTarget?: TrackPacket | null;
   isPickingLocation?: boolean;
   showDayNight?: boolean;
@@ -1944,6 +1946,7 @@ export const MapView = ({
   confirmedLocation,
   filters,
   visionMode = "satellite",
+  solarMode = "auto",
   selectedTarget,
   selectedLocation,
   isPickingLocation,
@@ -2061,6 +2064,9 @@ export const MapView = ({
 
   const showDayNightRef = useRef(showDayNight);
   showDayNightRef.current = showDayNight;
+
+  const solarModeRef = useRef<SolarMode>(solarMode);
+  solarModeRef.current = solarMode;
 
   const showWeatherRef = useRef(showWeather);
   showWeatherRef.current = showWeather;
@@ -2313,17 +2319,38 @@ export const MapView = ({
       }
     };
 
-    const applyImmediateSolarLighting = (m: Map) => {
+    const computeSolarLightingTargets = (m: Map) => {
       const center = m.getCenter();
-      const localSun = getLocalSolarStatus(center.lat, center.lng);
-      const elev = localSun.elevationDeg;
-      const satLayer = m.getLayer("satellite-tiles-layer") ? "satellite-tiles-layer" : m.getLayer("esri-satellite-layer") ? "esri-satellite-layer" : null;
+      const effectiveDate = new Date(Date.now() - (timelineOffsetRef.current || 0) * 1000);
+      const localSun = getLocalSolarStatus(center.lat, center.lng, effectiveDate);
+      const mode = solarModeRef.current || "auto";
+      const elev =
+        mode === "day" ? 25 : mode === "night" ? -18 : localSun.elevationDeg;
+
+      let targetBrightness = 0.96;
+      let targetSaturation = -0.04;
+      let targetContrast = 0.12;
+      if (elev <= -8) {
+        targetBrightness = 0.36;
+        targetSaturation = -0.48;
+        targetContrast = 0.24;
+      } else if (elev < 5) {
+        const dayFactor = (elev + 8) / 13; // 0.0 at -8° (night) -> 1.0 at +5° (daylight)
+        targetBrightness = Number((0.36 + dayFactor * 0.60).toFixed(2));
+        targetSaturation = Number((-0.48 + dayFactor * 0.44).toFixed(2));
+        targetContrast = Number((0.24 - dayFactor * 0.12).toFixed(2));
+      }
+      return { elev, effectiveDate, targetBrightness, targetSaturation, targetContrast };
+    };
+
+    const applyImmediateSolarLighting = (m: Map) => {
+      const { targetBrightness, targetSaturation, targetContrast } = computeSolarLightingTargets(m);
+      const satLayer = m.getLayer("satellite-tiles-layer")
+        ? "satellite-tiles-layer"
+        : m.getLayer("esri-satellite-layer")
+        ? "esri-satellite-layer"
+        : null;
       if (satLayer) {
-        const nightFactor = Math.min(1, Math.max(0, -elev / 10));
-        // Always maintain a deep, high-contrast dark-tactical satellite palette (no bright washed-out daytime green)
-        const targetBrightness = elev < 0 ? Math.max(0.36, 0.48 - nightFactor * 0.12) : 0.48;
-        const targetSaturation = elev < 0 ? -0.58 : -0.50;
-        const targetContrast = elev < 0 ? 0.24 : 0.18;
         lastAppliedBrightnessRef.current = targetBrightness;
         try {
           m.setPaintProperty(satLayer, "raster-brightness-max", targetBrightness);
@@ -2498,12 +2525,17 @@ export const MapView = ({
     centeredRef.current = true;
   }, []);
 
-  // 5.5 Trigger immediate redraw of canvas overlay when packets, filters, impacts, or selection changes
+  // 5.5 Trigger immediate redraw of canvas overlay when packets, filters, impacts, solarMode, or selection changes
   useEffect(() => {
+    const map = mapRef.current;
+    if (map) {
+      lastBrightnessCheckRef.current = 0;
+      lastAppliedBrightnessRef.current = -1;
+    }
     if (renderRef.current) {
       renderRef.current();
     }
-  }, [packets, filters, impacts, showFirms, showAviation, showAlerts, showUncertainty, selectedImpact, selectedTarget]);
+  }, [packets, filters, impacts, showFirms, showAviation, showAlerts, showUncertainty, selectedImpact, selectedTarget, solarMode, timelineOffsetSec]);
 
   // 6. Synchronized Canvas overlay render loop (locked 1:1 with MapLibre camera, event-driven with idle sleep)
   useEffect(() => {
@@ -2581,15 +2613,40 @@ export const MapView = ({
         const currentFilters = filtersRef.current;
         const currentSelected = selectedTargetRef.current;
 
-        // B. Dynamic Planetary & Local Solar Illumination (Astronomical Real-Time Synchronization)
+        // B. Dynamic Planetary & Local Solar Illumination (Astronomical Real-Time Day / Twilight / Night + Solar Terminator)
         if (showDayNightRef.current !== false) {
           const center = map.getCenter();
-          const localSun = getLocalSolarStatus(center.lat, center.lng);
-          const elev = localSun.elevationDeg;
+          const effectiveDate = new Date(now - (timelineOffsetRef.current || 0) * 1000);
+          const localSun = getLocalSolarStatus(center.lat, center.lng, effectiveDate);
+          const mode = solarModeRef.current || "auto";
+          const elev = mode === "day" ? 25 : mode === "night" ? -18 : localSun.elevationDeg;
 
           ctx.save();
+          // Draw curved astronomical solar terminator line across the globe when in auto mode
+          if (mode === "auto") {
+            const termCoords = getTerminatorCoordinates(effectiveDate);
+            if (termCoords.length > 2) {
+              ctx.beginPath();
+              let started = false;
+              for (const [tLon, tLat] of termCoords) {
+                const pt = map.project([tLon, tLat]);
+                if (!started) {
+                  ctx.moveTo(pt.x, pt.y);
+                  started = true;
+                } else {
+                  ctx.lineTo(pt.x, pt.y);
+                }
+              }
+              ctx.strokeStyle = "rgba(251, 191, 36, 0.35)";
+              ctx.lineWidth = 1.5;
+              ctx.setLineDash([6, 4]);
+              ctx.stroke();
+              ctx.setLineDash([]);
+            }
+          }
+
           if (elev < 0) {
-            // Sun is below horizon: astronomical night
+            // Sun is below horizon: astronomical / nautical night
             const nightFactor = Math.min(1, Math.max(0, -elev / 10));
             const baseAlpha = 0.36 * nightFactor;
 
@@ -2603,32 +2660,45 @@ export const MapView = ({
 
             // Twilight golden/amber glow along the horizon if dusk/dawn (-12 < elev < 0)
             if (elev > -12) {
-              const twilightFactor = 1 - (-elev / 12);
+              const twilightFactor = 1 - -elev / 12;
               const twiGrad = ctx.createLinearGradient(0, height * 0.65, 0, height);
               twiGrad.addColorStop(0, "rgba(217, 119, 6, 0)");
-              twiGrad.addColorStop(1, `rgba(217, 119, 6, ${0.18 * twilightFactor})`);
+              twiGrad.addColorStop(1, `rgba(217, 119, 6, ${0.22 * twilightFactor})`);
               ctx.fillStyle = twiGrad;
               ctx.fillRect(0, height * 0.65, width, height * 0.35);
             }
-          } else if (elev < 14) {
-            // Golden hour warm tint
-            const goldenFactor = (14 - elev) / 14;
-            ctx.fillStyle = `rgba(245, 158, 11, ${goldenFactor * 0.08})`;
+          } else if (elev < 10) {
+            // Golden hour warm sunlight tint
+            const goldenFactor = (10 - elev) / 10;
+            ctx.fillStyle = `rgba(245, 158, 11, ${goldenFactor * 0.09})`;
             ctx.fillRect(0, 0, width, height);
           }
           ctx.restore();
 
-          // Physical MapLibre satellite tile brightness synchronization (throttled to 2.5s)
-          if (now - lastBrightnessCheckRef.current > 2500) {
+          // Physical MapLibre satellite tile brightness synchronization (instant on mode change, 2s throttle otherwise)
+          if (now - lastBrightnessCheckRef.current > 2000 || lastAppliedBrightnessRef.current < 0) {
             lastBrightnessCheckRef.current = now;
-            const satLayer = map.getLayer("satellite-tiles-layer") ? "satellite-tiles-layer" : map.getLayer("esri-satellite-layer") ? "esri-satellite-layer" : null;
+            const satLayer = map.getLayer("satellite-tiles-layer")
+              ? "satellite-tiles-layer"
+              : map.getLayer("esri-satellite-layer")
+              ? "esri-satellite-layer"
+              : null;
             if (satLayer) {
-              const nightFactor = Math.min(1, Math.max(0, -elev / 10));
-              const targetBrightness = elev < 0 ? Math.max(0.36, 0.48 - nightFactor * 0.12) : 0.48;
-              const targetSaturation = elev < 0 ? -0.58 : -0.50;
-              const targetContrast = elev < 0 ? 0.24 : 0.18;
+              let targetBrightness = 0.96;
+              let targetSaturation = -0.04;
+              let targetContrast = 0.12;
+              if (elev <= -8) {
+                targetBrightness = 0.36;
+                targetSaturation = -0.48;
+                targetContrast = 0.24;
+              } else if (elev < 5) {
+                const dayFactor = (elev + 8) / 13;
+                targetBrightness = Number((0.36 + dayFactor * 0.60).toFixed(2));
+                targetSaturation = Number((-0.48 + dayFactor * 0.44).toFixed(2));
+                targetContrast = Number((0.24 - dayFactor * 0.12).toFixed(2));
+              }
 
-              if (Math.abs(targetBrightness - lastAppliedBrightnessRef.current) > 0.02) {
+              if (Math.abs(targetBrightness - lastAppliedBrightnessRef.current) > 0.01) {
                 lastAppliedBrightnessRef.current = targetBrightness;
                 try {
                   map.setPaintProperty(satLayer, "raster-brightness-max", targetBrightness);
@@ -2640,17 +2710,20 @@ export const MapView = ({
           }
         }
 
-        // 1. Draw User Confirmed Home Location Beacon (Strictly anchored inside Ukraine from Neon)
+        // 1. Draw User Confirmed Home Location Beacon only when user has an active/confirmed location
         const isLocInUkraine = (l: { lat: number; lon: number }) =>
           l.lat >= 44.0 && l.lat <= 52.5 && l.lon >= 22.0 && l.lon <= 40.5;
 
-        const activeHome = confirmedLocationRef.current && isLocInUkraine(confirmedLocationRef.current)
-          ? { lat: confirmedLocationRef.current.lat, lon: confirmedLocationRef.current.lon }
-          : currentLoc && isLocInUkraine(currentLoc)
-          ? { lat: currentLoc.lat, lon: currentLoc.lon }
-          : { lat: 50.4501, lon: 30.5234 }; // Canonical Kyiv default
+        const activeHome =
+          confirmedLocationRef.current && isLocInUkraine(confirmedLocationRef.current)
+            ? { lat: confirmedLocationRef.current.lat, lon: confirmedLocationRef.current.lon }
+            : currentLoc && isLocInUkraine(currentLoc)
+            ? { lat: currentLoc.lat, lon: currentLoc.lon }
+            : null;
 
-        drawUserHomeBeacon(ctx, map, activeHome, undefined, now, width, height);
+        if (activeHome) {
+          drawUserHomeBeacon(ctx, map, activeHome, undefined, now, width, height);
+        }
 
         // 1.1 Draw Selected Location Tactical Beacon if user inspected a temporary place on the map
         if (selectedLocationRef.current) {

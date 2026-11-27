@@ -1,4 +1,5 @@
 import React from "react";
+import type { SolarMode } from "./MapView";
 
 export type PerformanceTier = "LOW" | "NORMAL" | "HIGH";
 
@@ -7,6 +8,8 @@ interface LiveTimelineBarProps {
   onSelectOffset: (offsetSec: number) => void;
   performanceTier: PerformanceTier;
   onSelectTier: (tier: PerformanceTier) => void;
+  solarMode?: SolarMode;
+  onSelectSolarMode?: (mode: SolarMode) => void;
 }
 
 const TIMELINE_STEPS = [
@@ -23,11 +26,19 @@ const TIER_LABELS: Record<PerformanceTier, string> = {
   HIGH: "МАКС"
 };
 
+const SOLAR_LABELS: Record<SolarMode, string> = {
+  auto: "🌓 АВТО",
+  day: "☀️ ДЕНЬ",
+  night: "🌙 НІЧ"
+};
+
 export const LiveTimelineBar: React.FC<LiveTimelineBarProps> = ({
   selectedOffsetSec,
   onSelectOffset,
   performanceTier,
-  onSelectTier
+  onSelectTier,
+  solarMode = "auto",
+  onSelectSolarMode
 }) => {
   const triggerHaptic = () => {
     try {
@@ -40,6 +51,14 @@ export const LiveTimelineBar: React.FC<LiveTimelineBarProps> = ({
     const next: PerformanceTier =
       performanceTier === "LOW" ? "NORMAL" : performanceTier === "NORMAL" ? "HIGH" : "LOW";
     onSelectTier(next);
+  };
+
+  const cycleSolarMode = () => {
+    if (!onSelectSolarMode) return;
+    triggerHaptic();
+    const next: SolarMode =
+      solarMode === "auto" ? "day" : solarMode === "day" ? "night" : "auto";
+    onSelectSolarMode(next);
   };
 
   return (
@@ -80,6 +99,17 @@ export const LiveTimelineBar: React.FC<LiveTimelineBarProps> = ({
             );
           })}
         </div>
+
+        {onSelectSolarMode && (
+          <button
+            type="button"
+            className="timeline-tier-badge"
+            onClick={cycleSolarMode}
+            title="Режим освітлення карти (Авто за Сонцем / День / Ніч). Натисніть для перемикання."
+          >
+            {SOLAR_LABELS[solarMode]}
+          </button>
+        )}
 
         <button
           type="button"

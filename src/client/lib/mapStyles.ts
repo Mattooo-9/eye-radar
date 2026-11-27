@@ -135,9 +135,9 @@ export function buildRealisticSatelliteStyle(options: {
           "raster-opacity": 1.0,
           "raster-fade-duration": 0,
           "raster-resampling": "linear",
-          "raster-brightness-max": 0.54,
-          "raster-saturation": -0.45,
-          "raster-contrast": 0.16
+          "raster-brightness-max": 0.95,
+          "raster-saturation": -0.05,
+          "raster-contrast": 0.12
         }
       },
       {
