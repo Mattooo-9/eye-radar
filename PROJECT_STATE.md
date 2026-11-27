@@ -19,13 +19,16 @@
 3. **`unverified_report` (`citizen-*`)** — Web `/api/report` and Telegram `/report` eyewitness submissions are explicitly classified as `sourceFamily="manual"` / `lifecycle="TENTATIVE"` (until corroborated by independent sensors), badged `НЕПЕРЕВІРЕНЕ ПОВІДОМЛЕННЯ (ОЧЕВИДЕЦЬ)`, separated in `LiveThreatDrawer`, capped at `confidence: 0.45`, excluded from automated Telegram push blasts, and carry zero fabricated speed/altitude/heading.
 4. **`sensor_observation` (`/api/targets` where `dataCategory="sensor_observation"`)** — Physical military ADS-B/MLAT transponders gated through the single canonical `src/server/sources/adsbClassifier.ts` (non-overlapping feeds: `adsb.lol`, `adsb.fi` + `adsb.one`, `opensky.live`), NASA FIRMS VIIRS thermal hotspots, and Open-Meteo atmospheric wind vectors.
 
-## Security & Abuse Controls
-- Admin/ingest endpoints (`GET /api/bot/diagnostic-lifecycle`, `POST /api/ingest/osint`, `POST /api/ingest/sdr`) require `INGEST_API_KEY` / `ADMIN_API_KEY` (`HTTP 401` unauthenticated).
+## Security, Validation & Automated Monitoring
+- Unified runtime input/env validation via **Zod** (`src/server/validation/schemas.ts`) across `/api/report`, `/api/location`, `/api/alerts/subscribe`, `/api/ingest/osint`, `/api/ingest/sdr`, `/api/diagnostics/client`, `/api/replay`, `/api/osint/feed`, and `src/server/config/env.ts`.
+- Structured JSON logging via **Pino** (`src/server/observability/logger.ts`) with automatic secret redaction and zero worker-thread overhead.
+- Automated technical failure monitoring (`src/server/observability/failureMonitor.ts`) evaluates DB connectivity/latency, official alert feed outages, OSINT channel availability, RSS memory pressure, and uncaught runtime errors every 30 s, surfacing live status in `GET /health` (`monitoring`) and authenticated `GET /api/monitoring/incidents`, with optional free-tier webhook / Telegram admin alerting and 15-minute anti-spam cooldown.
+- Admin/ingest endpoints (`GET /api/bot/diagnostic-lifecycle`, `GET /api/monitoring/incidents`, `POST /api/ingest/osint`, `POST /api/ingest/sdr`) require `INGEST_API_KEY` / `ADMIN_API_KEY` (`HTTP 401` unauthenticated).
 - `POST /api/report` enforces Ukraine geographic bounds validation (`HTTP 400`), comment sanitization (240 chars max), and per-IP rate limiting (3 reports / 5 min, `HTTP 429`).
 - HTTP body ceiling capped at `64 KB`; `X-Content-Type-Options: nosniff` and `Referrer-Policy` headers enforced on both Render and Vercel.
 
 ## Governance & Regression Protection
 - **Agent Protocol (Codex & Antigravity):** [`AGENTS.md`](./AGENTS.md)
 - **Mandatory Acceptance Criteria & Sign-Off:** [`ACCEPTANCE.md`](./ACCEPTANCE.md)
-- **Local Pre-Deploy Gate:** `npm run acceptance` (`tsc --noEmit` + Vitest 30 suites / 129 tests + Vite & tsup builds)
-- **Live Production Verification Gate:** `npm run verify:prod` (21 live checks across Render, Neon Postgres, zero false precision, security guards, Vercel, and exact GitHub ↔ Render ↔ Vercel SHA parity)
+- **Local Pre-Deploy Gate:** `npm run acceptance` (`tsc --noEmit` + Vitest 31 suites / 134 tests + Vite & tsup builds)
+- **Live Production Verification Gate:** `npm run verify:prod` (23 live checks across Render, Neon Postgres, Zod/Pino/FailureMonitor, zero false precision, security guards, Vercel, and exact GitHub ↔ Render ↔ Vercel SHA parity)
