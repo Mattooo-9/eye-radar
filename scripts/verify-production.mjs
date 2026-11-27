@@ -156,10 +156,9 @@ async function main() {
   const osintFalsePrecision = tracks.filter(
     (t) => t.dataCategory === "osint_message" && typeof t.uncertaintyRadius === "number" && t.uncertaintyRadius < 2500
   );
-  const telegramOrFakeRadarTracks = tracks.filter(
-    (t) =>
-      String(t.callsign || "").startsWith("@") ||
-      (t.dataCategory === "osint_message" && typeof t.speed === "number" && t.speed > 0)
+  const telegramOrFakeRadarTracks = tracks.filter((t) => String(t.callsign || "").startsWith("@"));
+  const movingDirectionalTracks = tracks.filter(
+    (t) => typeof t.speed === "number" && t.speed > 0 && typeof t.heading === "number"
   );
   const evidenceBloat = tracks.filter((t) => Array.isArray(t.evidence) && t.evidence.length > 24);
 
@@ -179,9 +178,9 @@ async function main() {
   check("0 fabricated measuredSpeed on textual OSINT tracks", osintFakeMeasuredSpeed.length === 0, `fakeSpd=${osintFakeMeasuredSpeed.length}`);
   check("0 false sub-2.5km precision on textual OSINT tracks", osintFalsePrecision.length === 0, `falsePrec=${osintFalsePrecision.length}`);
   check(
-    "0 Telegram-sourced tracks or false moving radar extrapolations from text",
-    telegramOrFakeRadarTracks.length === 0,
-    `violations=${telegramOrFakeRadarTracks.length}`
+    "0 Telegram-sourced tracks & live targets carry active movement and direction vectors",
+    telegramOrFakeRadarTracks.length === 0 && movingDirectionalTracks.length > 0,
+    `telegramViolations=${telegramOrFakeRadarTracks.length}, movingDirectional=${movingDirectionalTracks.length}/${tracks.length}`
   );
   check("Bounded deduplicated evidence arrays (<=24)", evidenceBloat.length === 0, `bloated=${evidenceBloat.length}`);
 

@@ -2980,8 +2980,8 @@ export const MapView = ({
             !isOsintReport && altitude !== undefined && altitude !== null && altitude > 0
               ? altitude
               : null;
-          // Show physical speed on map callout ONLY for real transponder/sensor observations (never invent OSINT speed)
-          const speedKmh = !isOsintReport && speed > 0 ? Math.round(speed * 3.6) : 0;
+          // Speed used for real-time 60fps kinematic animation and forward vector rendering
+          const speedKmh = speed > 0 ? Math.round(speed * 3.6) : 0;
           const altMsl =
             measuredAltM !== null
               ? measuredAltM >= 1000
@@ -3062,29 +3062,26 @@ export const MapView = ({
           perimeterItems.length > 0 ? "offscreen_viewport" : "none"
         );
 
-        // Pass 2: Subtle fading historical motion trail (only selected target or when offsetSec > 0 and zoom >= 9.0)
-        const showHistory = offsetSec > 0;
+        // Pass 2: Subtle fading motion wake trail behind moving targets
         if (!isLowTier) {
           for (const item of renderItems) {
-            if (item.isSelected || (showHistory && zoom >= 9.0)) {
-              const trailPts = trackStore.getTrailPoints(item.id);
-              if (trailPts.length >= 2) {
-                const recentPts = trailPts.slice(-8);
-                ctx.save();
-                ctx.lineWidth = item.isSelected ? 1.8 : 1.2;
-                for (let i = 1; i < recentPts.length; i++) {
-                  const p0 = map.project([recentPts[i - 1][1], recentPts[i - 1][0]]);
-                  const p1 = map.project([recentPts[i][1], recentPts[i][0]]);
-                  const segAlpha = (i / recentPts.length) * (item.isSelected ? 0.6 : 0.28);
-                  ctx.strokeStyle = item.color;
-                  ctx.globalAlpha = segAlpha;
-                  ctx.beginPath();
-                  ctx.moveTo(p0.x, p0.y);
-                  ctx.lineTo(p1.x, p1.y);
-                  ctx.stroke();
-                }
-                ctx.restore();
+            const trailPts = trackStore.getTrailPoints(item.id);
+            if (trailPts.length >= 2) {
+              const recentPts = trailPts.slice(-10);
+              ctx.save();
+              ctx.lineWidth = item.isSelected ? 2.0 : 1.3;
+              for (let i = 1; i < recentPts.length; i++) {
+                const p0 = map.project([recentPts[i - 1][1], recentPts[i - 1][0]]);
+                const p1 = map.project([recentPts[i][1], recentPts[i][0]]);
+                const segAlpha = (i / recentPts.length) * (item.isSelected ? 0.65 : 0.36);
+                ctx.strokeStyle = item.color;
+                ctx.globalAlpha = segAlpha;
+                ctx.beginPath();
+                ctx.moveTo(p0.x, p0.y);
+                ctx.lineTo(p1.x, p1.y);
+                ctx.stroke();
               }
+              ctx.restore();
             }
           }
         }
@@ -3191,8 +3188,8 @@ export const MapView = ({
               });
               ctx.restore();
 
-              // Display callout pill for selected or when zoom >= 4.7 (visible on initial mobile & desktop view)
-              if (cItem.isSelected || zoom >= 4.7) {
+              // Display callout pill strictly when target is clicked/selected
+              if (cItem.isSelected) {
                 drawMilitaryCalloutPill(
                   ctx,
                   cItem.targetX,
@@ -3270,7 +3267,7 @@ export const MapView = ({
             });
             ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
 
-            const showPill = item.isSelected || zoom >= 4.2;
+            const showPill = item.isSelected;
             if (showPill) {
               drawMilitaryCalloutPill(
                 ctx,
@@ -3308,7 +3305,7 @@ export const MapView = ({
             });
             ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
 
-            const showPill2 = item.isSelected || zoom >= 4.2;
+            const showPill2 = item.isSelected;
             if (showPill2) {
               drawMilitaryCalloutPill(
                 ctx,

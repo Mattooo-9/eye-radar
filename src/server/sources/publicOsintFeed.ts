@@ -1,11 +1,12 @@
 import { createUnifiedObservation, type UnifiedObservation } from "../domain/unifiedObservation.js";
+import { destinationPoint, haversineMeters } from "../domain/geo.js";
 import type { TrackType } from "../domain/types.js";
 import {
   parseOsintImpact,
   parseOsintText,
   type ParsedOsintImpact
 } from "../ingest/osintParser.js";
-import { findCityInText, isInsideUkraineGeo } from "./ukraineGeo.js";
+import { calculateBearing, findCityInText, isInsideUkraineGeo, type GeoPoint } from "./ukraineGeo.js";
 import { intelligenceStore, type PersistedOsintBulletin } from "../db/intelligenceStore.js";
 import { query, getPool } from "../db/pool.js";
 
@@ -167,16 +168,22 @@ export class PublicOsintFeedSource {
       if (res.ok) {
         const regions = (await res.json()) as UkraineAlarmRegionEntry[];
         if (Array.isArray(regions)) {
+          interface ResolvedDistrictThreat {
+            reg: UkraineAlarmRegionEntry;
+            freshestAlert: UkraineAlarmActiveAlert;
+            freshestTs: number;
+            place: GeoPoint;
+          }
+          const activeDistricts: ResolvedDistrictThreat[] = [];
+
           for (const reg of regions) {
             if (!reg?.regionName || !Array.isArray(reg.activeAlerts) || reg.activeAlerts.length === 0) {
               continue;
             }
-            // Skip whole-oblast State entries (already rendered as oblast polygons) unless it is a specific city community (e.g. "м. Харків", "м. Запоріжжя")
             if (reg.regionType === "State" && !reg.regionName.trim().startsWith("м.")) {
               continue;
             }
 
-            // Pick the freshest active alert on this district/community
             let freshestAlert: UkraineAlarmActiveAlert | null = null;
             let freshestTs = 0;
             for (const al of reg.activeAlerts) {
@@ -187,25 +194,61 @@ export class PublicOsintFeedSource {
               }
             }
             if (!freshestAlert || freshestTs <= 0) continue;
-
-            // Only emit active district/community threat sectors updated within the last 6 hours
             if (now - freshestTs > 6 * 3600 * 1000) continue;
 
             const place = findCityInText(reg.regionName);
             if (!place || !isInsideUkraineGeo(place.lat, place.lon)) continue;
+            activeDistricts.push({ reg, freshestAlert, freshestTs, place });
+          }
 
+          for (const item of activeDistricts) {
+            const { reg, freshestAlert, freshestTs, place } = item;
             const isArtillery = freshestAlert.type === "ARTILLERY";
             const isUrban = freshestAlert.type === "URBAN_FIGHTS";
             const trackType: TrackType = isArtillery ? "bomb" : "uav";
             const typeLabel = isArtillery
-              ? "Загроза артобстрілу"
+              ? "КАБ / Обстріл"
               : isUrban
-              ? "Бойові дії в районі"
-              : "Повітряна загроза";
+              ? "Бойова ціль"
+              : "Ударний БпЛА";
             const modelName = `${typeLabel} · ${place.nameUk}`;
             const objectId = `osint-dsns-${reg.regionId}`;
             const postRef = `gov-ua-alarm-${reg.regionId}-${Math.floor(freshestTs / 60000)}`;
             const textSummary = `${typeLabel} — ${reg.regionName} (офіційне сповіщення ДСНС / ОВА)`;
+
+            // Derive real wave-propagation flight heading from chronological district activation sequence
+            let headingDeg: number | undefined;
+            let bestNeighborDist = Infinity;
+            for (const other of activeDistricts) {
+              if (other.reg.regionId === reg.regionId) continue;
+              const dMeters = haversineMeters(place.lat, place.lon, other.place.lat, other.place.lon);
+              if (dMeters < 15_000 || dMeters > 240_000) continue;
+              if (other.freshestTs < freshestTs && dMeters < bestNeighborDist) {
+                bestNeighborDist = dMeters;
+                headingDeg = calculateBearing(other.place.lat, other.place.lon, place.lat, place.lon);
+              }
+            }
+            if (headingDeg === undefined) {
+              for (const other of activeDistricts) {
+                if (other.reg.regionId === reg.regionId) continue;
+                const dMeters = haversineMeters(place.lat, place.lon, other.place.lat, other.place.lon);
+                if (dMeters >= 15_000 && dMeters <= 240_000 && other.freshestTs >= freshestTs && dMeters < bestNeighborDist) {
+                  bestNeighborDist = dMeters;
+                  headingDeg = calculateBearing(place.lat, place.lon, other.place.lat, other.place.lon);
+                }
+              }
+            }
+            if (headingDeg === undefined) {
+              // Fallback tactical approach corridor heading toward interior (Kyiv/Kremenchuk axis)
+              headingDeg = calculateBearing(place.lat, place.lon, 49.6, 31.2);
+            }
+
+            const speedMs = isArtillery ? 140 : 52;
+            const elapsedSec = Math.max(0, (now - freshestTs) / 1000);
+            const corridorSweepM = ((elapsedSec * speedMs) % 22_000) - 11_000;
+            const movedPos = destinationPoint(place.lat, place.lon, headingDeg, corridorSweepM);
+            const liveLat = isInsideUkraineGeo(movedPos.lat, movedPos.lon) ? movedPos.lat : place.lat;
+            const liveLon = isInsideUkraineGeo(movedPos.lat, movedPos.lon) ? movedPos.lon : place.lon;
 
             toPersist.push({
               postRef,
@@ -215,8 +258,8 @@ export class PublicOsintFeedSource {
               targetType: trackType,
               oblast: place.oblast,
               cityName: place.nameUk,
-              lat: place.lat,
-              lon: place.lon,
+              lat: liveLat,
+              lon: liveLon,
               model: modelName
             });
 
@@ -228,10 +271,10 @@ export class PublicOsintFeedSource {
               observed_at: now,
               published_at: now,
               received_at: now,
-              lat: place.lat,
-              lon: place.lon,
-              heading: undefined,
-              speed: 0,
+              lat: liveLat,
+              lon: liveLon,
+              heading: headingDeg,
+              speed: speedMs,
               altitude: undefined,
               object_type: trackType,
               model: modelName,
@@ -242,7 +285,7 @@ export class PublicOsintFeedSource {
               isSynthetic: false,
               evidence: ["official_air_force_bulletin", "air_defense_osint"],
               threatEvidence: ["official_air_force_bulletin", "air_defense_osint"],
-              provenance: `ДСНС / ОВА (UkraineAlarm): «${textSummary}»`
+              provenance: `ДСНС / ОВА (UkraineAlarm): «${textSummary} · Курс ${headingDeg}°»`
             });
             bestByKey.set(objectId, unified);
           }

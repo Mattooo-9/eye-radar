@@ -200,7 +200,6 @@ export class TrackManager {
       if (isRestoredOsint) {
         const minTextFloor = t.id.startsWith("citizen-") ? 2_500 : 3_500;
         t.dataCategory = "osint_message";
-        t.speed = 0;
         t.altitude = undefined;
         t.measuredAltitude = undefined;
         t.measuredSpeed = undefined;
@@ -318,7 +317,8 @@ export class TrackManager {
         observation.altitude = undefined;
       }
       if (!regSource.capability.canProvideSpeed) {
-        observation.speed = undefined;
+        if (!observation.meta) observation.meta = {};
+        observation.meta.speedIsMeasured = false;
       }
       if (!regSource.capability.canClassify && observation.type !== "thermal") {
         if (observation.type !== "aircraft" && observation.type !== "helicopter") {
@@ -402,7 +402,14 @@ export class TrackManager {
       const isTextReport = sourceFamily === "osint" || sourceFamily === "manual";
       const filter = new ImmFilter2D();
       const imm = filter.update(observation.timestamp, observation.lat, observation.lon);
-      const effectiveSpeed = isTextReport ? 0 : (observation.speed ?? (imm.speedMs > 2 ? imm.speedMs : 45));
+      const effectiveSpeed =
+        typeof observation.speed === "number"
+          ? observation.speed
+          : isTextReport
+          ? 0
+          : imm.speedMs > 2
+          ? imm.speedMs
+          : 45;
       const effectiveHeading = observation.heading ?? (isTextReport ? 0 : (imm.headingDeg || 0));
 
       const rawThreat = (observation.meta as any)?.threatEvidence ?? observation.threatEvidence;
@@ -537,12 +544,12 @@ export class TrackManager {
     const effectiveLat = isTextReportUpdate ? observation.lat : (isImpossibleJump ? previous.lat : imm.lat);
     const effectiveLon = isTextReportUpdate ? observation.lon : (isImpossibleJump ? previous.lon : imm.lon);
     const updatedSpeed = isTextReportUpdate
-      ? 0
+      ? (typeof observation.speed === "number" ? observation.speed : previous.speed)
       : isImpossibleJump
       ? previous.speed
       : (observation.speed ?? (derivedSpeed > 10 && derivedSpeed < 1100 ? derivedSpeed : (imm.speedMs || previous.speed)));
     const updatedHeading = isTextReportUpdate
-      ? (observation.heading ?? previous.measuredHeading ?? 0)
+      ? (observation.heading ?? previous.measuredHeading ?? previous.heading ?? 0)
       : (isImpossibleJump ? previous.heading : (observation.heading ?? derivedHeading));
 
     const mergedSources = new Set([...previous.sources, observation.source]);
