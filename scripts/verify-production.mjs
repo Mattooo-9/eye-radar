@@ -126,6 +126,11 @@ async function main() {
       health.json?.monitoring?.status !== "CRITICAL",
     `status=${health.json?.monitoring?.status}, activeIncidents=${health.json?.monitoring?.activeIncidentsCount ?? "n/a"}, runtimeErrors=${health.json?.monitoring?.runtimeErrorsCount ?? "n/a"}`
   );
+  check(
+    "Centralized lifecycle & self-cleaning policy active in /health",
+    Boolean(health.json?.lifecycle) && typeof health.json?.lifecycle?.sweepsRun === "number",
+    `sweeps=${health.json?.lifecycle?.sweepsRun}, lastSweepAt=${health.json?.lifecycle?.lastSweepAt}`
+  );
 
   // 2. Render /api/targets truthfulness & separation
   const targets = await fetchJson(`${RENDER_BASE}/api/targets`);
@@ -197,6 +202,16 @@ async function main() {
     body: JSON.stringify({ type: "uav_sound", lat: 10, lon: 10 })
   });
   check("Citizen /api/report rejects out-of-Ukraine coordinates (HTTP 400)", badReportRes.status === 400, `HTTP ${badReportRes.status}`);
+
+  const alertHistory = await fetchJson(`${RENDER_BASE}/api/alerts/history`);
+  check(
+    "Anonymized official alert history endpoint active (30-day retention)",
+    alertHistory.status === 200 &&
+      alertHistory.json?.dataCategory === "official_alert" &&
+      alertHistory.json?.retentionDays === 30 &&
+      Array.isArray(alertHistory.json?.history),
+    `HTTP ${alertHistory.status}, retentionDays=${alertHistory.json?.retentionDays}, count=${alertHistory.json?.count}`
+  );
 
   // 5. Vercel production frontend + rewrites + official alert metadata + release SHA parity
   const vercelApp = await fetchWithRetry(`${VERCEL_BASE}/app`);

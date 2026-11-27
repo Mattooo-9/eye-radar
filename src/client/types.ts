@@ -11,8 +11,23 @@ export interface FilterState {
 
 export type AlertFeedStatus = "fresh" | "stale" | "unavailable";
 
+export interface ClientAlertDetail {
+  name: string;
+  startedAt?: number;
+  changedAt?: string;
+}
+
+export interface ClientAlertHistoryItem {
+  oblast: string;
+  eventType: "alert_start" | "alert_clear";
+  source: string;
+  recordedAt: number;
+}
+
 export interface ClientAlertState {
   activeAlerts: string[];
+  alertDetails?: Record<string, ClientAlertDetail>;
+  history?: ClientAlertHistoryItem[];
   status: AlertFeedStatus;
   source: string;
   sourceAvailable: boolean;

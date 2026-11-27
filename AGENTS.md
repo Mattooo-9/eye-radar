@@ -47,13 +47,18 @@ Eye Radar is an autonomous civil air-defense awareness system for Ukraine (Web A
   - `alertsInUa.ts` — Official air-raid sirens (`alerts.in.ua`).
   - `firmsThermal.ts` — NASA FIRMS VIIRS thermal anomalies.
   - `openMeteoWind.ts` — Atmospheric wind vectors.
-- **Database & Autonomous Persistence (`src/server/db/`)**:
+- **Database, Autonomous Persistence & Centralized Lifecycle (`src/server/db/`, `src/server/core/lifecyclePolicy.ts`)**:
   - `pool.ts` + `schema.ts` — Neon PostgreSQL connection & idempotent DDL migrations.
   - `checkpointService.ts` — Atomic track checkpoints (`radar_checkpoints`) + local fallback.
   - `intelligenceStore.ts` — Persistent OSINT bulletins (`osint_bulletins`, 24 h retention) & track snapshots (`track_history_snapshots`, 2 h retention) for zero-blind-spot reboots and `/api/replay`.
+  - `lifecyclePolicy.ts` — Centralized retention & self-cleaning policy (`RETENTION_POLICY`, `LifecycleCleanupService`): 24 h temporary technical records, 7 d diagnostic logs (`diagnostic_logs`), 30 d anonymized official alert history (`official_alert_history`), minimal personal data retention, redundant checkpoint & orphaned `.tmp` cleanup.
   - `watchdogService.ts` — Distributed heartbeat (`worker_watchdog`) & locks (`worker_locks`).
+- **Observability & Validation (`src/server/observability/`, `src/server/validation/`)**:
+  - `schemas.ts` — Unified runtime Zod validation schemas for all API & env inputs.
+  - `logger.ts` — Structured Pino JSON logger with secret redaction.
+  - `failureMonitor.ts` — Automated technical failure monitor (`TechnicalFailureMonitor`).
 - **Telegram Bot (`src/server/bot/`)**:
-  - `telegramBot.ts` + `messageDeletionService.ts` — `@AppEye_bot` + Neon Postgres 6-hour auto-deletion queue.
+  - `telegramBot.ts` + `messageDeletionService.ts` — `@AppEye_bot` + Neon Postgres unified lifecycle queue (`standard` 6 h TTL, `active_warning` held until official all-clear + 30 min post-clear, `ephemeral` 15 min TTL, `main_menu` permanent, in-place `editMessageText` deduplication).
 
 ### Frontend (`src/client/`)
 - **State & Transport**: `src/client/hooks/useWsRadar.ts`, `src/client/workers/radarWorker.ts`, `src/client/lib/trackStore.ts`, `src/client/types.ts`.

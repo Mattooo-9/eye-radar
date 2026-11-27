@@ -3,8 +3,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import {
   sendBotMessage,
   SIX_HOURS_MS,
-  TEST_TTL_MS,
-  BOT_TOKEN_DEFAULT
+  TEST_TTL_MS
 } from "../../src/server/bot/messageDeletionService.js";
 
 const processedUpdates = new Set<number>();
@@ -21,7 +20,7 @@ function rememberUpdate(id: number): boolean {
 }
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
-  const token = process.env.BOT_TOKEN || BOT_TOKEN_DEFAULT;
+  const token = (process.env.BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || "").trim();
   const webAppUrl = "https://eye-radar.vercel.app/app";
 
   if (req.method !== "POST") {

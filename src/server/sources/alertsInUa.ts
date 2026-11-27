@@ -1,4 +1,5 @@
 import type { AlertFeedMetadata, AlertFeedStatus, AlertRegion } from "../domain/types.js";
+import { lifecycleCleanupService, RETENTION_POLICY } from "../core/lifecyclePolicy.js";
 
 /**
  * After 3 minutes without a fresh confirmed response from an official alert source,
@@ -6,10 +7,18 @@ import type { AlertFeedMetadata, AlertFeedStatus, AlertRegion } from "../domain/
  * The last confirmed alert set and its timestamp are strictly preserved until a new
  * official response supersedes them.
  */
-export const ALERT_STALE_TTL_MS = 3 * 60 * 1000;
+export const ALERT_STALE_TTL_MS = RETENTION_POLICY.OFFICIAL_ALERT_SOURCE_STALE_MS;
+
+const parseChangedTimestamp = (raw?: string | null): number | undefined => {
+  if (!raw || typeof raw !== "string") return undefined;
+  const iso = raw.includes("T") ? raw : `${raw.trim().replace(" ", "T")}+02:00`;
+  const ts = Date.parse(iso);
+  return Number.isFinite(ts) && ts > 0 ? ts : undefined;
+};
 
 export class AlertsInUaSource {
   private lastConfirmedAlerts = new Map<string, AlertRegion>();
+  private hasBaseline = false;
   private lastAttemptAt = 0;
   private lastConfirmedAt = 0;
   private lastSource = "alerts.in.ua / ubilling";
@@ -46,6 +55,38 @@ export class AlertsInUaSource {
     };
   }
 
+  private commitConfirmedAlerts(next: Map<string, AlertRegion>, source: string, now: number): AlertRegion[] {
+    if (this.hasBaseline) {
+      for (const [id, region] of next.entries()) {
+        if (!this.lastConfirmedAlerts.has(id)) {
+          void lifecycleCleanupService.recordOfficialAlertTransition({
+            oblast: region.name,
+            eventType: "alert_start",
+            source,
+            recordedAt: now
+          });
+        }
+      }
+      for (const [id, prevRegion] of this.lastConfirmedAlerts.entries()) {
+        if (!next.has(id)) {
+          void lifecycleCleanupService.recordOfficialAlertTransition({
+            oblast: prevRegion.name,
+            eventType: "alert_clear",
+            source,
+            recordedAt: now
+          });
+        }
+      }
+    }
+    this.hasBaseline = true;
+    this.lastConfirmedAlerts = next;
+    this.lastConfirmedAt = now;
+    this.lastSource = source;
+    this.consecutiveFailures = 0;
+    this.lastError = null;
+    return [...this.lastConfirmedAlerts.values()];
+  }
+
   async fetchAlerts(now = Date.now()): Promise<AlertRegion[]> {
     // Cache confirmed response for 15 seconds to respect upstream rate limits
     if (this.lastConfirmedAt > 0 && now - this.lastConfirmedAt < 15_000) {
@@ -69,27 +110,30 @@ export class AlertsInUaSource {
 
         if (response.ok) {
           const data = (await response.json()) as {
-            alerts?: Array<{ location_title: string; location_type: string; finished_at: string | null }>;
+            alerts?: Array<{
+              location_title: string;
+              location_type: string;
+              started_at?: string | null;
+              finished_at: string | null;
+            }>;
           };
           const next = new Map<string, AlertRegion>();
           for (const item of data.alerts ?? []) {
             if (!item.finished_at) {
               const id = item.location_title.toLowerCase();
+              const startedAt = parseChangedTimestamp(item.started_at);
               next.set(id, {
                 id,
                 name: item.location_title,
                 active: true,
                 type: item.location_type === "oblast" ? "oblast" : "raion",
-                updatedAt: now
+                updatedAt: now,
+                changedAt: item.started_at || undefined,
+                startedAt
               });
             }
           }
-          this.lastConfirmedAlerts = next;
-          this.lastConfirmedAt = now;
-          this.lastSource = "api.alerts.in.ua";
-          this.consecutiveFailures = 0;
-          this.lastError = null;
-          return [...this.lastConfirmedAlerts.values()];
+          return this.commitConfirmedAlerts(next, "api.alerts.in.ua", now);
         }
         errors.push(`alerts.in.ua HTTP ${response.status}`);
       } catch (err) {
@@ -110,21 +154,19 @@ export class AlertsInUaSource {
           for (const [regionName, info] of Object.entries(data.states)) {
             if (info.alertnow) {
               const id = regionName.toLowerCase();
+              const startedAt = parseChangedTimestamp(info.changed);
               next.set(id, {
                 id,
                 name: regionName,
                 active: true,
                 type: regionName.includes("область") ? "oblast" : "city",
-                updatedAt: now
+                updatedAt: now,
+                changedAt: info.changed || undefined,
+                startedAt
               });
             }
           }
-          this.lastConfirmedAlerts = next;
-          this.lastConfirmedAt = now;
-          this.lastSource = "ubilling.net.ua/aerialalerts";
-          this.consecutiveFailures = 0;
-          this.lastError = null;
-          return [...this.lastConfirmedAlerts.values()];
+          return this.commitConfirmedAlerts(next, "ubilling.net.ua/aerialalerts", now);
         }
         errors.push("ubilling invalid payload");
       } else {
@@ -135,7 +177,6 @@ export class AlertsInUaSource {
     }
 
     // Upstream failure: NEVER wipe lastConfirmedAlerts (loss of connection != all-clear!).
-    // Preserve last confirmed state & timestamp; getMetadata(now) explicitly surfaces status="stale"|"unavailable".
     this.consecutiveFailures += 1;
     this.lastError = errors.join("; ") || "Official alert source unreachable";
     return [...this.lastConfirmedAlerts.values()];

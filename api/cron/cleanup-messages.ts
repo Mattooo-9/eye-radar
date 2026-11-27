@@ -1,8 +1,14 @@
 // api/cron/cleanup-messages.ts
-export default async function handler(req: any, res: any) {
+export default async function handler(_req: any, res: any) {
   try {
-    const { messageDeletionService } = await import("../../src/server/bot/messageDeletionService.js");
-    const result = await messageDeletionService.processPendingDeletions();
+    const [{ messageDeletionService }, { lifecycleCleanupService }] = await Promise.all([
+      import("../../src/server/bot/messageDeletionService.js"),
+      import("../../src/server/core/lifecyclePolicy.js")
+    ]);
+    const [result, lifecycle] = await Promise.all([
+      messageDeletionService.processPendingDeletions(),
+      lifecycleCleanupService.runCleanupSweep()
+    ]);
     let backendHealthy = false;
     try {
       const healthRes = await fetch("https://eye-radar.onrender.com/health", {
@@ -14,6 +20,7 @@ export default async function handler(req: any, res: any) {
       ok: true,
       deleted: result.deleted,
       errors: result.errors,
+      lifecycle,
       backendHealthy,
       timestamp: Date.now()
     };

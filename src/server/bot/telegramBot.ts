@@ -1,6 +1,12 @@
 import { Telegraf } from "telegraf";
 import { env } from "../config/env.js";
-import { messageDeletionService, SIX_HOURS_MS, sendBotMessage } from "./messageDeletionService.js";
+import {
+  EPHEMERAL_TTL_MS,
+  messageDeletionService,
+  SIX_HOURS_MS,
+  THIRTY_MINUTES_MS,
+  sendBotMessage
+} from "./messageDeletionService.js";
 import { AiBriefingService } from "../core/aiBriefing.js";
 import { StorageManager } from "../core/storage.js";
 import { ThreatEngine } from "../core/threatEngine.js";
@@ -34,8 +40,6 @@ export class EyeRadarBotManager {
   private trackCountProvider?: () => number;
   private tracksProvider?: () => TrackState[];
   private alertsSource?: AlertsInUaSource;
-  private lastLaunchMessageMap = new Map<number, number>();
-  private deletionTimer?: NodeJS.Timeout;
   private onReportHandler?: (obs: Observation) => void;
 
   constructor() {
@@ -47,12 +51,6 @@ export class EyeRadarBotManager {
     try {
       this.bot = new Telegraf(env.botToken);
       this.setupHandlers();
-
-      // Periodic check to delete expired notification messages from database/queue
-      this.deletionTimer = setInterval(() => {
-        void this.processPendingDeletions();
-      }, 60_000);
-      this.deletionTimer.unref();
     } catch (err) {
       console.error("Failed to initialize Telegraf:", err);
     }
@@ -135,38 +133,27 @@ export class EyeRadarBotManager {
 
     const sendLaunchMessage = async (chatId: number) => {
       try {
-        // Automatically delete previous launch message in this chat to prevent duplicate message clutter!
-        const prevLaunchId = this.lastLaunchMessageMap.get(chatId);
-        if (prevLaunchId) {
-          try {
-            await bot.telegram.deleteMessage(chatId, prevLaunchId);
-            await messageDeletionService.markCompleted(chatId, prevLaunchId);
-          } catch {}
-        }
-
         const primaryBtn = isHttps
           ? { text: "🛰️ ВІДКРИТИ EYE RADAR", web_app: { url: webAppUrl } }
           : { text: "🛰️ ВІДКРИТИ EYE RADAR", url: webAppUrl };
 
-        const msgRes = await sendBotMessage(
+        // Permanent main menu: preserved across sessions and updated in-place via dedupKey="main_menu"
+        await sendBotMessage(
           chatId,
           `🛰️ *EYE RADAR // СИСТЕМА ЦИВІЛЬНОГО ІНФОРМУВАННЯ*\n\n` +
-          `• Офіційні сигнали повітряної тривоги (alerts.in.ua)\n` +
-          `• Текстові повідомлення 14 каналів моніторингу ППО (OSINT)\n` +
-          `• Відкриті спостереження військової авіації (ADS-B) та NASA FIRMS\n\n` +
-          `_Усі шари розділено за джерелом та часом оновлення. У разі тривоги орієнтуйтесь на офіційні сигнали._`,
+            `• Офіційні сигнали повітряної тривоги (alerts.in.ua)\n` +
+            `• Текстові повідомлення 14 каналів моніторингу ППО (OSINT)\n` +
+            `• Відкриті спостереження військової авіації (ADS-B) та NASA FIRMS\n\n` +
+            `_Усі шари розділено за джерелом та часом оновлення. У разі тривоги орієнтуйтесь на офіційні сигнали._`,
           {
             parse_mode: "Markdown",
             reply_markup: {
               inline_keyboard: [[primaryBtn]]
             },
-            ttlMs: SIX_HOURS_MS
+            category: "main_menu",
+            dedupKey: "main_menu"
           }
         );
-
-        if (msgRes.ok && msgRes.messageId) {
-          this.lastLaunchMessageMap.set(chatId, msgRes.messageId);
-        }
       } catch (err) {
         console.error("Failed to send launch message:", err);
       }
@@ -198,8 +185,11 @@ export class EyeRadarBotManager {
       }
     };
 
-    const replyAndSchedule = async (ctx: any, text: string, extra?: any) => {
-      return messageDeletionService.replyAndSchedule(ctx, text, extra, SIX_HOURS_MS);
+    const replyAndSchedule = async (ctx: any, text: string, extra?: any, ttlMs = EPHEMERAL_TTL_MS) => {
+      return messageDeletionService.replyAndSchedule(ctx, text, extra, {
+        ttlMs,
+        category: "ephemeral"
+      });
     };
 
     bot.command("briefing", handleBriefing);
@@ -537,6 +527,8 @@ export class EyeRadarBotManager {
     if (preferences.length === 0) return;
 
     const now = Date.now();
+    const alertMeta = this.alertsSource ? this.alertsSource.getMetadata(now) : null;
+    const isAlertFeedFresh = alertMeta?.status === "fresh";
     const activeOblastNames = this.alertsSource ? this.alertsSource.getActiveAlertOblastNames() : [];
 
     for (const pref of preferences) {
@@ -553,34 +545,51 @@ export class EyeRadarBotManager {
       });
 
       // 1. Regional Air Raid Alarm state change (Start / All-Clear)
-      if (pref.lastAlertState === undefined) {
-        pref.lastAlertState = isOblastAlarmed;
-        this.storage.savePreference(pref);
-      } else if (isOblastAlarmed !== pref.lastAlertState) {
-        pref.lastAlertState = isOblastAlarmed;
-        this.storage.savePreference(pref);
+      // Strictly evaluate transitions ONLY when official alert source is fresh (outage != all-clear!)
+      if (isAlertFeedFresh) {
+        if (pref.lastAlertState === undefined) {
+          pref.lastAlertState = isOblastAlarmed;
+          this.storage.savePreference(pref);
+        } else if (isOblastAlarmed !== pref.lastAlertState) {
+          pref.lastAlertState = isOblastAlarmed;
+          this.storage.savePreference(pref);
 
-        try {
-          if (isOblastAlarmed) {
-            await sendBotMessage(
-              pref.chatId,
-              `🚨 *ПОВІТРЯНА ТРИВОГА!*\n\n` +
-                `📍 Сектор: *${pref.cityName || nearest.nameUk}* (${nearest.oblast} область)\n` +
-                `⚠️ У вашому районі оголошено сигнал повітряної тривоги!\n` +
-                `Пройдіть в найближче укриття, дотримуйтесь правила двох стін!`,
-              { parse_mode: "Markdown", ttlMs: SIX_HOURS_MS }
-            );
-          } else {
-            await sendBotMessage(
-              pref.chatId,
-              `🟢 *ВІДБІЙ ПОВІТРЯНОЇ ТРИВОГИ!*\n\n` +
-                `📍 Сектор: *${pref.cityName || nearest.nameUk}* (${nearest.oblast} область)\n` +
-                `🛡️ Сигнал небезпеки скасовано. Загрозу минуло.`,
-              { parse_mode: "Markdown", ttlMs: SIX_HOURS_MS }
-            );
+          try {
+            if (isOblastAlarmed) {
+              // Active civil warning: preserved until official all-clear, updated in-place on repeats
+              await sendBotMessage(
+                pref.chatId,
+                `🚨 *ПОВІТРЯНА ТРИВОГА!*\n\n` +
+                  `📍 Сектор: *${pref.cityName || nearest.nameUk}* (${nearest.oblast} область)\n` +
+                  `⚠️ У вашому районі оголошено офіційний сигнал повітряної тривоги!\n` +
+                  `Пройдіть в найближче укриття та дотримуйтесь правила двох стін.`,
+                {
+                  parse_mode: "Markdown",
+                  category: "active_warning",
+                  dedupKey: `oblast_alert:${userOblastKey}`,
+                  holdUntilClear: true
+                }
+              );
+            } else {
+              // Official all-clear: schedule all active warnings in this chat for deletion in 30 minutes
+              await messageDeletionService.releaseActiveWarningsOnAllClear(pref.chatId, THIRTY_MINUTES_MS, now);
+              await sendBotMessage(
+                pref.chatId,
+                `🟢 *ВІДБІЙ ПОВІТРЯНОЇ ТРИВОГИ*\n\n` +
+                  `📍 Сектор: *${pref.cityName || nearest.nameUk}* (${nearest.oblast} область)\n` +
+                  `🛡️ Офіційний сигнал тривоги скасовано. Пов'язані попередження буде автоматично видалено через 30 хвилин.`,
+                {
+                  parse_mode: "Markdown",
+                  ttlMs: THIRTY_MINUTES_MS,
+                  category: "standard",
+                  dedupKey: `oblast_clear:${userOblastKey}`,
+                  holdUntilClear: false
+                }
+              );
+            }
+          } catch {
+            // Ignore delivery errors
           }
-        } catch {
-          // Ignore delivery errors
         }
       }
 
@@ -635,8 +644,15 @@ export class EyeRadarBotManager {
               }
 
               if (msg) {
+                const isActiveDanger = evalResult.state === "CRITICAL" || evalResult.state === "APPROACHING";
                 try {
-                  await sendBotMessage(pref.chatId, msg, { parse_mode: "Markdown", ttlMs: SIX_HOURS_MS });
+                  await sendBotMessage(pref.chatId, msg, {
+                    parse_mode: "Markdown",
+                    category: isActiveDanger ? "active_warning" : "standard",
+                    ttlMs: isActiveDanger ? undefined : THIRTY_MINUTES_MS,
+                    dedupKey: `track:${track.id}`,
+                    holdUntilClear: isActiveDanger
+                  });
                 } catch {
                   // Ignore delivery errors
                 }

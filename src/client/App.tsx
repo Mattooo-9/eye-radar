@@ -6,7 +6,14 @@ import { CitizenReportModal } from "./components/CitizenReportModal";
 import { LOCATIONS } from "./components/CitySelector";
 import { LiveTimelineBar, type PerformanceTier } from "./components/LiveTimelineBar";
 import { MapView, type VisionMode } from "./components/MapView";
-import { type AlertFeedStatus, type ClientAlertState, type FilterState, type TacticalFilters } from "./types";
+import {
+  type AlertFeedStatus,
+  type ClientAlertDetail,
+  type ClientAlertHistoryItem,
+  type ClientAlertState,
+  type FilterState,
+  type TacticalFilters
+} from "./types";
 import { TacticalTopBar } from "./components/TacticalTopBar";
 import { TacticalMenuModal } from "./components/TacticalMenuModal";
 import { ImpactCard } from "./components/ImpactCard";
@@ -38,8 +45,45 @@ const getUserId = (): string => {
 };
 
 const ALERTS_CACHE_KEY = "eye-radar-last-alerts-v1";
+const UI_PREFS_STORAGE_KEY = "eye-radar-ui-prefs-v1";
 const ALERTS_STALE_MS = 3 * 60 * 1000;
 const CLOUD_ALERTS_FALLBACK_URL = "https://eye-radar.onrender.com/api/alerts";
+
+interface StoredUiPrefs {
+  visionMode?: VisionMode;
+  threatOnly?: boolean;
+  showFrontline?: boolean;
+  showFirms?: boolean;
+  showAviation?: boolean;
+  showAlerts?: boolean;
+  showUncertainty?: boolean;
+  filters?: Partial<FilterState>;
+}
+
+const loadStoredUiPrefs = (): StoredUiPrefs => {
+  try {
+    const raw = localStorage.getItem(UI_PREFS_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") return parsed as StoredUiPrefs;
+    }
+  } catch {}
+  return {};
+};
+
+const formatAlertDuration = (startedAt?: number): string | null => {
+  if (!startedAt || !Number.isFinite(startedAt)) return null;
+  const elapsedMin = Math.max(1, Math.round((Date.now() - startedAt) / 60_000));
+  const timeStr = new Date(startedAt).toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" });
+  if (elapsedMin < 60) return `з ${timeStr} · ${elapsedMin} хв`;
+  const hours = Math.floor(elapsedMin / 60);
+  const mins = elapsedMin % 60;
+  if (hours >= 24) {
+    const days = Math.floor(hours / 24);
+    return `тривала (${days} дн.)`;
+  }
+  return `з ${timeStr} · ${hours} год ${mins} хв`;
+};
 
 const loadCachedAlertState = (): ClientAlertState => {
   try {
@@ -97,17 +141,31 @@ export const App = () => {
     flags
   );
 
+  const storedPrefs = useMemo(loadStoredUiPrefs, []);
   const [mapInstance, setMapInstance] = useState<Map | null>(null);
-  const [visionMode, setVisionMode] = useState<VisionMode>("satellite");
+  const [visionMode, setVisionMode] = useState<VisionMode>(
+    storedPrefs.visionMode === "tactical" ||
+      storedPrefs.visionMode === "nvg" ||
+      storedPrefs.visionMode === "flir" ||
+      storedPrefs.visionMode === "satellite"
+      ? storedPrefs.visionMode
+      : "satellite"
+  );
   const [selectedTarget, setSelectedTarget] = useState<TrackPacket | null>(null);
   const [inspectedTarget, setInspectedTarget] = useState<TrackPacket | null>(null);
   const [selectedImpact, setSelectedImpact] = useState<ImpactEvent | null>(null);
   const [selectedLocation, setSelectedLocation] = useState<{ lat: number; lon: number } | null>(null);
   const [tacticalMenuOpen, setTacticalMenuOpen] = useState(false);
-  const [threatOnly, setThreatOnly] = useState(false);
+  const [threatOnly, setThreatOnly] = useState(Boolean(storedPrefs.threatOnly));
   const [briefingOpen, setBriefingOpen] = useState(false);
   const [selectedCityName, setSelectedCityName] = useState<string>("");
   const [alertState, setAlertState] = useState<ClientAlertState>(loadCachedAlertState);
+  const [alertSearchQuery, setAlertSearchQuery] = useState<string>("");
+  const [isOffline, setIsOffline] = useState<boolean>(() =>
+    typeof navigator !== "undefined" ? navigator.onLine === false : false
+  );
+  const [lastDataSyncAt, setLastDataSyncAt] = useState<number>(() => Date.now());
+  const [nowTick, setNowTick] = useState<number>(() => Date.now());
   const activeAlerts = alertState.activeAlerts;
   const [showWeather, setShowWeather] = useState(false);
   const [showSatellites, setShowSatellites] = useState(false);
@@ -155,21 +213,58 @@ export const App = () => {
   });
 
   const [filters, setFilters] = useState<FilterState>({
-    uav: true,
-    munition: true,
-    bomb: true,
-    fpv: true,
-    aircraft: true,
-    helicopter: true,
+    uav: storedPrefs.filters?.uav ?? true,
+    munition: storedPrefs.filters?.munition ?? true,
+    bomb: storedPrefs.filters?.bomb ?? true,
+    fpv: storedPrefs.filters?.fpv ?? true,
+    aircraft: storedPrefs.filters?.aircraft ?? true,
+    helicopter: storedPrefs.filters?.helicopter ?? true,
     sound: soundEngine.isSoundEnabled()
   });
 
-  const [showFrontline, setShowFrontline] = useState(true);
-  const [showFirms, setShowFirms] = useState(true);
-  const [showAviation, setShowAviation] = useState(false);
-  const [showAlerts, setShowAlerts] = useState(true);
-  const [showUncertainty, setShowUncertainty] = useState(true);
+  const [showFrontline, setShowFrontline] = useState(storedPrefs.showFrontline ?? true);
+  const [showFirms, setShowFirms] = useState(storedPrefs.showFirms ?? true);
+  const [showAviation, setShowAviation] = useState(storedPrefs.showAviation ?? false);
+  const [showAlerts, setShowAlerts] = useState(storedPrefs.showAlerts ?? true);
+  const [showUncertainty, setShowUncertainty] = useState(storedPrefs.showUncertainty ?? true);
   const [currentZoom, setCurrentZoom] = useState(5.5);
+
+  // Persist user UI preferences across sessions
+  useEffect(() => {
+    try {
+      const toSave: StoredUiPrefs = {
+        visionMode,
+        threatOnly,
+        showFrontline,
+        showFirms,
+        showAviation,
+        showAlerts,
+        showUncertainty,
+        filters
+      };
+      localStorage.setItem(UI_PREFS_STORAGE_KEY, JSON.stringify(toSave));
+    } catch {}
+  }, [visionMode, threatOnly, showFrontline, showFirms, showAviation, showAlerts, showUncertainty, filters]);
+
+  // Monitor browser online/offline state & data freshness tick
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    const timer = setInterval(() => setNowTick(Date.now()), 5_000);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+      clearInterval(timer);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (packets.length > 0 || connectionState === "open") {
+      setLastDataSyncAt(Date.now());
+    }
+  }, [packets, connectionState]);
 
   useEffect(() => {
     try {
@@ -208,9 +303,11 @@ export const App = () => {
           stale?: boolean;
           lastConfirmedAt?: number | null;
           updatedAt?: number;
-          alerts?: Array<{ active: boolean; name: string }>;
+          alerts?: Array<{ active: boolean; name: string; startedAt?: number; changedAt?: string }>;
+          history?: ClientAlertHistoryItem[];
         };
         if (unmounted) return;
+        setLastDataSyncAt(Date.now());
 
         const serverConfirmedAt =
           typeof data.lastConfirmedAt === "number" && data.lastConfirmedAt > 0
@@ -218,9 +315,17 @@ export const App = () => {
             : typeof data.updatedAt === "number" && data.updatedAt > 0
             ? data.updatedAt
             : null;
-        const serverAlerts = Array.isArray(data.alerts)
-          ? data.alerts.filter((a) => a.active).map((a) => a.name)
-          : [];
+        const activeItems = Array.isArray(data.alerts) ? data.alerts.filter((a) => a.active) : [];
+        const serverAlerts = activeItems.map((a) => a.name);
+        const alertDetails: Record<string, ClientAlertDetail> = {};
+        for (const item of activeItems) {
+          alertDetails[item.name] = {
+            name: item.name,
+            startedAt: item.startedAt,
+            changedAt: item.changedAt
+          };
+        }
+        const serverHistory = Array.isArray(data.history) ? data.history.slice(0, 20) : undefined;
         const serverStatus: AlertFeedStatus =
           data.status === "fresh" || data.status === "stale" || data.status === "unavailable"
             ? data.status
@@ -241,6 +346,8 @@ export const App = () => {
           }
           const next: ClientAlertState = {
             activeAlerts: serverAlerts,
+            alertDetails,
+            history: serverHistory ?? prev.history,
             status: serverStatus,
             source: data.source || prev.source || "alerts.in.ua",
             sourceAvailable: data.sourceAvailable ?? serverStatus === "fresh",
@@ -478,6 +585,18 @@ export const App = () => {
 
 
 
+      {/* 1b. Weak connection / Offline / Stale telemetry indicator strip */}
+      {(isOffline || connectionState === "closed" || nowTick - lastDataSyncAt > 60_000) && (
+        <div className="network-stale-strip" role="status">
+          <span className="stale-strip-dot" />
+          <span className="stale-strip-text">
+            {isOffline
+              ? "Автономний режим (без інтернету) · Карта PMTiles активна, показано останній збережений стан (НЕ відбій)"
+              : `Зв'язок ослаблений · Дані оновлено ${Math.max(1, Math.round((nowTick - lastDataSyncAt) / 1000))} с тому (останній стан збережено)`}
+          </span>
+        </div>
+      )}
+
       {/* 2. Live Tactical Timeline & Performance Optimizer Bar */}
       <LiveTimelineBar
         selectedOffsetSec={timelineOffsetSec}
@@ -493,6 +612,7 @@ export const App = () => {
           impacts={impacts}
           mapStyleUrl={mapStyleUrl}
           pmtilesUrl={pmtilesUrl}
+          preferLocalPmtiles={isOffline}
           location={location}
           confirmedLocation={confirmedLocation}
           filters={filters}
@@ -744,27 +864,48 @@ export const App = () => {
 
             {activeAlerts.length > 0 ? (
               <>
+                <div className="alerts-search-box">
+                  <input
+                    type="text"
+                    className="alerts-search-input"
+                    placeholder="Пошук області або швидкий перехід..."
+                    value={alertSearchQuery}
+                    onChange={(e) => setAlertSearchQuery(e.target.value)}
+                  />
+                </div>
                 <div className="alerts-modal-sub">
                   {alertState.status === "stale"
                     ? "Останні підтверджені області з тривогою (натисніть для переходу):"
                     : "Натисніть на область для миттєвого переходу камери:"}
                 </div>
                 <div className="alerts-regions-grid">
-                  {activeAlerts.map((regionName) => (
-                    <button
-                      key={regionName}
-                      type="button"
-                      className={`alert-region-chip ${alertState.status !== "fresh" ? "stale-chip" : ""}`}
-                      onClick={() => {
-                        window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.("light");
-                        handleSelectOblastFromAlert(regionName);
-                        setAlertsModalOpen(false);
-                      }}
-                    >
-                      <span className="alert-beacon-dot" />
-                      <span className="alert-region-text">{regionName}</span>
-                    </button>
-                  ))}
+                  {activeAlerts
+                    .filter((r) =>
+                      !alertSearchQuery.trim() ||
+                      r.toLowerCase().includes(alertSearchQuery.trim().toLowerCase())
+                    )
+                    .map((regionName) => {
+                      const detail = alertState.alertDetails?.[regionName];
+                      const durationLabel = formatAlertDuration(detail?.startedAt);
+                      return (
+                        <button
+                          key={regionName}
+                          type="button"
+                          className={`alert-region-chip ${alertState.status !== "fresh" ? "stale-chip" : ""}`}
+                          onClick={() => {
+                            window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.("light");
+                            handleSelectOblastFromAlert(regionName);
+                            setAlertsModalOpen(false);
+                          }}
+                        >
+                          <span className="alert-beacon-dot" />
+                          <span className="alert-region-chip-body">
+                            <span className="alert-region-text">{regionName}</span>
+                            {durationLabel && <span className="alert-region-duration">{durationLabel}</span>}
+                          </span>
+                        </button>
+                      );
+                    })}
                 </div>
               </>
             ) : (
@@ -774,6 +915,28 @@ export const App = () => {
                   : alertState.status === "stale"
                   ? "На момент останнього підтвердження тривог не було, але зв'язок із джерелом втрачено — орієнтуйтесь на офіційні сирени."
                   : "Немає підтверджених даних від джерела офіційних тривог."}
+              </div>
+            )}
+
+            {alertState.history && alertState.history.length > 0 && (
+              <div className="alerts-history-section">
+                <div className="alerts-history-title">ІСТОРІЯ ОФІЦІЙНИХ СПОВІЩЕНЬ</div>
+                <div className="alerts-history-list">
+                  {alertState.history.slice(0, 5).map((h, idx) => (
+                    <div key={`${h.oblast}-${h.recordedAt}-${idx}`} className="alerts-history-row">
+                      <span className={`history-badge ${h.eventType === "alert_start" ? "start" : "clear"}`}>
+                        {h.eventType === "alert_start" ? "ТРИВОГА" : "ВІДБІЙ"}
+                      </span>
+                      <span className="history-oblast">{h.oblast}</span>
+                      <span className="history-time">
+                        {new Date(h.recordedAt).toLocaleTimeString("uk-UA", {
+                          hour: "2-digit",
+                          minute: "2-digit"
+                        })}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 

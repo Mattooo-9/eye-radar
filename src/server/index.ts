@@ -42,6 +42,7 @@ import { productionObservability } from "./core/observability.js";
 import { uncertaintyEventManager } from "./core/uncertaintyEventManager.js";
 import { createLogger } from "./observability/logger.js";
 import { failureMonitor } from "./observability/failureMonitor.js";
+import { lifecycleCleanupService, RETENTION_POLICY } from "./core/lifecyclePolicy.js";
 import {
   AlertSubscribeSchema,
   CitizenReportSchema,
@@ -567,6 +568,7 @@ const server = createServer(async (req, res) => {
       osintChannels: osintSummary,
       watchdog: watchdogHealth,
       monitoring: monitoringSnapshot,
+      lifecycle: lifecycleCleanupService.getStats(),
       sequenceId: trackManager.getSequence(),
       uptime: process.uptime(),
       tracks: trackManager.snapshot(false).length,
@@ -683,12 +685,16 @@ const server = createServer(async (req, res) => {
   }
 
   if ((req.method === "GET" || req.method === "POST") && url.pathname === "/api/cron/cleanup-messages") {
-    const result = await messageDeletionService.processPendingDeletions();
+    const [result, lifecycle] = await Promise.all([
+      messageDeletionService.processPendingDeletions(),
+      lifecycleCleanupService.runCleanupSweep()
+    ]);
     json(res, 200, {
       ok: true,
       deleted: result.deleted,
       errors: result.errors,
       queueSize: messageDeletionService.getQueueSize(),
+      lifecycle,
       timestamp: Date.now()
     });
     return;
@@ -839,6 +845,7 @@ const server = createServer(async (req, res) => {
   if (req.method === "GET" && url.pathname === "/api/alerts") {
     const alerts = await alertsSource.fetchAlerts();
     const meta = alertsSource.getMetadata();
+    const history = await lifecycleCleanupService.getOfficialAlertHistory(20);
     json(res, 200, {
       dataCategory: "official_alert",
       status: meta.status,
@@ -851,7 +858,19 @@ const server = createServer(async (req, res) => {
       consecutiveFailures: meta.consecutiveFailures,
       lastError: meta.lastError,
       alerts,
-      count: alerts.length
+      count: alerts.length,
+      history
+    });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/alerts/history") {
+    const history = await lifecycleCleanupService.getOfficialAlertHistory(40);
+    json(res, 200, {
+      dataCategory: "official_alert",
+      retentionDays: 30,
+      count: history.length,
+      history
     });
     return;
   }
@@ -1035,15 +1054,18 @@ const server = createServer(async (req, res) => {
       }
       const parsed = result.data;
       const city = parsed.cityName || parsed.name || "Власна геопозиція";
-      await botManager.subscribeUserLocation(parsed.userId, parsed.lat, parsed.lon, city, parsed.radiusKm ?? 35);
+      // Privacy minimization: store user sector coordinates at 3-decimal precision (~110m)
+      const minLat = Number(parsed.lat.toFixed(3));
+      const minLon = Number(parsed.lon.toFixed(3));
+      await botManager.subscribeUserLocation(parsed.userId, minLat, minLon, city, parsed.radiusKm ?? 35);
       json(res, 200, {
         ok: true,
         saved: true,
         location: {
-          lat: parsed.lat,
-          lon: parsed.lon,
+          lat: minLat,
+          lon: minLon,
           name: city,
-          accuracy: parsed.accuracy ?? 15,
+          accuracy: parsed.accuracy ?? 110,
           source: parsed.source ?? "manual",
           trusted: parsed.trusted ?? true,
           updatedAt: Date.now()
@@ -1064,8 +1086,10 @@ const server = createServer(async (req, res) => {
         return;
       }
       const { userId: chatId, lat, lon, cityName, radiusKm } = result.data;
-      await botManager.subscribeUserLocation(chatId, lat, lon, cityName, radiusKm);
-      json(res, 200, { ok: true, subscribed: true, chatId, lat, lon, radiusKm });
+      const minLat = Number(lat.toFixed(3));
+      const minLon = Number(lon.toFixed(3));
+      await botManager.subscribeUserLocation(chatId, minLat, minLon, cityName, radiusKm);
+      json(res, 200, { ok: true, subscribed: true, chatId, lat: minLat, lon: minLon, radiusKm });
     } catch {
       json(res, 400, { error: "Invalid payload" });
     }
@@ -1556,10 +1580,18 @@ const main = async (): Promise<void> => {
     );
   }, 5_000).unref();
 
-  // 5. Periodic Telegram message auto-deletion processor every 10 seconds
+  // 5. Unified background lifecycle processor: Telegram message auto-deletion (10s) + DB/filesystem self-cleaning sweep (5m)
   setInterval(() => {
     void messageDeletionService.processPendingDeletions(botManager.getBotInstance()?.telegram);
   }, 10_000).unref();
+
+  setTimeout(() => {
+    void lifecycleCleanupService.runCleanupSweep();
+  }, 12_000).unref();
+
+  setInterval(() => {
+    void lifecycleCleanupService.runCleanupSweep();
+  }, RETENTION_POLICY.CLEANUP_SWEEP_INTERVAL_MS).unref();
 
   // 6. Autonomous technical failure monitoring sweep every 30 seconds
   setInterval(async () => {
@@ -1567,7 +1599,7 @@ const main = async (): Promise<void> => {
       const dbHealth = await pingDb();
       const osintSummary = publicOsintSource.getChannelSummary();
       const alertMeta = alertsSource.getMetadata();
-      failureMonitor.evaluate({
+      const snap = failureMonitor.evaluate({
         uptimeSeconds: process.uptime(),
         memoryMb: Math.round(process.memoryUsage().rss / 1024 / 1024),
         dbOk: dbHealth.ok,
@@ -1579,6 +1611,14 @@ const main = async (): Promise<void> => {
         osintTotalChannels: osintSummary.totalChannels,
         osintRespondingChannels: osintSummary.respondingChannels
       });
+      if (snap.status === "CRITICAL") {
+        void lifecycleCleanupService.recordDiagnosticLog(
+          "CRITICAL",
+          "failure-monitor",
+          `Active critical incidents: ${snap.activeIncidents.map((i) => i.key).join(",")}`,
+          { activeIncidents: snap.activeIncidents }
+        );
+      }
     } catch (err) {
       failureMonitor.recordRuntimeError("monitoring_sweep", err);
     }

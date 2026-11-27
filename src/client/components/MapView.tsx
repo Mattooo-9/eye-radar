@@ -1386,7 +1386,7 @@ export const syncUkraineAlerts = (
   showAlerts = true,
   isStale = false
 ) => {
-  if (!map || !map.isStyleLoaded()) return;
+  if (!map || !(map as any).style) return;
 
   try {
     if (!map.getSource("ukraine-oblasts")) {
@@ -1502,7 +1502,7 @@ export const syncUkraineAlerts = (
 };
 
 const syncUkraineBorders = (map: maplibregl.Map, showFrontline = true) => {
-  if (!map || !map.isStyleLoaded()) return;
+  if (!map || !(map as any).style) return;
   try {
     // Completely remove any custom border lines drawn over real borders
     const customBorderLayers = [
@@ -2391,6 +2391,12 @@ export const MapView = ({
       syncUkraineAlerts(map, activeAlertsRef.current, showAlertsRef.current !== false, alertStatusRef.current !== "fresh");
       triggerInstantRedraw();
     });
+    map.on("idle", () => {
+      if (!map.getLayer("ukraine-alerts-fill")) {
+        syncUkraineBorders(map, showFrontlineRef.current !== false);
+        syncUkraineAlerts(map, activeAlertsRef.current, showAlertsRef.current !== false, alertStatusRef.current !== "fresh");
+      }
+    });
     map.on("resize", () => {
       resizeCanvasSafe();
       triggerInstantRedraw();
@@ -3025,6 +3031,16 @@ export const MapView = ({
               }
             }
           }
+        }
+
+        // Pre-seed collision boxes with target glyph footprints so callout pills never cover adjacent target icons
+        for (const tItem of tacticalItems) {
+          placedPillBoxes.push({
+            x: tItem.targetX - 14,
+            y: tItem.targetY - 14,
+            w: 28,
+            h: 28
+          });
         }
 
         // Pass 2.5: Background Civil Aviation (Layer 2)

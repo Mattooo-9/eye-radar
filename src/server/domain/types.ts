@@ -239,6 +239,8 @@ export interface AlertRegion {
   active: boolean;
   type: "oblast" | "raion" | "city";
   updatedAt: number;
+  changedAt?: string;
+  startedAt?: number;
 }
 
 export interface UserAlertPreference {

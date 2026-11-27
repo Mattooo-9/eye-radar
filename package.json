@@ -14,8 +14,9 @@
     "build:client": "vite build",
     "build:server": "tsup src/server/index.ts --format esm --target node20 --out-dir dist/server --clean",
     "check": "tsc --noEmit",
+    "scan:secrets": "node scripts/scan-secrets.mjs",
     "test": "vitest run",
-    "acceptance": "npm run check && vitest run && npm run build",
+    "acceptance": "npm run scan:secrets && npm run check && vitest run && npm run build",
     "verify:prod": "node scripts/verify-production.mjs",
     "verify:prod:wait": "node scripts/verify-production.mjs --wait-seconds 180",
     "start": "node dist/server/index.js"

@@ -17,18 +17,29 @@ CREATE TABLE IF NOT EXISTS user_preferences (
 );
 CREATE INDEX IF NOT EXISTS idx_user_pref_enabled ON user_preferences (enabled);
 
--- 2. 6-Hour Bot message auto-deletion queue (Composite Key Dedup)
+-- 2. Unified Bot message lifecycle & auto-deletion queue (Composite Key Dedup)
 CREATE TABLE IF NOT EXISTS bot_message_deletion_queue (
   chat_id BIGINT NOT NULL,
   message_id BIGINT NOT NULL,
+  sent_at BIGINT,
   delete_at BIGINT NOT NULL,
   created_at BIGINT NOT NULL,
+  deleted_at BIGINT,
   retry_count INT DEFAULT 0,
   status VARCHAR(20) DEFAULT 'pending',
+  category VARCHAR(32) DEFAULT 'standard',
+  dedup_key VARCHAR(128),
+  hold_until_clear BOOLEAN DEFAULT false,
   last_error TEXT,
   PRIMARY KEY (chat_id, message_id)
 );
+ALTER TABLE bot_message_deletion_queue ADD COLUMN IF NOT EXISTS sent_at BIGINT;
+ALTER TABLE bot_message_deletion_queue ADD COLUMN IF NOT EXISTS deleted_at BIGINT;
+ALTER TABLE bot_message_deletion_queue ADD COLUMN IF NOT EXISTS category VARCHAR(32) DEFAULT 'standard';
+ALTER TABLE bot_message_deletion_queue ADD COLUMN IF NOT EXISTS dedup_key VARCHAR(128);
+ALTER TABLE bot_message_deletion_queue ADD COLUMN IF NOT EXISTS hold_until_clear BOOLEAN DEFAULT false;
 CREATE INDEX IF NOT EXISTS idx_bmdq_delete_at ON bot_message_deletion_queue (delete_at) WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS idx_bmdq_chat_dedup ON bot_message_deletion_queue (chat_id, dedup_key) WHERE status = 'pending';
 
 -- 3. Atomic track checkpoints for zero-loss restarts
 CREATE TABLE IF NOT EXISTS radar_checkpoints (
@@ -89,7 +100,7 @@ CREATE TABLE IF NOT EXISTS osint_bulletins (
 );
 CREATE INDEX IF NOT EXISTS idx_osint_bulletins_pub ON osint_bulletins (published_at DESC);
 
--- 8. Empirical Track History Snapshots (Powers real historical timeline replay)
+-- 8. Empirical Track History Snapshots (Powers real historical timeline replay, 2h retention)
 CREATE TABLE IF NOT EXISTS track_history_snapshots (
   id BIGSERIAL PRIMARY KEY,
   recorded_at BIGINT NOT NULL,
@@ -97,6 +108,27 @@ CREATE TABLE IF NOT EXISTS track_history_snapshots (
   tracks_json JSONB NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_track_history_recorded ON track_history_snapshots (recorded_at DESC);
+
+-- 9. Anonymized Official Civil Air-Raid Alert History (30-day retention, zero personal data)
+CREATE TABLE IF NOT EXISTS official_alert_history (
+  id BIGSERIAL PRIMARY KEY,
+  oblast VARCHAR(128) NOT NULL,
+  event_type VARCHAR(24) NOT NULL,
+  source VARCHAR(64) NOT NULL,
+  recorded_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_official_alert_history_rec ON official_alert_history (recorded_at DESC);
+
+-- 10. System & Technical Diagnostic Logs (7-day retention)
+CREATE TABLE IF NOT EXISTS diagnostic_logs (
+  id BIGSERIAL PRIMARY KEY,
+  level VARCHAR(16) NOT NULL,
+  component VARCHAR(64) NOT NULL,
+  message TEXT NOT NULL,
+  meta_json JSONB,
+  created_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_diagnostic_logs_created ON diagnostic_logs (created_at DESC);
 `;
 
 export async function initSchema(): Promise<boolean> {
