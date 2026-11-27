@@ -6,7 +6,7 @@
 - **Backend / Streaming / Fusion Worker (Render):** `https://eye-radar.onrender.com` (24/7 worker + `wss://eye-radar.onrender.com/ws`)
 - **Database (Neon PostgreSQL):** Single source of truth for checkpoints (`radar_checkpoints`), persistent OSINT bulletins (`osint_bulletins`, 24 h retention), historical track snapshots (`track_history_snapshots`, 2 h retention), user preferences (`user_preferences`), 6-hour Telegram message deletion queue (`bot_message_deletion_queue`), and watchdog (`worker_watchdog`, `worker_locks`).
 - **Telegram Bot:** `@AppEye_bot` (Mini App launch, `/alerts` live oblast readout, `/report` unverified eyewitness intake, truthful proximity notifications, 6-hour auto-deletion).
-- **Autonomous CI & Keepalive:** `.github/workflows/ci-keepalive.yml` (`npm run acceptance` on push + 10-minute health ping; hazardous scheduled force-push workflow removed).
+- **Autonomous CI, Deploy Sync & Keepalive:** `.github/workflows/ci-keepalive.yml` runs `npm run acceptance` on push/PR, auto-deploys Vercel Production with `VITE_RELEASE_SHA=${{ github.sha }}` (via `VERCEL_TOKEN` secret), waits for Render rollout (`RENDER_GIT_COMMIT`), verifies **21/21** live checks including exact GitHub ↔ Render ↔ Vercel release SHA parity (`scripts/verify-production.mjs`), and runs 10-minute health + official alerts keepalive checks.
 
 ## Data Separation, Truthfulness & Zero-False-Precision Guarantees
 
@@ -28,4 +28,4 @@
 - **Agent Protocol (Codex & Antigravity):** [`AGENTS.md`](./AGENTS.md)
 - **Mandatory Acceptance Criteria & Sign-Off:** [`ACCEPTANCE.md`](./ACCEPTANCE.md)
 - **Local Pre-Deploy Gate:** `npm run acceptance` (`tsc --noEmit` + Vitest 30 suites / 129 tests + Vite & tsup builds)
-- **Live Production Verification Gate:** `npm run verify:prod` (20 live checks across Render, Neon Postgres, zero false precision, security guards, and Vercel)
+- **Live Production Verification Gate:** `npm run verify:prod` (21 live checks across Render, Neon Postgres, zero false precision, security guards, Vercel, and exact GitHub ↔ Render ↔ Vercel SHA parity)
