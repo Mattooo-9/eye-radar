@@ -40,38 +40,8 @@ export function renderTacticalGlyph(
   ctx.save();
 
   const s = Math.max(11, Math.min(20, size * 0.68));
-  const showVector = hasDirection || speedKmh > 0;
 
-  // 1. Forward direction vector line + arrowhead (shows real-time direction of movement)
-  if (showVector) {
-    const vecLen = Math.min(34, Math.max(18, s * 1.45 + (speedKmh > 300 ? 8 : 3)));
-    const noseY = -s * 0.85;
-    const tipY = noseY - vecLen;
-
-    ctx.save();
-    const grad = ctx.createLinearGradient(0, noseY, 0, tipY);
-    grad.addColorStop(0, color);
-    grad.addColorStop(1, `${color}44`);
-    ctx.strokeStyle = isSelected ? "#ffffff" : grad;
-    ctx.lineWidth = isSelected ? 1.8 : 1.35;
-    ctx.beginPath();
-    ctx.moveTo(0, noseY);
-    ctx.lineTo(0, tipY);
-    ctx.stroke();
-
-    // Crisp directional arrowhead at tipY
-    ctx.fillStyle = isSelected ? "#ffffff" : color;
-    ctx.beginPath();
-    ctx.moveTo(0, tipY - 3.5);
-    ctx.lineTo(3.2, tipY + 2.5);
-    ctx.lineTo(0, tipY + 0.8);
-    ctx.lineTo(-3.2, tipY + 2.5);
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
-  }
-
-  // 2. Selection lock ring ONLY when the user clicked/selected this target
+  // 1. Selection lock ring ONLY when the user clicked/selected this target (no sticking-out arrows on targets)
   if (isSelected) {
     const pulse = 0.5 + 0.5 * Math.sin(timeMs / 240);
     const ringR = s * 1.25 + pulse * 2.5;

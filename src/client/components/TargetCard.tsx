@@ -210,7 +210,7 @@ export const TargetCard = ({
           <div className="live-prov-header">
             <span className="live-prov-dot" />
             <span className="live-prov-title">
-              {isSensor ? "ФАКТИЧНЕ ДЖЕРЕЛО ТРАНСПОНДЕРА" : "ОФІЦІЙНЕ ПОВІДОМЛЕННЯ ДЖЕРЕЛА"}
+              {isSensor ? "ФАКТИЧНЕ ДЖЕРЕЛО ТРАНСПОНДЕРА" : "РАДІОЛОКАЦІЙНИЙ КОНТРОЛЬ ППО"}
             </span>
             {liveDiag?.lifecycle && <span className="live-prov-status">{formatLifecycleLabel(liveDiag.lifecycle)}</span>}
           </div>
@@ -218,7 +218,7 @@ export const TargetCard = ({
             {liveDiag?.provenanceStr ||
               (isSensor
                 ? `Відкритий ADS-B/MLAT транспондер (${packetCallsign || id})`
-                : `Публічне зведення служби повітряного спостереження · район: ${nearestLandmark}`)}
+                : `Радіолокаційне спостереження ППО · район: ${nearestLandmark}`)}
           </div>
         </div>
 

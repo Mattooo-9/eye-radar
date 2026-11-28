@@ -37,28 +37,34 @@ interface AdsbResponse {
 export class OpenskyAdsbLolSource {
   private lastFetch = 0;
   private cache: UnifiedObservation[] = [];
+  private endpointIdx = 0;
 
   async fetchFlightObservations(): Promise<UnifiedObservation[]> {
     const now = Date.now();
-    if (now - this.lastFetch < 12_000 && this.cache.length > 0) {
+    if (now - this.lastFetch < 16_000 && this.cache.length > 0) {
       return this.cache;
     }
 
     const obsMap = new Map<string, UnifiedObservation>();
+    for (const c of this.cache) {
+      if (c.object_id && c.observed_at && now - c.observed_at < 35_000) {
+        obsMap.set(c.object_id, c);
+      }
+    }
 
+    // Rotate 1 single endpoint per poll cycle to avoid adsb.lol HTTP 429 rate-limiting
     const adsbEndpoints = [
-      "https://api.adsb.lol/v2/point/50.0/22.0/250",
-      "https://api.adsb.lol/v2/point/48.5/24.5/250",
-      "https://api.adsb.lol/v2/point/44.5/26.0/250",
-      "https://api.adsb.lol/v2/point/52.0/21.0/250",
-      "https://api.adsb.lol/v2/point/46.5/29.0/250",
-      "https://api.adsb.lol/v2/mil"
+      "https://api.adsb.lol/v2/point/48.8/31.2/250",
+      "https://api.adsb.lol/v2/mil",
+      "https://api.adsb.lol/v2/point/49.5/25.5/250"
     ];
+    const url = adsbEndpoints[this.endpointIdx % adsbEndpoints.length];
+    this.endpointIdx += 1;
 
     await Promise.allSettled(
-      adsbEndpoints.map(async (url) => {
+      [url].map(async (epUrl) => {
         try {
-          const res = await fetch(url, {
+          const res = await fetch(epUrl, {
             headers: {
               "User-Agent": "EyeRadar/2.0 (Civil Airspace Monitor)",
               Accept: "application/json"

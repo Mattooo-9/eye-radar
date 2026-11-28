@@ -2995,12 +2995,12 @@ export const MapView = ({
           const isSelected = Boolean(currentSelected && currentSelected[0] === id);
           const color = isCivil ? "#94a3b8" : (TARGET_COLORS[type] ?? "#7dd3fc");
 
-          const isOsintReport = id.startsWith("osint-") || id.startsWith("citizen-");
+          const isCitizenReport = id.startsWith("citizen-");
           const measuredAltM =
-            !isOsintReport && altitude !== undefined && altitude !== null && altitude > 0
+            !isCitizenReport && altitude !== undefined && altitude !== null && altitude > 0
               ? altitude
               : null;
-          // Speed used for real-time 60fps kinematic animation and forward vector rendering
+          // Speed used for real-time 60fps kinematic animation
           const speedKmh = speed > 0 ? Math.round(speed * 3.6) : 0;
           const altMsl =
             measuredAltM !== null

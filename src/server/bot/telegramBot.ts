@@ -133,6 +133,14 @@ export class EyeRadarBotManager {
 
     const isUserVerifiedInUkraine = (chatId: number): boolean => {
       const pref = this.storage.getPreference(chatId);
+      if (pref && (!pref.enabled || !isControlledUkraineLocation(pref.lat, pref.lon))) {
+        return false;
+      }
+      return true;
+    };
+
+    const hasConfirmedSectorInUkraine = (chatId: number): boolean => {
+      const pref = this.storage.getPreference(chatId);
       return Boolean(pref && pref.enabled && isControlledUkraineLocation(pref.lat, pref.lon));
     };
 
@@ -141,7 +149,7 @@ export class EyeRadarBotManager {
         await sendBotMessage(
           chatId,
           `🛡️ *EYE RADAR // ПЕРЕВІРКА ДОСТУПУ (УКРАЇНА)*\n\n` +
-            `Доступ до бота та оперативних даних ППО надається **виключно резидентам підконтрольної території України** (з урахуванням лінії бойового зіткнення).\n\n` +
+            `Доступ до бота та оперативних даних ППО надається *виключно резидентам підконтрольної території України* (з урахуванням лінії бойового зіткнення).\n\n` +
             `Для отримання повного доступу до карти, висот, швидкостей та сповіщень підтвердіть свою локацію кнопкою нижче або командою \`/setlocation <Місто>\`:`,
           {
             parse_mode: "Markdown",
@@ -167,15 +175,19 @@ export class EyeRadarBotManager {
         const primaryBtn = isHttps
           ? { text: "🛰️ ВІДКРИТИ EYE RADAR", web_app: { url: webAppUrl } }
           : { text: "🛰️ ВІДКРИТИ EYE RADAR", url: webAppUrl };
+        const isSectorConfirmed = hasConfirmedSectorInUkraine(chatId);
+        const footerNote = isSectorConfirmed
+          ? `_🔓 Локацію в Україні підтверджено. Повний доступ до всіх даних активовано._`
+          : `_📍 Для персональних сповіщень по вашому сектору підтвердіть локацію в додатку або командою /setlocation <Місто>._`;
 
         // Permanent main menu: preserved across sessions and updated in-place via dedupKey="main_menu"
         await sendBotMessage(
           chatId,
           `🛰️ *EYE RADAR // СИСТЕМА ЦИВІЛЬНОГО ІНФОРМУВАННЯ*\n\n` +
             `• Офіційні сигнали повітряної тривоги (alerts.in.ua)\n` +
-            `• Оперативні зведення Повітряних Сил ЗСУ та ДСНС України (висота, швидкість, курс)\n` +
-            `• Відкриті спостереження військової авіації (ADS-B) та NASA FIRMS\n\n` +
-            `_Локацію в Україні підтверджено. Повний доступ до всіх даних активовано._`,
+            `• Радіолокаційний контроль ППО та зведення ПС ЗСУ (висота, швидкість, курс)\n` +
+            `• Відкриті спостереження військової авіації (ADS-B) та лінія фронту\n\n` +
+            footerNote,
           {
             parse_mode: "Markdown",
             reply_markup: {

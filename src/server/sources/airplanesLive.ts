@@ -43,7 +43,9 @@ export class AirplanesLiveSource {
 
     const adsbFiEndpoints = [
       "https://opendata.adsb.fi/api/v2/mil",
-      "https://api.adsb.one/v2/mil"
+      "https://opendata.adsb.fi/api/v2/lat/48.8/lon/31.2/dist/250",
+      "https://api.adsb.one/v2/mil",
+      "https://api.adsb.one/v2/point/48.8/31.2/250"
     ];
 
     await Promise.allSettled(

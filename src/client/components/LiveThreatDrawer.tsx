@@ -186,7 +186,7 @@ export const LiveThreatDrawer: React.FC<LiveThreatDrawerProps> = ({
             <div className="live-threat-list">
               {osintItems.length > 0 && (
                 <>
-                  <div className="threat-group-label">Повідомлення ППО / OSINT ({osintItems.length})</div>
+                  <div className="threat-group-label">Виявлені цілі ППО / Радар ({osintItems.length})</div>
                   {osintItems.map(renderRow)}
                 </>
               )}

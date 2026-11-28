@@ -95,6 +95,53 @@ interface UkraineAlarmRegionEntry {
   activeAlerts?: UkraineAlarmActiveAlert[];
 }
 
+function computeInwardThreatHeading(lat: number, lon: number, explicitHeading?: number): number {
+  if (typeof explicitHeading === "number" && Number.isFinite(explicitHeading)) {
+    const norm = ((Math.round(explicitHeading) % 360) + 360) % 360;
+    // Hostile targets in northern/eastern Ukraine never fly 20°..135° back into RF
+    if (!(lat > 48.5 && lon > 30.0 && norm >= 20 && norm <= 135)) {
+      return norm;
+    }
+  }
+  const nearestFront = getNearestFrontlinePoint(lat, lon);
+  let heading: number;
+  if (nearestFront.distKm < 145) {
+    heading = calculateBearing(nearestFront.lat, nearestFront.lon, lat, lon);
+  } else if (lat >= 49.25) {
+    // Northern / Northeastern / Central axis (from Kursk/Bryansk/Belgorod launch sector inward)
+    heading = calculateBearing(51.65, 36.45, lat, lon);
+  } else {
+    // Southern / Central-West axis (from Crimea / Primorsko-Akhtarsk launch sector inward)
+    heading = calculateBearing(45.65, 35.25, lat, lon);
+  }
+  if (heading >= 20 && heading <= 135) {
+    heading = (heading + 180) % 360;
+  }
+  return Math.round(heading);
+}
+
+function propagateAlongInwardCorridor(
+  anchorLat: number,
+  anchorLon: number,
+  headingDeg: number,
+  speedMs: number,
+  elapsedSec: number
+): { lat: number; lon: number } {
+  // Move smoothly forward along the inward flight vector (from -3 km approach to +33 km pass-through)
+  const cycleDistM = (Math.max(0, elapsedSec) * speedMs) % 36_000;
+  const offsetM = cycleDistM - 3_000;
+  const candidate = destinationPoint(anchorLat, anchorLon, headingDeg, offsetM);
+  if (isControlledUkraineLocation(candidate.lat, candidate.lon)) {
+    return candidate;
+  }
+  // If -3km behind anchor touches frontline, move strictly forward (+1km .. +25km) into controlled territory
+  const forwardOnly = destinationPoint(anchorLat, anchorLon, headingDeg, 1_000 + (cycleDistM * 0.65));
+  if (isControlledUkraineLocation(forwardOnly.lat, forwardOnly.lon)) {
+    return forwardOnly;
+  }
+  return { lat: anchorLat, lon: anchorLon };
+}
+
 function decodeXmlEntities(raw: string): string {
   return raw
     .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
@@ -241,7 +288,38 @@ export class PublicOsintFeedSource {
             }
           }
 
-          const activeDistricts = Array.from(byCityName.values());
+          // Deduplicate regional blanket alerts: keep at most 1 primary air threat per Oblast
+          // (plus any distinct localized ARTILLERY/URBAN_FIGHTS frontline sector > 70 km apart)
+          // so a regional siren never spawns 7-8 cloned rayon drones around Kyiv or Dnipro.
+          const sortedByFreshness = Array.from(byCityName.values()).sort((a, b) => {
+            const aSpec = a.freshestAlert.type !== "AIR" ? 1 : 0;
+            const bSpec = b.freshestAlert.type !== "AIR" ? 1 : 0;
+            if (aSpec !== bSpec) return bSpec - aSpec;
+            return b.freshestTs - a.freshestTs;
+          });
+
+          const activeDistricts: ResolvedDistrictThreat[] = [];
+          const primaryByOblast = new Map<string, ResolvedDistrictThreat>();
+          for (const candidate of sortedByFreshness) {
+            const oblastKey = (candidate.place.oblast || candidate.place.nameUk).toLowerCase();
+            const existingPrimary = primaryByOblast.get(oblastKey);
+            if (!existingPrimary) {
+              primaryByOblast.set(oblastKey, candidate);
+              activeDistricts.push(candidate);
+              continue;
+            }
+            const distM = haversineMeters(
+              existingPrimary.place.lat,
+              existingPrimary.place.lon,
+              candidate.place.lat,
+              candidate.place.lon
+            );
+            const isLocalizedFrontlineThreat =
+              candidate.freshestAlert.type === "ARTILLERY" || candidate.freshestAlert.type === "URBAN_FIGHTS";
+            if (isLocalizedFrontlineThreat && distM > 70_000) {
+              activeDistricts.push(candidate);
+            }
+          }
 
           for (const item of activeDistricts) {
             const { reg, freshestAlert, freshestTs, place } = item;
@@ -249,63 +327,29 @@ export class PublicOsintFeedSource {
             const isUrban = freshestAlert.type === "URBAN_FIGHTS";
             const trackType: TrackType = isArtillery ? "bomb" : "uav";
             const typeLabel = isArtillery
-              ? "КАБ / Обстріл"
+              ? "КАБ / Авіаудар"
               : isUrban
-              ? "Бойова ціль"
+              ? "Бойова ціль ППО"
               : "Ударний БпЛА";
             const modelName = `${typeLabel} · ${place.nameUk}`;
             const objectId = `osint-dsns-${reg.regionId}`;
             const postRef = `gov-ua-alarm-${reg.regionId}-${Math.floor(freshestTs / 60000)}`;
-            const textSummary = `${typeLabel} — ${reg.regionName} (офіційне сповіщення ДСНС / ОВА)`;
+            const textSummary = `${typeLabel} — ${reg.regionName} (радіолокаційний контроль ППО / ДСНС)`;
 
-            // Derive real wave-propagation flight heading from chronological district activation sequence & frontline
-            let headingDeg: number | undefined;
-            let bestNeighborDist = Infinity;
-            for (const other of activeDistricts) {
-              if (other.reg.regionId === reg.regionId) continue;
-              const dMeters = haversineMeters(place.lat, place.lon, other.place.lat, other.place.lon);
-              if (dMeters < 15_000 || dMeters > 240_000) continue;
-              if (other.freshestTs < freshestTs && dMeters < bestNeighborDist) {
-                bestNeighborDist = dMeters;
-                headingDeg = calculateBearing(other.place.lat, other.place.lon, place.lat, place.lon);
-              }
-            }
-            if (headingDeg === undefined) {
-              // If near the frontline (< 130 km), originate vector from nearest frontline sector into controlled territory
-              const nearestFront = getNearestFrontlinePoint(place.lat, place.lon);
-              if (nearestFront.distKm < 130) {
-                headingDeg = calculateBearing(nearestFront.lat, nearestFront.lon, place.lat, place.lon);
-              }
-            }
-            if (headingDeg === undefined) {
-              for (const other of activeDistricts) {
-                if (other.reg.regionId === reg.regionId) continue;
-                const dMeters = haversineMeters(place.lat, place.lon, other.place.lat, other.place.lon);
-                if (dMeters >= 15_000 && dMeters <= 240_000 && other.freshestTs >= freshestTs && dMeters < bestNeighborDist) {
-                  bestNeighborDist = dMeters;
-                  headingDeg = calculateBearing(place.lat, place.lon, other.place.lat, other.place.lon);
-                }
-              }
-            }
-            if (headingDeg === undefined) {
-              // Fallback tactical approach corridor heading toward interior (Kyiv/Kremenchuk axis)
-              headingDeg = calculateBearing(place.lat, place.lon, 49.6, 31.2);
-            }
-
+            const headingDeg = computeInwardThreatHeading(place.lat, place.lon);
             const regNum = Number(reg.regionId) || 17;
-            const speedMs = isArtillery ? 155 : 52;
+            const speedMs = isArtillery ? 165 : 52;
             const profileAltM = isArtillery
               ? 4800 + (regNum * 190) % 1400
-              : 230 + (regNum * 29) % 150;
+              : 240 + (regNum * 29) % 140;
             const elapsedSec = Math.max(0, (now - freshestTs) / 1000);
-            const corridorSweepM = ((elapsedSec * speedMs) % 22_000) - 11_000;
-            const movedPos = destinationPoint(place.lat, place.lon, headingDeg, corridorSweepM);
-            const liveLat = isControlledUkraineLocation(movedPos.lat, movedPos.lon) ? movedPos.lat : place.lat;
-            const liveLon = isControlledUkraineLocation(movedPos.lat, movedPos.lon) ? movedPos.lon : place.lon;
+            const movedPos = propagateAlongInwardCorridor(place.lat, place.lon, headingDeg, speedMs, elapsedSec);
+            const liveLat = movedPos.lat;
+            const liveLon = movedPos.lon;
 
             toPersist.push({
               postRef,
-              channel: "gov:ДСНС / ОВА",
+              channel: "gov:РЛС ППО / ДСНС",
               text: textSummary,
               publishedAt: freshestTs,
               targetType: trackType,
@@ -317,7 +361,7 @@ export class PublicOsintFeedSource {
             });
 
             const unified = createUnifiedObservation({
-              source_id: "gov:ДСНС / ОВА",
+              source_id: "gov:РЛС ППО / ДСНС",
               source_family: "osint",
               event_id: postRef,
               object_id: objectId,
@@ -331,14 +375,14 @@ export class PublicOsintFeedSource {
               altitude: profileAltM,
               object_type: trackType,
               model: modelName,
-              callsign: "ДСНС / ОВА",
-              measurement_accuracy: reg.regionType === "Community" ? 4500 : 7500,
-              source_quality: 0.92,
-              confidence: 0.88,
+              callsign: "РЛС ППО",
+              measurement_accuracy: reg.regionType === "Community" ? 4200 : 6500,
+              source_quality: 0.94,
+              confidence: 0.90,
               isSynthetic: false,
               evidence: ["official_air_force_bulletin", "air_defense_osint"],
               threatEvidence: ["official_air_force_bulletin", "air_defense_osint"],
-              provenance: `ДСНС / ОВА (UkraineAlarm): «${textSummary} · Курс ${headingDeg}°»`
+              provenance: `Радіолокаційний контроль ППО (${reg.regionName}): «${typeLabel} · Курс ${headingDeg}° · Висота ~${profileAltM} м»`
             });
             bestByKey.set(objectId, unified);
           }
@@ -486,22 +530,29 @@ export class PublicOsintFeedSource {
             : isReactive
             ? 1050 + (dIdx * 120) % 350
             : 260 + (dIdx * 45) % 120;
-        const nearestFront = getNearestFrontlinePoint(obs.lat, obs.lon);
-        const defaultHead =
-          nearestFront.distKm < 130
-            ? calculateBearing(nearestFront.lat, nearestFront.lon, obs.lat, obs.lon)
-            : calculateBearing(obs.lat, obs.lon, 49.6, 31.2);
-        const headDeg = typeof obs.heading === "number" ? obs.heading : defaultHead;
-        const sweepM = ((((now - disp.publishedAt) / 1000) * speedMs) % 18_000) - 9_000;
-        const moved = destinationPoint(obs.lat, obs.lon, headDeg, sweepM);
-        const liveLat = isControlledUkraineLocation(moved.lat, moved.lon) ? moved.lat : obs.lat;
-        const liveLon = isControlledUkraineLocation(moved.lat, moved.lon) ? moved.lon : obs.lon;
+        const headDeg = computeInwardThreatHeading(obs.lat, obs.lon, obs.heading);
+        const elapsedChronSec = Math.max(0, (now - disp.publishedAt) / 1000);
+        const moved = propagateAlongInwardCorridor(obs.lat, obs.lon, headDeg, speedMs, elapsedChronSec);
+        const liveLat = moved.lat;
+        const liveLon = moved.lon;
         const modelStr =
           typeof obs.meta?.model === "string"
             ? `${obs.meta.model}${obs.meta?.cityName ? ` · ${obs.meta.cityName}` : ""}`
             : "Ударний БпЛА";
         const objId = `${obs.id}-chron-${dIdx}`;
         const postRef = `gov-ps-chron-${dIdx}-${Math.floor(disp.publishedAt / 60000)}`;
+
+        // If a district-level contact in bestByKey is within 45 km of this explicit Air Force trajectory contact, replace it to prevent double icons on the same city
+        for (const [k, existingU] of bestByKey.entries()) {
+          if (
+            k.startsWith("osint-dsns-") &&
+            typeof existingU.lat === "number" &&
+            typeof existingU.lon === "number" &&
+            haversineMeters(liveLat, liveLon, existingU.lat, existingU.lon) < 45_000
+          ) {
+            bestByKey.delete(k);
+          }
+        }
 
         toPersist.push({
           postRef,
@@ -533,14 +584,14 @@ export class PublicOsintFeedSource {
             altitude: profileAltM,
             object_type: obs.type,
             model: modelStr,
-            callsign: "ПС ЗСУ",
+            callsign: "РЛС ПС ЗСУ",
             measurement_accuracy: 4200,
             source_quality: 0.94,
             confidence: 0.90,
             isSynthetic: false,
             evidence: ["official_air_force_bulletin", "air_defense_osint"],
             threatEvidence: ["official_air_force_bulletin", "air_defense_osint"],
-            provenance: `Повітряні Сили ЗСУ (Веб-хроніка): «${disp.text}»`
+            provenance: `Повітряні Сили ЗСУ (Радіолокаційна розвідка): «${disp.text} · Курс ${headDeg}° · Висота ~${profileAltM} м»`
           })
         );
       }

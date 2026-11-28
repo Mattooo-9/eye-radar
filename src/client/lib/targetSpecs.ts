@@ -104,11 +104,14 @@ export function getTargetDisplayMeta(
   packetCallsign?: string
 ): TargetDisplayMeta {
   const dataCategory = classifyClientDataCategory(id, packetCallsign);
+  const isLegacyAtChannel = Boolean(packetCallsign && packetCallsign.startsWith("@"));
   const dataCategoryBadge =
     dataCategory === "unverified_report"
       ? "НЕПЕРЕВІРЕНЕ ПОВІДОМЛЕННЯ (ОЧЕВИДЕЦЬ)"
       : dataCategory === "osint_message"
-      ? "ТЕКСТОВЕ ПОВІДОМЛЕННЯ (OSINT)"
+      ? isLegacyAtChannel
+        ? "ТЕКСТОВЕ ПОВІДОМЛЕННЯ (OSINT)"
+        : "ЦІЛЬ ППО · РАДАРНИЙ КОНТАКТ"
       : "ФАКТИЧНЕ СПОСТЕРЕЖЕННЯ (ADS-B)";
 
   const cleanModel = (packetModel || "").replace(/\s*\(OSINT\)/gi, "").trim();

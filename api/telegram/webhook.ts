@@ -14,6 +14,7 @@ import {
 
 const processedUpdates = new Set<number>();
 const verifiedUkraineChats = new Set<number>();
+const blockedOutsideUkraineChats = new Set<number>();
 const MAX_PROCESSED_CACHE = 5000;
 
 function findNearestOblast(lat: number, lon: number): { nameUk: string; oblast: string } {
@@ -30,10 +31,11 @@ function findNearestOblast(lat: number, lon: number): { nameUk: string; oblast: 
 }
 
 async function isChatVerifiedInUkraine(chatId: number): Promise<boolean> {
+  if (blockedOutsideUkraineChats.has(chatId)) return false;
   if (verifiedUkraineChats.has(chatId)) return true;
   try {
     const pool = getPool();
-    if (!pool) return false;
+    if (!pool) return true;
     const res = await query(
       `SELECT lat, lon, enabled FROM user_preferences WHERE chat_id = $1 LIMIT 1`,
       [chatId]
@@ -42,15 +44,43 @@ async function isChatVerifiedInUkraine(chatId: number): Promise<boolean> {
       const row = res.rows[0];
       const lat = Number(row.lat);
       const lon = Number(row.lon);
-      if (row.enabled !== false && isControlledUkraineLocation(lat, lon)) {
-        verifiedUkraineChats.add(chatId);
-        return true;
+      if (row.enabled === false || !isControlledUkraineLocation(lat, lon)) {
+        blockedOutsideUkraineChats.add(chatId);
+        return false;
       }
+      verifiedUkraineChats.add(chatId);
+      return true;
     }
   } catch (err) {
     console.warn("[Telegram Webhook] DB verification lookup failed:", err);
   }
-  return false;
+  return true;
+}
+
+async function markChatBlockedOutsideUkraine(
+  chatId: number,
+  lat: number,
+  lon: number
+): Promise<void> {
+  verifiedUkraineChats.delete(chatId);
+  blockedOutsideUkraineChats.add(chatId);
+  try {
+    const pool = getPool();
+    if (!pool) return;
+    await query(
+      `INSERT INTO user_preferences (chat_id, lat, lon, city_name, radius_km, enabled, updated_at)
+       VALUES ($1, $2, $3, 'BLOCKED_OUTSIDE_UA', 30, FALSE, $4)
+       ON CONFLICT (chat_id) DO UPDATE SET
+         lat = EXCLUDED.lat,
+         lon = EXCLUDED.lon,
+         city_name = 'BLOCKED_OUTSIDE_UA',
+         enabled = FALSE,
+         updated_at = EXCLUDED.updated_at`,
+      [chatId, Number(lat.toFixed(3)), Number(lon.toFixed(3)), Date.now()]
+    );
+  } catch (err) {
+    console.warn("[Telegram Webhook] Failed to save blocked location:", err);
+  }
 }
 
 async function saveVerifiedUkraineLocation(
@@ -59,6 +89,7 @@ async function saveVerifiedUkraineLocation(
   lon: number,
   cityName: string
 ): Promise<void> {
+  blockedOutsideUkraineChats.delete(chatId);
   verifiedUkraineChats.add(chatId);
   try {
     const pool = getPool();
@@ -160,6 +191,20 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   req.on("end", async () => {
     const t0 = performance.now();
     try {
+      // If BOT_TOKEN is not in local serverless env (e.g. Vercel Edge without BOT_TOKEN), proxy to Render backend where BOT_TOKEN is always active
+      if (!token) {
+        const proxyRes = await fetch("https://eye-radar.onrender.com/api/telegram/webhook", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body,
+          signal: AbortSignal.timeout(8500)
+        });
+        const proxyText = await proxyRes.text();
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(proxyText || JSON.stringify({ ok: true, proxiedToRender: true }));
+        return;
+      }
+
       const update = JSON.parse(body);
       const updateId = update.update_id;
 
@@ -185,7 +230,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
           if (msg.location) {
             const loc = msg.location;
             if (!isControlledUkraineLocation(loc.latitude, loc.longitude)) {
-              verifiedUkraineChats.delete(chatId);
+              await markChatBlockedOutsideUkraine(chatId, loc.latitude, loc.longitude);
               const blockedText =
                 `⛔ *ДОСТУП ЗАБЛОКОВАНО*\n\n` +
                 `Координати \`${loc.latitude.toFixed(4)}, ${loc.longitude.toFixed(4)}\` знаходяться поза підконтрольною територією України (РФ, РБ або за лінією фронту).\n` +
@@ -227,7 +272,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
                   { ttlMs: SIX_HOURS_MS }
                 );
               } else if (!isControlledUkraineLocation(city.lat, city.lon)) {
-                verifiedUkraineChats.delete(chatId);
+                await markChatBlockedOutsideUkraine(chatId, city.lat, city.lon);
                 await sendBotMessage(
                   chatId,
                   `⛔ *ДОСТУП ЗАБЛОКОВАНО:* Локація *${city.nameUk}* знаходиться за лінією фронту на тимчасово окупованій території. Доступ дозволено лише на підконтрольній території України.`,

@@ -4,6 +4,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { extname, join, resolve } from "node:path";
 import { WebSocketServer } from "ws";
 import { createTelegramBot } from "./bot/telegramBot.js";
+import telegramWebhookHandler from "../../api/telegram/webhook.js";
 import { sendBotMessage, messageDeletionService, SIX_HOURS_MS, TEST_TTL_MS } from "./bot/messageDeletionService.js";
 export { sendBotMessage, messageDeletionService, SIX_HOURS_MS, TEST_TTL_MS };
 import { env } from "./config/env.js";
@@ -693,6 +694,11 @@ const server = createServer(async (req, res) => {
       })
     );
     json(res, 200, results);
+    return;
+  }
+
+  if (url.pathname === "/api/telegram/webhook") {
+    await telegramWebhookHandler(req, res);
     return;
   }
 
